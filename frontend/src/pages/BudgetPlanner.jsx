@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { getCategorySummary, getBudgetTargets, createBudgetTarget, updateBudgetTarget, deleteBudgetTarget, getYears, autoPopulateBudget, copyBudgetFromMonth } from "../api";
+import { getCategorySummary, getBudgetTargets, createBudgetTarget, updateBudgetTarget, deleteBudgetTarget, getYears, autoPopulateBudget, copyBudgetFromMonth, getCategories } from "../api";
 import { getCategoryGroup } from "../constants";
 import { MONTH_LABELS, currentYear, currentMonth, fmt } from "../utils";
 
@@ -25,6 +25,7 @@ export default function BudgetPlanner() {
   const [years, setYears] = useState([currentYear]);
   const [actuals, setActuals] = useState([]);
   const [targets, setTargets] = useState([]);
+  const [knownCategories, setKnownCategories] = useState([]);
   const [editing, setEditing] = useState({});
   const [saving, setSaving] = useState(false);
   const [newCategory, setNewCategory] = useState("");
@@ -40,6 +41,7 @@ export default function BudgetPlanner() {
 
   useEffect(() => {
     getYears().then((y) => setYears(y.length ? y : [currentYear])).catch(() => {});
+    getCategories().then(setKnownCategories).catch(() => {});
   }, []);
 
   const load = useCallback(() => {
@@ -55,11 +57,18 @@ export default function BudgetPlanner() {
 
   const targetMap = Object.fromEntries(targets.map((t) => [t.category, t]));
 
+  const seenCategories = new Set([
+    ...actuals.map((a) => a.category),
+    ...targets.map((t) => t.category),
+  ]);
   const allCategories = [
     ...actuals,
     ...targets
       .filter((t) => !actuals.find((a) => a.category === t.category))
       .map((t) => ({ category: t.category, total: 0, count: 0 })),
+    ...knownCategories
+      .filter((c) => !seenCategories.has(c))
+      .map((c) => ({ category: c, total: 0, count: 0 })),
   ];
 
   const totalActual = actuals.reduce((s, a) => s + a.total, 0);
