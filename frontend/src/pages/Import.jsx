@@ -105,8 +105,15 @@ export default function Import() {
       }
       if (!text.trim()) { setParseError("No data to parse."); return; }
       const res = await parseCsv({ csv_text: text, format: csvFormat, source: csvSource || undefined });
-      setParsedRows(res.rows);
-      if (!res.rows.length) setParseError("No transactions found. Check the format selection.");
+      // Normalize: backend returns suggested_category, table uses category + suggested
+      const rows = res.rows.map((r) => ({
+        ...r,
+        category: r.suggested_category || r.category || "",
+        suggested: r.suggested_category || "",
+        source: csvSource || "",
+      }));
+      setParsedRows(rows);
+      if (!rows.length) setParseError("No transactions found. Check the format selection.");
     } catch (e) {
       setParseError(e.message);
     } finally {

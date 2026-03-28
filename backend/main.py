@@ -663,60 +663,111 @@ def _lookup_category(merchant: str, db: Session) -> Optional[str]:
 
 @app.post("/parse-csv")
 def parse_csv(body: ParseCsvRequest, db: Session = Depends(get_db)):
-    """Parse pasted CSV from AMEX/Visa/MC and return rows with suggested categories."""
-    reader = csv.reader(io.StringIO(body.text.strip()))
-    rows = list(reader)
-    if len(rows) < 2:
+    """Parse CSV from AMEX/Visa/MC and return rows with suggested categories.
+    Handles both headered (comma) and headerless tab-delimited (TD) formats.
+    """
+    raw = body.text.strip()
+    if not raw:
         return {"rows": []}
 
-    header = [h.strip().lower().replace(' ', '_') for h in rows[0]]
+    lines = raw.splitlines()
 
-    def col(names):
-        for n in names:
-            for i, h in enumerate(header):
-                if n in h:
-                    return i
-        return None
+    # Detect TD-style: tab-delimited, no header
+    # TD format: date\tmerchant\tdebit\tcredit\tbalance
+    def _is_td_row(line: str) -> bool:
+        parts = line.split('\t')
+        if len(parts) < 3:
+            return False
+        return bool(_parse_date(parts[0]))
 
-    date_col = col(['date', 'transaction_date'])
-    desc_col = col(['description', 'desc', 'merchant', 'name', 'payee'])
-    # Amount: prefer a single "amount" col; fall back to debit/cad$
-    amt_col  = col(['amount'])
-    debit_col = col(['debit'])
-    cad_col  = col(['cad$', 'cad'])
+    use_td = any('\t' in l for l in lines[:3]) and _is_td_row(lines[0])
 
     parsed = []
-    for row in rows[1:]:
-        if not row or all(not c.strip() for c in row):
-            continue
-        merchant = row[desc_col].strip() if desc_col is not None and desc_col < len(row) else ""
-        date_str = row[date_col].strip() if date_col is not None and date_col < len(row) else ""
-        if not merchant or not date_str:
-            continue
 
-        amount = None
-        if amt_col is not None and amt_col < len(row):
-            amount = _parse_amount(row[amt_col])
-        if (amount is None or amount <= 0) and debit_col is not None and debit_col < len(row):
-            amount = _parse_amount(row[debit_col])
-        if (amount is None or amount <= 0) and cad_col is not None and cad_col < len(row):
-            amount = _parse_amount(row[cad_col])
+    if use_td:
+        for line in lines:
+            if not line.strip():
+                continue
+            parts = [p.strip() for p in line.split('\t')]
+            if len(parts) < 3:
+                continue
+            date_str = parts[0]
+            merchant = parts[1]
+            # col 2 = debit (expense), col 3 = credit (payment), col 4 = balance
+            debit = _parse_amount(parts[2]) if len(parts) > 2 else None
+            credit = _parse_amount(parts[3]) if len(parts) > 3 else None
 
-        if amount is None or amount <= 0:
-            continue
+            parsed_date = _parse_date(date_str)
+            if not parsed_date or not merchant:
+                continue
 
-        parsed_date = _parse_date(date_str)
-        if not parsed_date:
-            continue
+            # Only import debits (expenses); skip credits/payments
+            if debit and debit > 0:
+                amount = debit
+            else:
+                continue
 
-        suggested = _lookup_category(merchant, db)
-        parsed.append({
-            "date": parsed_date,
-            "merchant": merchant,
-            "amount": round(amount, 2),
-            "suggested_category": suggested or "",
-            "confidence": "high" if suggested else "low",
-        })
+            suggested = _lookup_category(merchant, db)
+            parsed.append({
+                "date": parsed_date,
+                "merchant": merchant,
+                "amount": round(amount, 2),
+                "suggested_category": suggested or "",
+                "confidence": "high" if suggested else "low",
+            })
+    else:
+        # Header-based CSV (AMEX, RBC, CIBC, etc.)
+        reader = csv.reader(io.StringIO(raw))
+        rows = list(reader)
+        if len(rows) < 2:
+            return {"rows": []}
+
+        header = [h.strip().lower().replace(' ', '_') for h in rows[0]]
+
+        def col(names):
+            for n in names:
+                for i, h in enumerate(header):
+                    if n in h:
+                        return i
+            return None
+
+        date_col  = col(['date', 'transaction_date'])
+        desc_col  = col(['description', 'desc', 'merchant', 'name', 'payee'])
+        amt_col   = col(['amount'])
+        debit_col = col(['debit'])
+        cad_col   = col(['cad$', 'cad'])
+
+        for row in rows[1:]:
+            if not row or all(not c.strip() for c in row):
+                continue
+            merchant = row[desc_col].strip() if desc_col is not None and desc_col < len(row) else ""
+            date_str = row[date_col].strip() if date_col is not None and date_col < len(row) else ""
+            if not merchant or not date_str:
+                continue
+
+            amount = None
+            if amt_col is not None and amt_col < len(row):
+                amount = _parse_amount(row[amt_col])
+            if (amount is None or amount <= 0) and debit_col is not None and debit_col < len(row):
+                amount = _parse_amount(row[debit_col])
+            if (amount is None or amount <= 0) and cad_col is not None and cad_col < len(row):
+                amount = _parse_amount(row[cad_col])
+
+            if amount is None or amount <= 0:
+                continue
+
+            parsed_date = _parse_date(date_str)
+            if not parsed_date:
+                continue
+
+            suggested = _lookup_category(merchant, db)
+            parsed.append({
+                "date": parsed_date,
+                "merchant": merchant,
+                "amount": round(amount, 2),
+                "suggested_category": suggested or "",
+                "confidence": "high" if suggested else "low",
+            })
 
     return {"rows": parsed}
 
