@@ -13,7 +13,9 @@ export const currentMonth = new Date().getMonth() + 1;
  */
 export const fmt = (n, decimals = 0) => {
   if (n == null) return "—";
-  const fixed = Number(n).toFixed(decimals);
+  const coerced = Number(n);
+  const fixed = coerced.toFixed(decimals);
+  if (coerced > 1000 && n < 200) console.warn("[fmt BUG] n=", n, "typeof=", typeof n, "Number(n)=", coerced, "fixed=", fixed, new Error().stack);
   const [int, dec] = fixed.split(".");
   const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   return "$" + (dec !== undefined ? `${grouped}.${dec}` : grouped);
