@@ -151,7 +151,7 @@ export default function BudgetPlanner() {
   const overBudgetCount = alertRows.filter((row) => row.total > targetMap[row.category].amount).length;
   const approachingCount = alertRows.filter((row) => {
     const budget = targetMap[row.category].amount;
-    return row.total >= budget * 0.8 && row.total < budget;
+    return row.total >= budget * 0.8 && row.total <= budget;
   }).length;
 
   return (

@@ -388,7 +388,7 @@ def category_summary(year: int, month: Optional[int] = None, db: Session = Depen
     if month:
         q = q.where(models.Transaction.month == month)
     rows = db.execute(q).all()
-    return [{"category": r.category, "total": r.total, "count": r.count} for r in rows]
+    return [{"category": r.category, "total": round(r.total, 2), "count": r.count} for r in rows]
 
 
 @app.get("/summary/totals")
@@ -425,7 +425,7 @@ def category_trend(category: str, db: Session = Depends(get_db)):
         .group_by(models.Transaction.year, models.Transaction.month)
         .order_by(models.Transaction.year, models.Transaction.month)
     ).all()
-    return [{"year": r.year, "month": r.month, "total": r.total} for r in rows]
+    return [{"year": r.year, "month": r.month, "total": round(r.total, 2)} for r in rows]
 
 
 @app.get("/summary/projections")
