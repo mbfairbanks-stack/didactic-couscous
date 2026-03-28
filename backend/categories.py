@@ -52,7 +52,8 @@ CATEGORY_GROUPS: dict[str, str] = {
     "Alcohol": "Wants",
     "Cannabis": "Wants",
     "Fitness": "Wants",
-    "Newspaper": "Wants",
+    "Newspaper": "Wants",                   # kept for backward compat — migrates to Entertainment Subscriptions
+    "Newspapers": "Wants",                  # kept for backward compat — migrates to Entertainment Subscriptions
     "Health & Beauty": "Wants",
     "Subscriptions": "Wants",
     "Entertainment Subscriptions": "Wants", # consolidated: Netflix, Spotify, Prime Video, YouTube, Disney+, Paramount
@@ -95,6 +96,9 @@ SUGGESTED_RENAMES: dict[str, str] = {
     "Car Payment": "Transportation",
     "Uber": "Transportation",
     "Parking": "Transportation",
+    # Newspaper → Entertainment Subscriptions
+    "Newspaper": "Entertainment Subscriptions",
+    "Newspapers": "Entertainment Subscriptions",
     # Travel consolidation
     "Hotels": "Travel",
     "Flights": "Travel",

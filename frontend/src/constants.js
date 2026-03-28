@@ -26,6 +26,7 @@ export const WANTS = new Set([
   // Subscription legacy (migrate → Entertainment Subscriptions)
   "Apple Sub", "Spotify", "Prime Video", "Netflix", "YouTube",
   "Disney+", "Disney Plus Sub", "Paramount",
+  "Newspaper", "Newspapers",
   "Canva Sub", "Ipsy Sub",
 ]);
 
@@ -45,6 +46,5 @@ export const ALL_CATEGORIES = [
   "Entertainment", "Dining", "Coffee", "Alcohol", "Cannabis",
   "Clothes", "Gifts", "Charity", "Travel", "Fitness",
   "Home", "Entertainment Subscriptions", "Subscriptions",
-  "Health & Beauty", "Canva Sub", "Ipsy Sub",
-  "Newspaper", "Misc",
+  "Health & Beauty", "Canva Sub", "Ipsy Sub", "Misc",
 ];
