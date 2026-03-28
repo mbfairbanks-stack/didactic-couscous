@@ -345,6 +345,36 @@ def list_years(db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
+# Deduplicate
+# ---------------------------------------------------------------------------
+
+@app.post("/deduplicate")
+def deduplicate_transactions(db: Session = Depends(get_db)):
+    """
+    Remove duplicate transactions keeping the lowest id for each
+    (date, merchant, amount, category, year, month) group.
+    """
+    all_txns = db.execute(
+        select(models.Transaction).order_by(models.Transaction.id)
+    ).scalars().all()
+
+    seen = {}
+    to_delete = []
+    for txn in all_txns:
+        key = (txn.date, txn.merchant.strip().lower(), round(txn.amount, 2), txn.category, txn.year, txn.month)
+        if key in seen:
+            to_delete.append(txn)
+        else:
+            seen[key] = txn.id
+
+    for txn in to_delete:
+        db.delete(txn)
+    db.commit()
+
+    return {"duplicates_removed": len(to_delete)}
+
+
+# ---------------------------------------------------------------------------
 # Import
 # ---------------------------------------------------------------------------
 

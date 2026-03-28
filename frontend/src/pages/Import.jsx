@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { importFile, exportUrl, getYears } from "../api";
+import { importFile, exportUrl, getYears, deduplicate } from "../api";
 import { useEffect } from "react";
 
 const MONTH_LABELS = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -15,7 +15,22 @@ export default function Import() {
   const [exportYear, setExportYear] = useState(currentYear);
   const [exportMonth, setExportMonth] = useState("");
   const [years, setYears] = useState([currentYear]);
+  const [deduping, setDeduping] = useState(false);
+  const [dedupResult, setDedupResult] = useState(null);
   const fileRef = useRef();
+
+  const handleDeduplicate = async () => {
+    setDeduping(true);
+    setDedupResult(null);
+    try {
+      const res = await deduplicate();
+      setDedupResult(res.duplicates_removed);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setDeduping(false);
+    }
+  };
 
   useEffect(() => {
     getYears().then((y) => setYears(y.length ? y : [currentYear]));
@@ -110,6 +125,27 @@ export default function Import() {
           className="bg-yellow-400 text-black px-6 py-2.5 rounded-lg font-medium text-sm hover:bg-yellow-300 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {importing ? "Importing..." : "Import File"}
+        </button>
+      </div>
+
+      {/* Deduplicate section */}
+      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 space-y-4">
+        <h2 className="text-sm font-semibold text-zinc-200">Remove Duplicates</h2>
+        <p className="text-sm text-zinc-500">
+          Scans all transactions and removes exact duplicates — same date, merchant, amount, category, and month.
+          Safe to run after re-importing a file.
+        </p>
+        {dedupResult !== null && (
+          <div className="bg-green-900/20 border border-green-700/50 rounded-lg p-3 text-sm text-green-400">
+            {dedupResult === 0 ? "No duplicates found." : `Removed ${dedupResult} duplicate transaction${dedupResult !== 1 ? "s" : ""}.`}
+          </div>
+        )}
+        <button
+          onClick={handleDeduplicate}
+          disabled={deduping}
+          className="bg-zinc-700 text-zinc-100 px-6 py-2.5 rounded-lg font-medium text-sm hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {deduping ? "Scanning..." : "Remove Duplicates"}
         </button>
       </div>
 

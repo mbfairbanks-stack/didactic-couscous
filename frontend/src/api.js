@@ -70,6 +70,9 @@ export const importFile = (file) => {
   return req("/import", { method: "POST", body: fd });
 };
 
+// Deduplicate
+export const deduplicate = () => req("/deduplicate", { method: "POST" });
+
 // Export
 export const exportUrl = (year, month) => {
   const qs = month ? `?year=${year}&month=${month}` : `?year=${year}`;
