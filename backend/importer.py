@@ -362,6 +362,19 @@ _SKIP_SUMMARY_LABELS = {
     "income", "balance", "surplus", "deficit", "subscriptions",
 }
 
+# Only these categories are imported from the Summary tab.
+# Everything else is already captured by CC transaction imports.
+# If a category appears on the credit card, do NOT list it here.
+_BANK_ONLY_CATEGORIES = {
+    "Mortgage",
+    "Gas (Utility)",   # Enbridge
+    "Hydro",           # London Hydro
+    "Municipal Taxes", # Property taxes
+    "Debt Payment",    # LOC / loan payments
+    "Insurance",       # Life/home/auto/pet bundled premiums paid by bank
+    "Reliance",        # Reliance home comfort
+}
+
 
 def _map_summary_expense_category(label: str) -> str:
     l = label.lower()
@@ -427,6 +440,11 @@ def _import_expenses_fy26_summary(rows, detected_year: int | None, db: Session, 
             continue
 
         category = _map_summary_expense_category(label)
+
+        # Skip categories that are already captured by CC transactions.
+        # Only import expenses that are paid directly from the bank account.
+        if category not in _BANK_ONLY_CATEGORIES:
+            continue
 
         for col_idx, month in col_months.items():
             val = row[col_idx] if col_idx < len(row) else None
