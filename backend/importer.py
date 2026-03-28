@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 from datetime import date, datetime
 import openpyxl
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from models import Transaction, Income
 
