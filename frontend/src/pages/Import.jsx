@@ -318,10 +318,12 @@ export default function Import() {
         )}
 
         {csvResult && (
-          <div className="bg-green-900/20 border border-green-700/50 rounded-lg p-3 text-sm text-green-400">
-            Imported <strong>{csvResult.imported}</strong> transaction{csvResult.imported !== 1 ? "s" : ""}.
+          <div className={`border rounded-lg p-3 text-sm ${csvResult.imported > 0 ? "bg-green-900/20 border-green-700/50 text-green-400" : "bg-yellow-900/20 border-yellow-700/50 text-yellow-400"}`}>
+            {csvResult.imported > 0
+              ? <>Imported <strong>{csvResult.imported}</strong> transaction{csvResult.imported !== 1 ? "s" : ""}.</>
+              : <>No new transactions imported.</>}
             {csvResult.skipped_duplicates > 0 && (
-              <span className="text-zinc-500"> ({csvResult.skipped_duplicates} duplicate{csvResult.skipped_duplicates !== 1 ? "s" : ""} skipped)</span>
+              <span className="text-zinc-400"> {csvResult.skipped_duplicates} duplicate{csvResult.skipped_duplicates !== 1 ? "s" : ""} already exist and were skipped.</span>
             )}
           </div>
         )}
