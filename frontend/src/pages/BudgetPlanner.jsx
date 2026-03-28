@@ -63,6 +63,9 @@ export default function BudgetPlanner() {
     }
   }, [actuals]);
 
+  const subsInAll = allCategories.filter(r => r.category.toLowerCase().includes("subscri"));
+  if (subsInAll.length) console.log("[Budget debug] allCategories subs:", JSON.stringify(subsInAll));
+
   const targetMap = Object.fromEntries(targets.map((t) => [t.category, t]));
 
   const seenCategories = new Set([
