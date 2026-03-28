@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { getCategorySummary, getBudgetTargets, createBudgetTarget, updateBudgetTarget, deleteBudgetTarget, getYears } from "../api";
+import { getCategoryGroup } from "../constants";
 
 const MONTH_LABELS = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -166,90 +167,85 @@ export default function BudgetPlanner() {
         </button>
       </form>
 
-      {/* Table */}
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-zinc-700 text-left text-zinc-500 bg-zinc-800">
-              <th className="px-4 py-3 font-medium">Category</th>
-              <th className="px-4 py-3 font-medium text-right">Budget</th>
-              <th className="px-4 py-3 font-medium text-right">Actual</th>
-              <th className="px-4 py-3 font-medium text-right">Diff</th>
-              <th className="px-4 py-3 font-medium w-32">Progress</th>
-              <th className="px-4 py-3 font-medium"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {allCategories.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="text-center text-zinc-600 py-10">
-                  No data. Import a spreadsheet or add transactions.
-                </td>
-              </tr>
-            ) : (
-              allCategories.map((row) => {
-                const target = targetMap[row.category];
-                const budget = target?.amount ?? 0;
-                const diff = budget - row.total;
-                const isEditing = editing[row.category] !== undefined;
-
-                return (
-                  <tr key={row.category} className="border-b border-zinc-800 last:border-0 hover:bg-zinc-800">
-                    <td className="px-4 py-3 font-medium text-zinc-200">{row.category}</td>
-                    <td className="px-4 py-3 text-right">
-                      {isEditing ? (
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          className="bg-zinc-800 border border-zinc-600 rounded px-2 py-0.5 text-sm w-24 text-right text-zinc-100 focus:outline-none focus:border-yellow-400/50"
-                          value={editing[row.category]}
-                          onChange={(e) => setEditing({ ...editing, [row.category]: e.target.value })}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") saveTarget(row.category, editing[row.category]);
-                            if (e.key === "Escape") setEditing((ed) => { const n = { ...ed }; delete n[row.category]; return n; });
-                          }}
-                          autoFocus
-                        />
-                      ) : (
-                        <button
-                          onClick={() => setEditing({ ...editing, [row.category]: String(budget) })}
-                          className="text-right hover:text-yellow-400 w-full text-zinc-300"
-                        >
-                          {budget ? fmt(budget) : <span className="text-zinc-700">Set</span>}
-                        </button>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right text-zinc-300">{fmt(row.total)}</td>
-                    <td className={`px-4 py-3 text-right font-medium ${diff < 0 ? "text-red-400" : "text-green-400"}`}>
-                      {budget ? (diff < 0 ? `-${fmt(Math.abs(diff))}` : `+${fmt(diff)}`) : "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <ProgressBar actual={row.total} budget={budget} />
-                    </td>
-                    <td className="px-4 py-3 text-right text-xs">
-                      {isEditing ? (
-                        <button
-                          onClick={() => saveTarget(row.category, editing[row.category])}
-                          disabled={saving}
-                          className="text-yellow-400 hover:text-yellow-300 mr-2"
-                        >
-                          Save
-                        </button>
-                      ) : null}
-                      {target && (
-                        <button onClick={() => removeTarget(row.category)} className="text-red-500 hover:text-red-400">
-                          Remove
-                        </button>
-                      )}
-                    </td>
+      {/* Table grouped by Needs / Wants */}
+      {allCategories.length === 0 ? (
+        <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-10 text-center text-zinc-600 text-sm">
+          No data. Import a spreadsheet or add transactions.
+        </div>
+      ) : (
+        ["Needs", "Wants", "Other"].map((group) => {
+          const rows = allCategories.filter((r) => getCategoryGroup(r.category) === group);
+          if (!rows.length) return null;
+          const groupActual = rows.reduce((s, r) => s + r.total, 0);
+          const groupBudget = rows.reduce((s, r) => s + (targetMap[r.category]?.amount ?? 0), 0);
+          return (
+            <div key={group} className="bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden">
+              <div className="px-4 py-2.5 bg-zinc-800 border-b border-zinc-700 flex justify-between items-center">
+                <span className="text-xs font-bold text-yellow-400 uppercase tracking-widest">{group}</span>
+                <span className="text-xs text-zinc-500">
+                  {fmt(groupActual)}{groupBudget > 0 ? ` / ${fmt(groupBudget)}` : ""}
+                </span>
+              </div>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-800 text-left text-zinc-600">
+                    <th className="px-4 py-2 font-medium">Category</th>
+                    <th className="px-4 py-2 font-medium text-right">Budget</th>
+                    <th className="px-4 py-2 font-medium text-right">Actual</th>
+                    <th className="px-4 py-2 font-medium text-right">Diff</th>
+                    <th className="px-4 py-2 font-medium w-32">Progress</th>
+                    <th className="px-4 py-2"></th>
                   </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+                </thead>
+                <tbody>
+                  {rows.map((row) => {
+                    const target = targetMap[row.category];
+                    const budget = target?.amount ?? 0;
+                    const diff = budget - row.total;
+                    const isEditing = editing[row.category] !== undefined;
+                    return (
+                      <tr key={row.category} className="border-b border-zinc-800 last:border-0 hover:bg-zinc-800">
+                        <td className="px-4 py-2.5 font-medium text-zinc-200">{row.category}</td>
+                        <td className="px-4 py-2.5 text-right">
+                          {isEditing ? (
+                            <input type="number" step="0.01" min="0" autoFocus
+                              className="bg-zinc-800 border border-zinc-600 rounded px-2 py-0.5 text-sm w-24 text-right text-zinc-100 focus:outline-none focus:border-yellow-400/50"
+                              value={editing[row.category]}
+                              onChange={(e) => setEditing({ ...editing, [row.category]: e.target.value })}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") saveTarget(row.category, editing[row.category]);
+                                if (e.key === "Escape") setEditing((ed) => { const n = { ...ed }; delete n[row.category]; return n; });
+                              }} />
+                          ) : (
+                            <button onClick={() => setEditing({ ...editing, [row.category]: String(budget) })}
+                              className="text-right hover:text-yellow-400 w-full text-zinc-300">
+                              {budget ? fmt(budget) : <span className="text-zinc-700">Set</span>}
+                            </button>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-right text-zinc-300">{fmt(row.total)}</td>
+                        <td className={`px-4 py-2.5 text-right font-medium ${diff < 0 ? "text-red-400" : "text-green-400"}`}>
+                          {budget ? (diff < 0 ? `-${fmt(Math.abs(diff))}` : `+${fmt(diff)}`) : "—"}
+                        </td>
+                        <td className="px-4 py-2.5"><ProgressBar actual={row.total} budget={budget} /></td>
+                        <td className="px-4 py-2.5 text-right text-xs">
+                          {isEditing && (
+                            <button onClick={() => saveTarget(row.category, editing[row.category])}
+                              disabled={saving} className="text-yellow-400 hover:text-yellow-300 mr-2">Save</button>
+                          )}
+                          {target && (
+                            <button onClick={() => removeTarget(row.category)} className="text-red-500 hover:text-red-400">Remove</button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          );
+        })
+      )}
       <p className="text-xs text-zinc-600">Click any budget amount to edit inline. Press Enter to save, Escape to cancel.</p>
     </div>
   );

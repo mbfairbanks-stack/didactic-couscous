@@ -42,8 +42,8 @@ export default function Dashboard() {
 
   useEffect(() => {
     getMonthlySummary(year).then(setMonthly);
-    getTotals(year).then(setTotals);
-  }, [year]);
+    getTotals(year, null, month).then(setTotals);
+  }, [year, month]);
 
   useEffect(() => {
     getTotals(year, month).then(setMonthTotals);
@@ -62,9 +62,12 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       {/* Controls */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-zinc-100">Dashboard</h1>
-        <div className="flex gap-3">
+        <div className="flex gap-3 items-center">
+          <a href="/income" className="bg-yellow-400 text-black px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-yellow-300">
+            + Log Payday
+          </a>
           <select
             className="bg-zinc-900 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100"
             value={year}
@@ -86,7 +89,7 @@ export default function Dashboard() {
 
       {/* Year stats */}
       <div>
-        <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">{year} Year to Date</h2>
+        <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">{year} Year to Date (Jan – {MONTH_LABELS[month]})</h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <StatCard label="Total Income" value={fmt(totals.total_income)} color="green" />
           <StatCard label="Total Expenses" value={fmt(totals.total_expenses)} color="red" />

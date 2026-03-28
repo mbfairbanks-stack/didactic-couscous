@@ -154,6 +154,19 @@ def list_income(
 
 @app.post("/income", response_model=IncomeOut, status_code=201)
 def create_income(body: IncomeCreate, db: Session = Depends(get_db)):
+    existing = db.execute(
+        select(models.Income).where(
+            models.Income.year == body.year,
+            models.Income.month == body.month,
+            models.Income.person == body.person,
+            models.Income.income_type == body.income_type,
+        )
+    ).scalar_one_or_none()
+    if existing:
+        existing.amount = body.amount
+        db.commit()
+        db.refresh(existing)
+        return existing
     income = models.Income(**body.model_dump())
     db.add(income)
     db.commit()
@@ -294,13 +307,16 @@ def category_summary(year: int, month: Optional[int] = None, db: Session = Depen
 
 
 @app.get("/summary/totals")
-def totals_summary(year: int, month: Optional[int] = None, db: Session = Depends(get_db)):
+def totals_summary(year: int, month: Optional[int] = None, through_month: Optional[int] = None, db: Session = Depends(get_db)):
     """Returns high-level totals: total income, total expenses, balance."""
     q_exp = select(func.sum(models.Transaction.amount)).where(models.Transaction.year == year)
     q_inc = select(func.sum(models.Income.amount)).where(models.Income.year == year)
     if month:
         q_exp = q_exp.where(models.Transaction.month == month)
         q_inc = q_inc.where(models.Income.month == month)
+    elif through_month:
+        q_exp = q_exp.where(models.Transaction.month <= through_month)
+        q_inc = q_inc.where(models.Income.month <= through_month)
     total_expenses = db.execute(q_exp).scalar() or 0
     total_income = db.execute(q_inc).scalar() or 0
     return {

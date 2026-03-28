@@ -52,9 +52,11 @@ export const getCategorySummary = (year, month) => {
   const qs = month ? `?year=${year}&month=${month}` : `?year=${year}`;
   return req(`/summary/categories${qs}`);
 };
-export const getTotals = (year, month) => {
-  const qs = month ? `?year=${year}&month=${month}` : `?year=${year}`;
-  return req(`/summary/totals${qs}`);
+export const getTotals = (year, month, throughMonth) => {
+  const params = new URLSearchParams({ year });
+  if (month) params.set("month", month);
+  if (throughMonth) params.set("through_month", throughMonth);
+  return req(`/summary/totals?${params}`);
 };
 export const getCategoryTrend = (category) =>
   req(`/summary/category-trend?category=${encodeURIComponent(category)}`);

@@ -5,6 +5,7 @@ const links = [
   { to: "/transactions", label: "Transactions" },
   { to: "/budget", label: "Budget Planner" },
   { to: "/charts", label: "Charts" },
+  { to: "/income", label: "Log Income" },
   { to: "/insights", label: "AI Insights" },
   { to: "/import", label: "Import / Export" },
 ];
