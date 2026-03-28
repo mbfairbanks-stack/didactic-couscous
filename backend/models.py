@@ -15,6 +15,7 @@ class Transaction(Base):
     is_fixed = Column(Boolean, default=False)
     notes = Column(String, nullable=True)
     source = Column(String, nullable=True)  # e.g. "amex", "visa", "mastercard"
+    is_recurring = Column(Boolean, default=False)
 
 
 class Income(Base):

@@ -41,6 +41,7 @@ class TransactionCreate(BaseModel):
     year: int
     month: int
     is_fixed: bool = False
+    is_recurring: bool = False
     notes: Optional[str] = None
     source: Optional[str] = None
 
@@ -51,6 +52,7 @@ class TransactionUpdate(BaseModel):
     amount: Optional[float] = None
     category: Optional[str] = None
     is_fixed: Optional[bool] = None
+    is_recurring: Optional[bool] = None
     notes: Optional[str] = None
 
 
@@ -94,6 +96,7 @@ def list_transactions(
     year: Optional[int] = None,
     month: Optional[int] = None,
     category: Optional[str] = None,
+    source: Optional[str] = None,
     skip: int = 0,
     limit: int = 1000,
     db: Session = Depends(get_db),
@@ -105,8 +108,83 @@ def list_transactions(
         q = q.where(models.Transaction.month == month)
     if category:
         q = q.where(models.Transaction.category == category)
+    if source:
+        q = q.where(models.Transaction.source == source)
     q = q.order_by(models.Transaction.date.desc()).offset(skip).limit(limit)
     return db.execute(q).scalars().all()
+
+
+@app.get("/transactions/export")
+def export_transactions_csv(
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    category: Optional[str] = None,
+    source: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Export transactions as a CSV file."""
+    q = select(models.Transaction)
+    if year:
+        q = q.where(models.Transaction.year == year)
+    if month:
+        q = q.where(models.Transaction.month == month)
+    if category:
+        q = q.where(models.Transaction.category == category)
+    if source:
+        q = q.where(models.Transaction.source == source)
+    q = q.order_by(models.Transaction.date.desc())
+    txns = db.execute(q).scalars().all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["date", "merchant", "amount", "category", "is_fixed", "is_recurring", "notes", "source"])
+    for t in txns:
+        writer.writerow([t.date, t.merchant, t.amount, t.category, t.is_fixed, t.is_recurring, t.notes, t.source])
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=transactions.csv"},
+    )
+
+
+@app.post("/transactions/auto-categorize")
+def auto_categorize_transactions(db: Session = Depends(get_db)):
+    """Auto-categorize transactions where category is null or 'Uncategorized'."""
+    uncategorized = db.execute(
+        select(models.Transaction).where(
+            (models.Transaction.category == None) | (models.Transaction.category == "Uncategorized")
+        )
+    ).scalars().all()
+
+    updated = 0
+    skipped = 0
+    for txn in uncategorized:
+        # Find the most common category for this merchant in other transactions
+        rows = db.execute(
+            select(
+                models.Transaction.category,
+                func.count(models.Transaction.id).label("cnt"),
+            )
+            .where(
+                models.Transaction.merchant == txn.merchant,
+                models.Transaction.id != txn.id,
+                models.Transaction.category != None,
+                models.Transaction.category != "Uncategorized",
+            )
+            .group_by(models.Transaction.category)
+            .order_by(func.count(models.Transaction.id).desc())
+            .limit(1)
+        ).first()
+        if rows:
+            txn.category = rows.category
+            updated += 1
+        else:
+            skipped += 1
+
+    db.commit()
+    return {"updated": updated, "skipped": skipped}
 
 
 @app.post("/transactions", response_model=TransactionOut, status_code=201)
@@ -415,6 +493,43 @@ def projections_summary(year: int, month: int, db: Session = Depends(get_db)):
         "projected_year_expenses": round(projected_expenses, 2),
         "projected_year_balance": round(projected_income - projected_expenses, 2),
     }
+
+
+@app.get("/summary/forecast")
+def forecast_summary(year: int, month: int, db: Session = Depends(get_db)):
+    """Extrapolate month-end spending per category based on days elapsed."""
+    from datetime import datetime
+    import calendar
+
+    days_in_month = calendar.monthrange(year, month)[1]
+    now = datetime.now()
+    if now.year == year and now.month == month:
+        days_elapsed = min(now.day, days_in_month)
+    else:
+        days_elapsed = days_in_month
+
+    rows = db.execute(
+        select(
+            models.Transaction.category,
+            func.sum(models.Transaction.amount).label("actual"),
+        )
+        .where(models.Transaction.year == year, models.Transaction.month == month)
+        .group_by(models.Transaction.category)
+    ).all()
+
+    result = []
+    for r in rows:
+        if r.actual and r.actual > 0:
+            forecast = (r.actual / days_elapsed * days_in_month) if days_elapsed > 0 else r.actual
+            result.append({
+                "category": r.category,
+                "actual": round(r.actual, 2),
+                "forecast": round(forecast, 2),
+                "days_elapsed": days_elapsed,
+                "days_in_month": days_in_month,
+            })
+
+    return result
 
 
 @app.get("/categories")
