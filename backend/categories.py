@@ -31,7 +31,7 @@ CATEGORY_GROUPS: dict[str, str] = {
     # --- Wants (discretionary) ---
     "Entertainment": "Wants",
     "Dining": "Wants",
-    "Take Out": "Wants",
+    "Take Out": "Wants",     # kept for backward compat — migrates to Dining
     "Clothes": "Wants",
     "Gifts": "Wants",
     "Charity": "Wants",
@@ -79,4 +79,5 @@ SUGGESTED_RENAMES: dict[str, str] = {
     "Pet Insurance": "Pets",
     "Car Insurance": "Insurance",
     "Home Insurance": "Insurance",
+    "Take Out": "Dining",
 }

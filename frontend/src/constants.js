@@ -14,7 +14,7 @@ export const NEEDS = new Set([
 
 export const WANTS = new Set([
   // Discretionary
-  "Entertainment", "Dining", "Take Out",
+  "Entertainment", "Dining",
   "Clothes", "Gifts", "Charity", "Travel", "Coffee",
   "Home", "Misc", "Fuel", "Gas", "Car Maintenance", "Car", "Car Payment", "Uber",
   "Alcohol", "Cannabis", "Fitness", "Newspaper", "Health & Beauty",
@@ -35,7 +35,7 @@ export const ALL_CATEGORIES = [
   "Day Care", "Transportation", "Internet", "Security", "Mobile",
   "Insurance", "Municipal Taxes", "Debt Payment", "Reliance", "Medical",
   // Wants
-  "Entertainment", "Dining", "Take Out", "Coffee", "Alcohol", "Cannabis",
+  "Entertainment", "Dining", "Coffee", "Alcohol", "Cannabis",
   "Clothes", "Gifts", "Charity", "Travel", "Fitness",
   "Home", "Car Maintenance", "Car Payment", "Fuel", "Uber",
   "Health & Beauty", "Subscriptions", "Apple Sub", "Spotify",
