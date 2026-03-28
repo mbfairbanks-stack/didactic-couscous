@@ -435,21 +435,30 @@ def list_years(db: Session = Depends(get_db)):
 # Deduplicate
 # ---------------------------------------------------------------------------
 
+BANK_ONLY_CATEGORIES = {
+    "Mortgage", "Gas (Utility)", "Hydro",
+    "Municipal Taxes", "Debt Payment", "Insurance", "Reliance",
+}
+
 @app.post("/cleanup-summary")
 def cleanup_summary(db: Session = Depends(get_db)):
-    """Remove bad rows that were incorrectly imported from the Summary sheet."""
-    bad_merchants = {"Total Income", "Balance", "Savings", "Net Income", "Gross Income",
-                     "Savings Rate", "Surplus", "Deficit", "Income", "Subscriptions"}
-    bad_categories = {"Total Income", "Balance", "Savings", "Subscriptions"}
+    """Remove all summary-source rows that aren't bank-only expenses.
+
+    This removes any CC-covered categories that were incorrectly double-imported
+    from the Summary tab (e.g. Groceries, Mobile, Internet, Security).
+    """
     txns = db.execute(
         select(models.Transaction).where(models.Transaction.source == "summary")
     ).scalars().all()
     removed = 0
     for txn in txns:
         merchant_lower = (txn.merchant or "").strip().lower()
-        if (txn.merchant in bad_merchants or txn.category in bad_categories
-                or "income" in merchant_lower or "saving" in merchant_lower
-                or merchant_lower.startswith("total") or merchant_lower == "balance"):
+        is_bad_label = (
+            "income" in merchant_lower or "saving" in merchant_lower
+            or merchant_lower.startswith("total") or merchant_lower == "balance"
+        )
+        is_cc_covered = txn.category not in BANK_ONLY_CATEGORIES
+        if is_bad_label or is_cc_covered:
             db.delete(txn)
             removed += 1
     db.commit()
