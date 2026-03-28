@@ -12,9 +12,9 @@ CATEGORY_GROUPS: dict[str, str] = {
     "Gas (Utility)": "Needs",     # kept for backward compat with existing transactions
     "Hydro": "Needs",
     "Groceries": "Needs",
-    "Pets": "Needs",              # consolidated: Pet Food & Toys, Vet, Pet Insurance → Pets
+    "Pets": "Needs",              # consolidated: Pet Food & Toys, Vet, Pet Insurance, Day Care → Pets
     "Pet Food & Toys": "Needs",   # kept for backward compat
-    "Day Care": "Needs",
+    "Day Care": "Needs",          # kept for backward compat — migrates to Pets
     "Vet": "Needs",               # kept for backward compat
     "Pet Insurance": "Needs",     # kept for backward compat
     "Transportation": "Needs",    # all transport: transit, car, fuel, uber
@@ -85,6 +85,7 @@ SUGGESTED_RENAMES: dict[str, str] = {
     "Pet Food & Toys": "Pets",
     "Vet": "Pets",
     "Pet Insurance": "Pets",
+    "Day Care": "Pets",
     "Car Insurance": "Insurance",
     "Home Insurance": "Insurance",
     "Take Out": "Dining",

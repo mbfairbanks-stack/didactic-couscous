@@ -6,7 +6,7 @@
 export const NEEDS = new Set([
   // Non-discretionary
   "Mortgage", "Natural Gas", "Gas (Utility)", "Hydro", "Groceries",
-  "Pets", "Pet Food & Toys", "Day Care", "Vet", "Pet Insurance",
+  "Pets", "Pet Food & Toys", "Day Care", "Vet", "Pet Insurance",  // Day Care → Pets
   "Transportation", "Internet", "Security", "Mobile",
   "Insurance", "Car Insurance", "Home Insurance",
   "Municipal Taxes", "Debt Payment", "Medical",
@@ -40,7 +40,7 @@ export const getCategoryGroup = (category) => {
 export const ALL_CATEGORIES = [
   // Needs
   "Mortgage", "Natural Gas", "Hydro", "Groceries", "Pets",
-  "Day Care", "Transportation", "Internet", "Security", "Mobile",
+  "Transportation", "Internet", "Security", "Mobile",
   "Insurance", "Municipal Taxes", "Debt Payment", "Medical",
   // Wants
   "Entertainment", "Dining", "Coffee", "Alcohol", "Cannabis",
