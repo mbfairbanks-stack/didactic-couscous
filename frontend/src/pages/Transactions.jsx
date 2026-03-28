@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { getTransactions, createTransaction, updateTransaction, deleteTransaction, getCategories, getYears } from "../api";
+import { getTransactions, createTransaction, updateTransaction, deleteTransaction, getCategories, getYears, exportTransactionsCsv } from "../api";
 import { MONTH_LABELS, currentYear, currentMonth, fmtCents as fmt } from "../utils";
 
 const emptyForm = {
@@ -25,6 +25,8 @@ export default function Transactions() {
   const [amountMin, setAmountMin] = useState("");
   const [amountMax, setAmountMax] = useState("");
   const [fixedOnly, setFixedOnly] = useState(false);
+  const [recurringOnly, setRecurringOnly] = useState(false);
+  const [exportingCsv, setExportingCsv] = useState(false);
   const [sortField, setSortField] = useState("date");
   const [sortDir, setSortDir] = useState("desc");
   const [colFilter, setColFilter] = useState({ date: "", merchant: "", category: "", source: "" });
@@ -66,7 +68,7 @@ export default function Transactions() {
   // Clear selection when visible set changes due to filter changes
   useEffect(() => {
     setSelected(new Set());
-  }, [year, month, filterCategory, filterSource, search, amountMin, amountMax, fixedOnly, colFilter]);
+  }, [year, month, filterCategory, filterSource, search, amountMin, amountMax, fixedOnly, recurringOnly, colFilter]);
 
   const allSources = [...new Set(transactions.map((t) => t.source).filter(Boolean))].sort();
 
@@ -78,6 +80,7 @@ export default function Transactions() {
       if (amountMin !== "" && t.amount < parseFloat(amountMin)) return false;
       if (amountMax !== "" && t.amount > parseFloat(amountMax)) return false;
       if (fixedOnly && !t.is_fixed) return false;
+      if (recurringOnly && !t.is_recurring) return false;
       if (colFilter.date && !t.date?.includes(colFilter.date)) return false;
       if (colFilter.merchant && !t.merchant?.toLowerCase().includes(colFilter.merchant.toLowerCase())) return false;
       if (colFilter.category && !t.category?.toLowerCase().includes(colFilter.category.toLowerCase())) return false;
@@ -272,18 +275,54 @@ export default function Transactions() {
     load();
   };
 
+  // ── Recurring toggle ─────────────────────────────────────────────────────────
+
+  const toggleRecurring = async (txn) => {
+    try {
+      await updateTransaction(txn.id, { ...txn, is_recurring: !txn.is_recurring });
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  // ── CSV Export ───────────────────────────────────────────────────────────────
+
+  const handleExportCsv = async () => {
+    setExportingCsv(true);
+    const params = { year };
+    if (month) params.month = month;
+    if (filterCategory) params.category = filterCategory;
+    try {
+      await exportTransactionsCsv(params);
+    } catch (e) {
+      setError("Export failed: " + e.message);
+    } finally {
+      setExportingCsv(false);
+    }
+  };
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-zinc-100">Transactions</h1>
-        <button
-          onClick={() => { setShowForm(true); setEditId(null); setForm(emptyForm); }}
-          className="bg-yellow-400 text-black px-4 py-2 rounded-lg text-sm font-medium hover:bg-yellow-300"
-        >
-          + Add Transaction
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleExportCsv}
+            disabled={exportingCsv}
+            className="border border-zinc-700 text-zinc-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {exportingCsv ? "Exporting..." : "Export CSV"}
+          </button>
+          <button
+            onClick={() => { setShowForm(true); setEditId(null); setForm(emptyForm); }}
+            className="bg-yellow-400 text-black px-4 py-2 rounded-lg text-sm font-medium hover:bg-yellow-300"
+          >
+            + Add Transaction
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -351,9 +390,14 @@ export default function Transactions() {
               onChange={(e) => { setFixedOnly(e.target.checked); setPage(0); }} />
             Fixed only
           </label>
-          {(search || filterCategory || filterSource || amountMin || amountMax || fixedOnly || Object.values(colFilter).some(Boolean)) && (
+          <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
+            <input type="checkbox" className="accent-yellow-400" checked={recurringOnly}
+              onChange={(e) => { setRecurringOnly(e.target.checked); setPage(0); }} />
+            Recurring only
+          </label>
+          {(search || filterCategory || filterSource || amountMin || amountMax || fixedOnly || recurringOnly || Object.values(colFilter).some(Boolean)) && (
             <button
-              onClick={() => { setSearch(""); setFilterCategory(""); setFilterSource(""); setAmountMin(""); setAmountMax(""); setFixedOnly(false); setColFilter({ date: "", merchant: "", category: "", source: "" }); setPage(0); }}
+              onClick={() => { setSearch(""); setFilterCategory(""); setFilterSource(""); setAmountMin(""); setAmountMax(""); setFixedOnly(false); setRecurringOnly(false); setColFilter({ date: "", merchant: "", category: "", source: "" }); setPage(0); }}
               className="text-xs text-zinc-500 hover:text-zinc-300 underline ml-auto"
             >
               Clear all filters
@@ -406,6 +450,7 @@ export default function Transactions() {
                     onClick={() => { if (sortField === "source") setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortField("source"); setSortDir("asc"); } }}>
                     Source{sortField === "source" ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
                   </th>
+                  <th className="px-4 py-2 font-medium text-center" title="Recurring">↻</th>
                   <th className="px-4 py-2 font-medium"></th>
                 </tr>
                 <tr className="border-b border-zinc-700 bg-zinc-800/60">
@@ -432,6 +477,8 @@ export default function Transactions() {
                       onChange={(e) => { setColFilter(cf => ({ ...cf, source: e.target.value })); setPage(0); }}
                     />
                   </td>
+                  {/* Empty cell for recurring column */}
+                  <td className="px-2 py-1"></td>
                   <td className="px-2 py-1 text-right">
                     {Object.values(colFilter).some(Boolean) && (
                       <button onClick={() => { setColFilter({ date: "", merchant: "", category: "", source: "" }); setPage(0); }}
@@ -444,7 +491,7 @@ export default function Transactions() {
                 {paginated.map((txn) => (
                   <tr
                     key={txn.id}
-                    className={`border-b border-zinc-800 last:border-0 hover:bg-zinc-800 ${selected.has(txn.id) ? "bg-yellow-400/5" : ""}`}
+                    className={`border-b border-zinc-800 last:border-0 hover:bg-zinc-800 ${txn.is_recurring ? "bg-yellow-400/5" : ""} ${selected.has(txn.id) ? "bg-yellow-400/10" : ""}`}
                   >
                     {/* Row checkbox */}
                     <td className="px-3 py-2 w-8">
