@@ -40,7 +40,7 @@ class TransactionCreate(BaseModel):
     category: str
     year: int
     month: int
-    is_fixed: bool = False
+    is_fixed: Optional[bool] = False
     is_recurring: Optional[bool] = False
     notes: Optional[str] = None
     source: Optional[str] = None

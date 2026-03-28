@@ -6,7 +6,10 @@ async function req(path, options = {}) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     const detail = err.detail;
     const msg = Array.isArray(detail)
-      ? detail.map((e) => e.msg || JSON.stringify(e)).join("; ")
+      ? detail.map((e) => {
+          const loc = Array.isArray(e.loc) ? e.loc.join(".") : "";
+          return loc ? `[${loc}] ${e.msg}` : (e.msg || JSON.stringify(e));
+        }).join("; ")
       : detail || "Request failed";
     throw new Error(msg);
   }

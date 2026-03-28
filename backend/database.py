@@ -37,6 +37,7 @@ def run_migrations():
             op.add_column('transactions', sa.Column('is_recurring', sa.Boolean(), server_default='0', nullable=True))
         # Backfill any NULL values left by the migration
         conn.execute(sa.text("UPDATE transactions SET is_recurring = 0 WHERE is_recurring IS NULL"))
+        conn.execute(sa.text("UPDATE transactions SET is_fixed = 0 WHERE is_fixed IS NULL"))
         conn.commit()
 
 
