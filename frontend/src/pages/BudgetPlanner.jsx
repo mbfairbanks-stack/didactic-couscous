@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useLayoutEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { getCategorySummary, getBudgetTargets, createBudgetTarget, updateBudgetTarget, deleteBudgetTarget, getYears, autoPopulateBudget, copyBudgetFromMonth, getCategories } from "../api";
 import { getCategoryGroup } from "../constants";
 import { MONTH_LABELS, currentYear, currentMonth, fmt } from "../utils";
@@ -55,22 +55,6 @@ export default function BudgetPlanner() {
 
   useEffect(() => { load(); }, [load]);
 
-  useLayoutEffect(() => {
-    document.querySelectorAll("tr").forEach((tr) => {
-      if (tr.textContent.includes("Entertainment Subscriptions")) {
-        const td = tr.querySelectorAll("td")[2];
-        if (td) console.log("[useLayoutEffect] EntSubs actual cell innerHTML:", td.innerHTML);
-      }
-    });
-  });
-
-  useEffect(() => {
-    const subs = actuals.filter(a => a.category.toLowerCase().includes("subscri"));
-    if (subs.length) {
-      console.log("[Budget debug] subscription actuals:", JSON.stringify(subs));
-      subs.forEach(s => console.log(`[Budget debug] fmt(${s.total}) =`, fmt(s.total)));
-    }
-  }, [actuals]);
 
   const targetMap = Object.fromEntries(targets.map((t) => [t.category, t]));
 
@@ -87,9 +71,6 @@ export default function BudgetPlanner() {
       .filter((c) => !seenCategories.has(c))
       .map((c) => ({ category: c, total: 0, count: 0 })),
   ];
-
-  const subsInAll = allCategories.filter(r => r.category.toLowerCase().includes("subscri"));
-  if (subsInAll.length) console.log("[Budget debug] allCategories subs:", JSON.stringify(subsInAll));
 
   const totalActual = actuals.reduce((s, a) => s + a.total, 0);
   const totalBudget = targets.reduce((s, t) => s + t.amount, 0);
@@ -369,10 +350,6 @@ export default function BudgetPlanner() {
                     const budget = target?.amount ?? 0;
                     const diff = budget - row.total;
                     const isEditing = editing[row.category] !== undefined;
-                    if (row.category.toLowerCase().includes("subscri")) {
-                      const desc = Object.getOwnPropertyDescriptor(row, "total");
-                      console.log("[Render]", row.category, "total=", row.total, "fmt=", fmt(row.total), "budget=", budget, "descriptor=", desc);
-                    }
                     return (
                       <tr key={row.category} className="border-b border-zinc-800 last:border-0 hover:bg-zinc-800">
                         <td className="px-4 py-2.5 font-medium text-zinc-200">{row.category}</td>
@@ -394,18 +371,18 @@ export default function BudgetPlanner() {
                           )}
                         </td>
                         <td className={`px-4 py-2.5 text-right font-medium ${
-                          budget && row.total > budget
+                          budget > 0 && row.total > budget
                             ? "bg-red-900/30 text-red-400"
-                            : budget && row.total >= budget * 0.8
+                            : budget > 0 && row.total >= budget * 0.8
                             ? "bg-yellow-900/20 text-yellow-300"
                             : "text-zinc-300"
                         }`}>
                           <span className="flex items-center justify-end gap-1.5">
-                            {`${row.total}|$` + Math.round(row.total)}
-                            {budget && row.total > budget && (
+                            {fmt(row.total)}
+                            {budget > 0 && row.total > budget && (
                               <span className="bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">Over!</span>
                             )}
-                            {budget && row.total >= budget * 0.8 && row.total <= budget && (
+                            {budget > 0 && row.total >= budget * 0.8 && row.total <= budget && (
                               <span title="Approaching limit">⚠</span>
                             )}
                           </span>
