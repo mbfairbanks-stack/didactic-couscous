@@ -523,19 +523,6 @@ def _upsert_income(db: Session, year: int, month: int, person: str, itype: str, 
 
 
 def _upsert_transaction(db: Session, txn: Transaction, counts: dict):
-    """Insert transaction only if no identical record exists (dedup at import time)."""
-    existing = db.execute(
-        select(Transaction).where(
-            Transaction.date == txn.date,
-            Transaction.merchant == txn.merchant,
-            Transaction.amount == txn.amount,
-            Transaction.category == txn.category,
-            Transaction.year == txn.year,
-            Transaction.month == txn.month,
-        )
-    ).first()
-    if existing:
-        counts["skipped"] += 1
-        return
+    """Add transaction to the session. Use Remove Duplicates after importing."""
     db.add(txn)
     counts["transactions"] += 1
