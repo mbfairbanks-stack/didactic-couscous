@@ -1,11 +1,12 @@
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func, distinct
 from pydantic import BaseModel
 from typing import Optional
 from datetime import date
-import tempfile, os, io
+import tempfile, os, io, json
 
 import models, database
 from database import engine, get_db
@@ -435,3 +436,156 @@ def export_xlsx(year: int, month: Optional[int] = None, db: Session = Depends(ge
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+# ---------------------------------------------------------------------------
+# AI Insights
+# ---------------------------------------------------------------------------
+
+MONTH_NAMES = ["", "January", "February", "March", "April", "May", "June",
+               "July", "August", "September", "October", "November", "December"]
+
+
+def _build_insights_context(year: int, month: int, db: Session) -> str:
+    # Current month spending by category
+    cat_rows = db.execute(
+        select(models.Transaction.category, func.sum(models.Transaction.amount).label("total"))
+        .where(models.Transaction.year == year, models.Transaction.month == month)
+        .group_by(models.Transaction.category)
+        .order_by(func.sum(models.Transaction.amount).desc())
+    ).all()
+
+    # Current month income
+    income_rows = db.execute(
+        select(models.Income.person, models.Income.income_type, models.Income.amount)
+        .where(models.Income.year == year, models.Income.month == month)
+        .order_by(models.Income.person)
+    ).all()
+    total_income = sum(r.amount for r in income_rows)
+
+    # Budget targets for this year (month=None = annual default)
+    target_rows = db.execute(
+        select(models.BudgetTarget.category, models.BudgetTarget.amount)
+        .where(models.BudgetTarget.year == year, models.BudgetTarget.month == None)
+    ).all()
+    targets = {r.category: r.amount for r in target_rows}
+
+    # Historical category averages (all data excluding current month)
+    hist_rows = db.execute(
+        select(
+            models.Transaction.category,
+            func.avg(func.sum(models.Transaction.amount)).label("avg_monthly"),
+        )
+        .where(
+            ~((models.Transaction.year == year) & (models.Transaction.month == month))
+        )
+        .group_by(models.Transaction.year, models.Transaction.month, models.Transaction.category)
+    ).all()
+    # Re-aggregate: avg per category across months
+    from collections import defaultdict
+    hist_totals: dict[str, list[float]] = defaultdict(list)
+    raw_hist = db.execute(
+        select(
+            models.Transaction.year,
+            models.Transaction.month,
+            models.Transaction.category,
+            func.sum(models.Transaction.amount).label("total"),
+        )
+        .where(
+            ~((models.Transaction.year == year) & (models.Transaction.month == month))
+        )
+        .group_by(models.Transaction.year, models.Transaction.month, models.Transaction.category)
+    ).all()
+    for r in raw_hist:
+        hist_totals[r.category].append(r.total)
+    hist_avg = {cat: sum(vals) / len(vals) for cat, vals in hist_totals.items()}
+
+    # YTD totals
+    ytd_exp = db.execute(
+        select(func.sum(models.Transaction.amount))
+        .where(models.Transaction.year == year, models.Transaction.month <= month)
+    ).scalar() or 0
+    ytd_inc = db.execute(
+        select(func.sum(models.Income.amount))
+        .where(models.Income.year == year, models.Income.month <= month)
+    ).scalar() or 0
+
+    # Build prompt
+    month_label = MONTH_NAMES[month] if 1 <= month <= 12 else str(month)
+    total_expenses = sum(r.total for r in cat_rows)
+
+    lines = [
+        f"You are a personal finance advisor analyzing a Canadian household budget.",
+        f"",
+        f"## Period: {month_label} {year}",
+        f"",
+        f"### Income",
+    ]
+    if income_rows:
+        for r in income_rows:
+            lines.append(f"- {r.person} ({r.income_type}): ${r.amount:,.0f}")
+    else:
+        lines.append("- No income recorded for this month")
+    lines.append(f"- **Total household income: ${total_income:,.0f}**")
+    lines.append("")
+    lines.append(f"### Spending by Category (total: ${total_expenses:,.0f})")
+    lines.append("| Category | This Month | Budget Target | Hist. Avg | vs Budget | vs Avg |")
+    lines.append("|---|---|---|---|---|---|")
+    for r in cat_rows:
+        budget = targets.get(r.category)
+        avg = hist_avg.get(r.category)
+        vs_budget = f"+${r.total - budget:,.0f} over" if budget and r.total > budget else (f"${budget - r.total:,.0f} under" if budget else "N/A")
+        vs_avg = f"+${r.total - avg:,.0f} ({((r.total/avg)-1)*100:.0f}%)" if avg else "N/A"
+        lines.append(
+            f"| {r.category} | ${r.total:,.0f} | {'$'+f'{budget:,.0f}' if budget else 'N/A'} | {'$'+f'{avg:,.0f}' if avg else 'N/A'} | {vs_budget} | {vs_avg} |"
+        )
+
+    savings = total_income - total_expenses
+    savings_rate = (savings / total_income * 100) if total_income else 0
+    lines += [
+        "",
+        f"### Month Summary",
+        f"- Net savings: ${savings:,.0f} ({savings_rate:.1f}% savings rate)",
+        f"- YTD income: ${ytd_inc:,.0f} | YTD expenses: ${ytd_exp:,.0f} | YTD balance: ${ytd_inc - ytd_exp:,.0f}",
+        "",
+        "---",
+        "",
+        "Please provide actionable, specific financial insights for this household. Include:",
+        "1. **Top spending concerns** — categories that are high vs budget or historical average",
+        "2. **Positive patterns** — where they are doing well",
+        "3. **Concrete suggestions** — specific ways to reduce spending with realistic targets",
+        "4. **Savings outlook** — comment on the savings rate and any recommendations",
+        "5. **One priority action** — the single most impactful thing they could do this month",
+        "",
+        "Keep the tone practical and encouraging. Use Canadian dollar amounts. Be specific with numbers.",
+    ]
+
+    return "\n".join(lines)
+
+
+@app.get("/insights")
+async def get_insights(year: int, month: int, db: Session = Depends(get_db)):
+    import anthropic as anthropic_sdk
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise HTTPException(400, "ANTHROPIC_API_KEY environment variable is not set")
+
+    context = _build_insights_context(year, month, db)
+
+    async def stream_insights():
+        client = anthropic_sdk.Anthropic(api_key=api_key)
+        try:
+            with client.messages.stream(
+                model="claude-opus-4-6",
+                max_tokens=2048,
+                thinking={"type": "adaptive"},
+                messages=[{"role": "user", "content": context}],
+            ) as stream:
+                for text in stream.text_stream:
+                    yield f"data: {json.dumps({'text': text})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(stream_insights(), media_type="text/event-stream")

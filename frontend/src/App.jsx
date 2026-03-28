@@ -5,6 +5,7 @@ import Transactions from "./pages/Transactions";
 import BudgetPlanner from "./pages/BudgetPlanner";
 import Charts from "./pages/Charts";
 import Import from "./pages/Import";
+import Insights from "./pages/Insights";
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
             <Route path="/budget" element={<BudgetPlanner />} />
             <Route path="/charts" element={<Charts />} />
             <Route path="/import" element={<Import />} />
+            <Route path="/insights" element={<Insights />} />
           </Routes>
         </main>
       </div>

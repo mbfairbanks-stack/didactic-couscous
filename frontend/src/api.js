@@ -75,3 +75,34 @@ export const exportUrl = (year, month) => {
   const qs = month ? `?year=${year}&month=${month}` : `?year=${year}`;
   return `${BASE}/export${qs}`;
 };
+
+// AI Insights (streaming SSE)
+export const streamInsights = async (year, month, onChunk, onDone, onError) => {
+  const res = await fetch(`${BASE}/insights?year=${year}&month=${month}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    onError(err.detail || "Request failed");
+    return;
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const payload = line.slice(6).trim();
+      if (payload === "[DONE]") { onDone(); return; }
+      try {
+        const parsed = JSON.parse(payload);
+        if (parsed.error) { onError(parsed.error); return; }
+        if (parsed.text) onChunk(parsed.text);
+      } catch {}
+    }
+  }
+  onDone();
+};
