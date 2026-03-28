@@ -91,12 +91,85 @@ function buildPayoffData(debt) {
   return data;
 }
 
+// Calculate months to pay off at 0% interest
+function calcMonthsToPayoff(balance, monthlyPayment) {
+  if (monthlyPayment <= 0) return null;
+  if (balance <= 0) return 0;
+  return Math.ceil(balance / monthlyPayment);
+}
+
 function PayoffTooltip({ active, payload, label }) {
   if (!active || !payload || !payload.length) return null;
   return (
     <div className="bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-xs text-zinc-100 shadow-lg">
       <p className="text-zinc-400 mb-0.5">{label}</p>
       <p className="font-semibold text-yellow-400">{fmt(payload[0].value)}</p>
+    </div>
+  );
+}
+
+function ExtraPaymentSimulator({ debt }) {
+  const [extra, setExtra] = useState(0);
+
+  const baseMonthly = debt.monthly_payment + debt.monthly_extra;
+  const balance = debt.current_balance;
+
+  const baseMonths = calcMonthsToPayoff(balance, baseMonthly);
+  const newMonths = calcMonthsToPayoff(balance, baseMonthly + extra);
+
+  const monthsSaved = baseMonths != null && newMonths != null ? baseMonths - newMonths : null;
+
+  // For 0% interest, interest saved is always $0, but we show the time savings prominently
+  const amountSaved = extra > 0 && monthsSaved != null && monthsSaved > 0
+    ? monthsSaved * extra  // extra payments no longer made = savings in extra outflow
+    : 0;
+
+  return (
+    <div className="border-t border-zinc-800 pt-3 mt-1">
+      <p className="text-xs font-medium text-zinc-400 mb-2">Extra Payment Simulator</p>
+      <div className="flex items-center gap-3 mb-3">
+        <input
+          type="range"
+          min={0}
+          max={500}
+          step={25}
+          value={extra}
+          onChange={(e) => setExtra(Number(e.target.value))}
+          className="flex-1 accent-yellow-400 h-1.5 cursor-pointer"
+        />
+        <span className="text-sm font-semibold text-yellow-400 w-20 text-right shrink-0">
+          +{fmt(extra)}/mo
+        </span>
+      </div>
+
+      {extra === 0 ? (
+        <p className="text-xs text-zinc-500">Move the slider to simulate extra payments.</p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          <span className="bg-zinc-800 border border-zinc-700 rounded-full px-3 py-1 text-xs text-zinc-300">
+            Payoff in{" "}
+            <span className="font-semibold text-yellow-400">
+              {newMonths != null ? `${newMonths} mo` : "—"}
+            </span>{" "}
+            <span className="text-zinc-500">
+              (vs {baseMonths != null ? `${baseMonths} mo` : "—"} at minimum)
+            </span>
+          </span>
+          {monthsSaved != null && monthsSaved > 0 && (
+            <span className="bg-green-500/10 border border-green-500/30 rounded-full px-3 py-1 text-xs text-green-400 font-medium">
+              {monthsSaved} month{monthsSaved !== 1 ? "s" : ""} sooner
+            </span>
+          )}
+          {amountSaved > 0 && (
+            <span className="bg-yellow-400/10 border border-yellow-400/30 rounded-full px-3 py-1 text-xs text-yellow-400 font-medium">
+              Save ~{fmt(amountSaved)} in extra payments
+            </span>
+          )}
+          {monthsSaved === 0 && (
+            <span className="text-xs text-zinc-500">No time difference at this amount.</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -161,6 +234,11 @@ function PayoffChart({ debt }) {
           )}
         </div>
       )}
+
+      {/* Extra Payment Simulator always visible below the chart toggle */}
+      {(debt.monthly_payment + debt.monthly_extra) > 0 && (
+        <ExtraPaymentSimulator debt={debt} />
+      )}
     </div>
   );
 }
@@ -170,6 +248,186 @@ function StatBox({ label, value }) {
     <div className="bg-zinc-800 rounded-lg px-3 py-2">
       <p className="text-xs text-zinc-500 mb-0.5">{label}</p>
       <p className="text-sm font-semibold text-zinc-100">{value}</p>
+    </div>
+  );
+}
+
+// Simulate payoff order and total months using snowball or avalanche strategy
+// Strategy: fix total monthly budget = sum of all minimums; when a debt is paid off,
+// redirect that payment to the next debt in order.
+function simulateStrategy(debts, sortFn) {
+  if (!debts.length) return { order: [], totalMonths: 0 };
+
+  // Clone debts with mutable balances and their minimum payments
+  const pool = debts
+    .filter((d) => (d.monthly_payment + d.monthly_extra) > 0 || d.current_balance > 0)
+    .map((d) => ({
+      id: d.id,
+      name: d.name,
+      balance: Math.max(0, d.current_balance),
+      minPayment: d.monthly_payment + d.monthly_extra,
+    }));
+
+  if (!pool.length) return { order: [], totalMonths: 0 };
+
+  // Sort according to strategy
+  const sorted = [...pool].sort(sortFn);
+  const order = sorted.map((d) => d.name);
+
+  // Total monthly budget available
+  const totalBudget = pool.reduce((s, d) => s + d.minPayment, 0);
+  if (totalBudget <= 0) return { order, totalMonths: null };
+
+  // Simulate month by month
+  // Each month: pay minimums on all except the focus debt, put remainder on focus debt
+  let balances = sorted.map((d) => d.balance);
+  const minPayments = sorted.map((d) => d.minPayment);
+
+  let months = 0;
+  const MAX_SIM = 600; // 50 years cap
+
+  while (balances.some((b) => b > 0) && months < MAX_SIM) {
+    months++;
+
+    // Find the first (focus) debt that still has balance
+    const focusIdx = balances.findIndex((b) => b > 0);
+    if (focusIdx === -1) break;
+
+    // Pay minimums on non-focus debts, accumulate leftover for focus
+    let leftover = 0;
+    for (let i = 0; i < balances.length; i++) {
+      if (balances[i] <= 0) continue;
+      if (i === focusIdx) continue;
+      const pay = Math.min(balances[i], minPayments[i]);
+      balances[i] = Math.max(0, balances[i] - pay);
+      leftover += minPayments[i] - pay; // freed up if balance was < min
+    }
+
+    // Apply total budget surplus to focus debt
+    const focusBudget = minPayments[focusIdx] + leftover + Math.max(
+      0,
+      totalBudget - minPayments.reduce((s, p, i) => s + (balances[i] > 0 ? p : 0), 0) - minPayments[focusIdx]
+    );
+    balances[focusIdx] = Math.max(0, balances[focusIdx] - focusBudget);
+  }
+
+  return { order, totalMonths: months };
+}
+
+function StrategyPanel({ debts }) {
+  const activeDebts = debts.filter((d) => d.current_balance > 0);
+  if (activeDebts.length < 2) return null;
+
+  const avalanche = simulateStrategy(
+    activeDebts,
+    (a, b) => b.balance - a.balance // highest balance first
+  );
+  const snowball = simulateStrategy(
+    activeDebts,
+    (a, b) => a.balance - b.balance // lowest balance first
+  );
+
+  const avalancheFaster =
+    avalanche.totalMonths != null &&
+    snowball.totalMonths != null &&
+    avalanche.totalMonths < snowball.totalMonths;
+  const snowballFaster =
+    avalanche.totalMonths != null &&
+    snowball.totalMonths != null &&
+    snowball.totalMonths < avalanche.totalMonths;
+  const tied =
+    avalanche.totalMonths != null &&
+    snowball.totalMonths != null &&
+    avalanche.totalMonths === snowball.totalMonths;
+
+  return (
+    <div className="bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-zinc-700 bg-zinc-800 flex items-center justify-between flex-wrap gap-2">
+        <h2 className="text-base font-semibold text-zinc-100">Payoff Strategy Comparison</h2>
+        {tied && (
+          <span className="text-xs text-zinc-400 bg-zinc-700 px-2 py-0.5 rounded-full">
+            Both strategies equal
+          </span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-zinc-700">
+        {/* Avalanche */}
+        <div className="px-5 py-4 space-y-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-semibold text-zinc-100">Avalanche</span>
+            <span className="text-xs text-zinc-500">highest balance first</span>
+            {avalancheFaster && (
+              <span className="ml-auto bg-yellow-400/15 border border-yellow-400/40 text-yellow-400 text-xs font-semibold px-2 py-0.5 rounded-full">
+                Faster
+              </span>
+            )}
+          </div>
+          <ol className="space-y-1.5">
+            {avalanche.order.map((name, i) => (
+              <li key={name} className="flex items-center gap-2 text-sm">
+                <span className="w-5 h-5 rounded-full bg-zinc-700 text-zinc-300 text-xs flex items-center justify-center font-medium shrink-0">
+                  {i + 1}
+                </span>
+                <span className="text-zinc-200">{name}</span>
+              </li>
+            ))}
+          </ol>
+          <div className="bg-zinc-800 rounded-lg px-3 py-2 mt-1">
+            <p className="text-xs text-zinc-500 mb-0.5">Total payoff time</p>
+            <p className="text-sm font-semibold text-zinc-100">
+              {avalanche.totalMonths != null
+                ? `${avalanche.totalMonths} month${avalanche.totalMonths !== 1 ? "s" : ""}`
+                : "—"}
+            </p>
+          </div>
+        </div>
+
+        {/* Snowball */}
+        <div className="px-5 py-4 space-y-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-semibold text-zinc-100">Snowball</span>
+            <span className="text-xs text-zinc-500">lowest balance first</span>
+            {snowballFaster && (
+              <span className="ml-auto bg-yellow-400/15 border border-yellow-400/40 text-yellow-400 text-xs font-semibold px-2 py-0.5 rounded-full">
+                Faster
+              </span>
+            )}
+          </div>
+          <ol className="space-y-1.5">
+            {snowball.order.map((name, i) => (
+              <li key={name} className="flex items-center gap-2 text-sm">
+                <span className="w-5 h-5 rounded-full bg-zinc-700 text-zinc-300 text-xs flex items-center justify-center font-medium shrink-0">
+                  {i + 1}
+                </span>
+                <span className="text-zinc-200">{name}</span>
+              </li>
+            ))}
+          </ol>
+          <div className="bg-zinc-800 rounded-lg px-3 py-2 mt-1">
+            <p className="text-xs text-zinc-500 mb-0.5">Total payoff time</p>
+            <p className="text-sm font-semibold text-zinc-100">
+              {snowball.totalMonths != null
+                ? `${snowball.totalMonths} month${snowball.totalMonths !== 1 ? "s" : ""}`
+                : "—"}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {tied && (
+        <div className="px-5 py-3 border-t border-zinc-700 text-xs text-zinc-400">
+          Both strategies finish in the same number of months for 0% interest debts. Snowball may feel
+          more motivating — paying off smaller debts first gives faster early wins.
+        </div>
+      )}
+      {(avalancheFaster || snowballFaster) && (
+        <div className="px-5 py-3 border-t border-zinc-700 text-xs text-zinc-400">
+          {avalancheFaster
+            ? `Avalanche saves ${snowball.totalMonths - avalanche.totalMonths} month${snowball.totalMonths - avalanche.totalMonths !== 1 ? "s" : ""} vs Snowball.`
+            : `Snowball saves ${avalanche.totalMonths - snowball.totalMonths} month${avalanche.totalMonths - snowball.totalMonths !== 1 ? "s" : ""} vs Avalanche.`}
+        </div>
+      )}
     </div>
   );
 }
@@ -417,12 +675,15 @@ export default function Debts() {
                 </p>
               )}
 
-              {/* Payoff Timeline */}
+              {/* Payoff Timeline + Extra Payment Simulator */}
               <PayoffChart debt={debt} />
             </div>
           </div>
         );
       })}
+
+      {/* Avalanche vs Snowball Strategy Panel */}
+      {!loading && debts.length >= 2 && <StrategyPanel debts={debts} />}
 
       {/* Add / Edit modal */}
       {showModal && (
