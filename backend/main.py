@@ -9,10 +9,11 @@ from datetime import date
 import tempfile, os, io, json
 
 import models, database
-from database import engine, get_db
+from database import engine, get_db, run_migrations
 from importer import import_xlsx
 
 models.Base.metadata.create_all(bind=engine)
+run_migrations()
 
 app = FastAPI(title="Budget App API")
 
@@ -60,6 +61,7 @@ class IncomeCreate(BaseModel):
     person: str
     income_type: str
     amount: float
+    pay_date: Optional[date] = None
 
 
 class IncomeOut(IncomeCreate):
@@ -160,6 +162,7 @@ def create_income(body: IncomeCreate, db: Session = Depends(get_db)):
             models.Income.month == body.month,
             models.Income.person == body.person,
             models.Income.income_type == body.income_type,
+            models.Income.pay_date == body.pay_date,
         )
     ).scalar_one_or_none()
     if existing:

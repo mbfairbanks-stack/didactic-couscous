@@ -26,9 +26,10 @@ class Income(Base):
     person = Column(String, nullable=False)  # "Matt" or "Nicole"
     income_type = Column(String, nullable=False)  # "base" or "commission"
     amount = Column(Float, nullable=False)
+    pay_date = Column(Date, nullable=True)  # specific payday date
 
     __table_args__ = (
-        UniqueConstraint("year", "month", "person", "income_type", name="uq_income"),
+        UniqueConstraint("year", "month", "person", "income_type", "pay_date", name="uq_income"),
     )
 
 
