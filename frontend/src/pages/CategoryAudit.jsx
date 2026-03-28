@@ -57,7 +57,6 @@ export default function CategoryAudit() {
     try {
       const res = await migrateCategories();
       setSuccessMsg(`Updated ${res.updated} transaction${res.updated !== 1 ? "s" : ""} with improved category names.`);
-      setRenames([]);
       load();
     } catch (e) {
       setError(e.message);

@@ -495,10 +495,16 @@ def deduplicate_transactions(db: Session = Depends(get_db)):
 
 
 @app.get("/categories/suggested-renames")
-def get_suggested_renames():
-    """Return the list of suggested category renames (old → new)."""
+def get_suggested_renames(db: Session = Depends(get_db)):
+    """Return suggested renames filtered to only old categories that still exist in transactions."""
     from categories import SUGGESTED_RENAMES
-    return [{"from_category": k, "to_category": v} for k, v in SUGGESTED_RENAMES.items()]
+    result = db.execute(text("SELECT DISTINCT category FROM transactions"))
+    existing = {row[0] for row in result.fetchall()}
+    return [
+        {"from_category": k, "to_category": v}
+        for k, v in SUGGESTED_RENAMES.items()
+        if k in existing
+    ]
 
 
 @app.post("/categories/migrate")
