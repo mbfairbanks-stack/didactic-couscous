@@ -34,7 +34,10 @@ def run_migrations():
         # Add is_recurring to transactions if missing
         cols = [c['name'] for c in inspector.get_columns('transactions')]
         if 'is_recurring' not in cols:
-            op.add_column('transactions', sa.Column('is_recurring', sa.Boolean(), server_default='0', nullable=False))
+            op.add_column('transactions', sa.Column('is_recurring', sa.Boolean(), server_default='0', nullable=True))
+        # Backfill any NULL values left by the migration
+        conn.execute(sa.text("UPDATE transactions SET is_recurring = 0 WHERE is_recurring IS NULL"))
+        conn.commit()
 
 
 def get_db():
