@@ -786,7 +786,8 @@ def _parse_amount(s: str) -> Optional[float]:
 def _parse_date(s: str) -> Optional[str]:
     from datetime import datetime
     for fmt in ('%m/%d/%Y', '%Y-%m-%d', '%d/%m/%Y', '%m/%d/%y', '%Y/%m/%d',
-                '%b %d, %Y', '%B %d, %Y', '%d-%b-%Y', '%d %b %Y', '%Y%m%d'):
+                '%b %d, %Y', '%B %d, %Y', '%b %d %Y', '%B %d %Y',
+                '%d-%b-%Y', '%d %b %Y', '%Y%m%d'):
         try:
             return datetime.strptime(s.strip(), fmt).strftime('%Y-%m-%d')
         except ValueError:
