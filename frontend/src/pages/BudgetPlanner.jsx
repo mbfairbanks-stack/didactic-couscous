@@ -63,9 +63,6 @@ export default function BudgetPlanner() {
     }
   }, [actuals]);
 
-  const subsInAll = allCategories.filter(r => r.category.toLowerCase().includes("subscri"));
-  if (subsInAll.length) console.log("[Budget debug] allCategories subs:", JSON.stringify(subsInAll));
-
   const targetMap = Object.fromEntries(targets.map((t) => [t.category, t]));
 
   const seenCategories = new Set([
@@ -81,6 +78,9 @@ export default function BudgetPlanner() {
       .filter((c) => !seenCategories.has(c))
       .map((c) => ({ category: c, total: 0, count: 0 })),
   ];
+
+  const subsInAll = allCategories.filter(r => r.category.toLowerCase().includes("subscri"));
+  if (subsInAll.length) console.log("[Budget debug] allCategories subs:", JSON.stringify(subsInAll));
 
   const totalActual = actuals.reduce((s, a) => s + a.total, 0);
   const totalBudget = targets.reduce((s, t) => s + t.amount, 0);
