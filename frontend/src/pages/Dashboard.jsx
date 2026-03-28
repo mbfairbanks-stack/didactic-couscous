@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
@@ -20,6 +20,139 @@ function DarkTooltip({ active, payload, label }) {
   );
 }
 
+// ── Month-over-month comparison card ────────────────────────────────────────
+function MoMCard({ current, last }) {
+  function delta(cur, prev) {
+    if (!prev || prev === 0) return null;
+    return Math.round(((cur - prev) / Math.abs(prev)) * 100);
+  }
+
+  function Badge({ pct, invert }) {
+    if (pct === null) return <span className="text-zinc-600 text-xs">—</span>;
+    // For expenses: going up is bad (red), going down is good (green) → invert=true
+    const positive = invert ? pct < 0 : pct >= 0;
+    const sign = pct >= 0 ? "+" : "";
+    return (
+      <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${positive ? "bg-green-900/40 text-green-400" : "bg-red-900/40 text-red-400"}`}>
+        {sign}{pct}% vs last month
+      </span>
+    );
+  }
+
+  const curIncome = current?.total_income ?? 0;
+  const curExpenses = current?.total_expenses ?? 0;
+  const curBalance = current?.balance ?? 0;
+  const curSavings = current?.savings_rate ?? 0;
+
+  const lastIncome = last?.total_income ?? 0;
+  const lastExpenses = last?.total_expenses ?? 0;
+  const lastBalance = last?.balance ?? 0;
+  const lastSavings = last?.savings_rate ?? 0;
+
+  const metrics = [
+    { label: "Income", value: fmt(curIncome), pct: delta(curIncome, lastIncome), invert: false },
+    { label: "Expenses", value: fmt(curExpenses), pct: delta(curExpenses, lastExpenses), invert: true },
+    { label: "Balance", value: fmt(curBalance), pct: delta(curBalance, lastBalance), invert: false },
+    { label: "Savings Rate", value: `${curSavings}%`, pct: delta(curSavings, lastSavings), invert: false },
+  ];
+
+  return (
+    <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-4">
+      <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">vs Last Month</h3>
+      <div className="grid grid-cols-2 gap-3">
+        {metrics.map(({ label, value, pct, invert }) => (
+          <div key={label} className="space-y-1">
+            <p className="text-xs text-zinc-500">{label}</p>
+            <p className="text-sm font-bold text-zinc-100">{value}</p>
+            <Badge pct={pct} invert={invert} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Savings Goal bar ─────────────────────────────────────────────────────────
+function SavingsGoalBar({ savingsRate, savingsGoal, setSavingsGoal }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(String(savingsGoal));
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
+
+  function commitEdit() {
+    const val = Math.max(0, Math.min(100, Number(draft) || 0));
+    setSavingsGoal(val);
+    localStorage.setItem("savingsGoal", val);
+    setDraft(String(val));
+    setEditing(false);
+  }
+
+  function handleKey(e) {
+    if (e.key === "Enter") commitEdit();
+    if (e.key === "Escape") { setDraft(String(savingsGoal)); setEditing(false); }
+  }
+
+  const rate = savingsRate ?? 0;
+  const goal = savingsGoal ?? 20;
+  const pct = Math.min(Math.round((rate / goal) * 100), 100);
+  const onTrack = rate >= goal;
+  const diff = Math.abs(Math.round((goal - rate) * 10) / 10);
+
+  return (
+    <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Savings Goal</span>
+          {editing ? (
+            <span className="flex items-center gap-1">
+              <input
+                ref={inputRef}
+                type="number"
+                min={0}
+                max={100}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={commitEdit}
+                onKeyDown={handleKey}
+                className="w-14 bg-zinc-800 border border-yellow-400/60 rounded px-1.5 py-0.5 text-xs text-zinc-100 text-center focus:outline-none focus:border-yellow-400"
+              />
+              <span className="text-xs text-zinc-400">%</span>
+            </span>
+          ) : (
+            <button
+              onClick={() => { setDraft(String(savingsGoal)); setEditing(true); }}
+              className="flex items-center gap-1 text-xs text-yellow-400 hover:text-yellow-300 transition-colors"
+              title="Edit savings goal"
+            >
+              <span className="font-semibold">{goal}%</span>
+              {/* Pencil icon */}
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+              </svg>
+            </button>
+          )}
+        </div>
+        <span className={`text-xs font-medium ${onTrack ? "text-green-400" : "text-red-400"}`}>
+          {onTrack ? "On track" : `${diff}% below target`}
+        </span>
+      </div>
+      <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all ${onTrack ? "bg-green-500" : "bg-red-500"}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <div className="flex justify-between text-xs text-zinc-600 mt-1">
+        <span>Current: {rate}%</span>
+        <span>Goal: {goal}%</span>
+      </div>
+    </div>
+  );
+}
+
 // ── Dashboard ────────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const [year, setYear] = useState(currentYear);
@@ -28,10 +161,15 @@ export default function Dashboard() {
   const [monthly, setMonthly] = useState([]);
   const [totals, setTotals] = useState({});
   const [monthTotals, setMonthTotals] = useState({});
+  const [lastMonthTotals, setLastMonthTotals] = useState({});
   const [categories, setCategories] = useState([]);
   const [projections, setProjections] = useState(null);
   const [budgetTargets, setBudgetTargets] = useState([]);
   const [error, setError] = useState("");
+  const [savingsGoal, setSavingsGoal] = useState(() => {
+    const stored = localStorage.getItem("savingsGoal");
+    return stored !== null ? Number(stored) : 20;
+  });
 
   useEffect(() => {
     getYears().then((y) => setYears(y.length ? y : [currentYear])).catch(() => {});
@@ -51,11 +189,16 @@ export default function Dashboard() {
   }, [year, month]);
 
   useEffect(() => {
+    // Derive last month / last year
+    const lastMonth = month === 1 ? 12 : month - 1;
+    const lastYear = month === 1 ? year - 1 : year;
+
     Promise.all([
       getTotals(year, month).then(setMonthTotals),
       getCategorySummary(year, month).then(setCategories),
       getProjections(year, month).then(setProjections),
       getBudgetTargets({ year, month }).then(setBudgetTargets).catch(() => setBudgetTargets([])),
+      getTotals(lastYear, lastMonth).then(setLastMonthTotals).catch(() => setLastMonthTotals({})),
     ]).catch((e) => setError(e.message));
   }, [year, month]);
 
@@ -120,6 +263,16 @@ export default function Dashboard() {
           <StatCard label="Balance" value={fmt(monthTotals.balance)} color={monthTotals.balance >= 0 ? "yellow" : "red"} />
           <StatCard label="Savings Rate" value={`${monthTotals.savings_rate ?? 0}%`} color="purple" />
         </div>
+      </div>
+
+      {/* vs Last Month + Savings Goal */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <MoMCard current={monthTotals} last={lastMonthTotals} />
+        <SavingsGoalBar
+          savingsRate={monthTotals.savings_rate}
+          savingsGoal={savingsGoal}
+          setSavingsGoal={setSavingsGoal}
+        />
       </div>
 
       {/* Needs / Wants breakdown */}
