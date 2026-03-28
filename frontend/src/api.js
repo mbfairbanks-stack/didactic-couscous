@@ -4,7 +4,11 @@ async function req(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, options);
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || "Request failed");
+    const detail = err.detail;
+    const msg = Array.isArray(detail)
+      ? detail.map((e) => e.msg || JSON.stringify(e)).join("; ")
+      : detail || "Request failed";
+    throw new Error(msg);
   }
   if (res.status === 204) return null;
   return res.json();
@@ -89,8 +93,8 @@ export const importFile = (file) => {
   fd.append("file", file);
   return req("/import", { method: "POST", body: fd });
 };
-export const parseCsv = (body) =>
-  req("/parse-csv", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const parseCsv = ({ csv_text, format, source }) =>
+  req("/parse-csv", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: csv_text, format, source }) });
 export const importCsvRows = (body) =>
   req("/import-csv-rows", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
