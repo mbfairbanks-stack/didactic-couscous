@@ -389,7 +389,7 @@ export default function BudgetPlanner() {
                             : "text-zinc-300"
                         }`}>
                           <span className="flex items-center justify-end gap-1.5">
-                            {fmt(row.total)}
+                            {`${row.total}|${fmt(row.total)}`}
                             {budget && row.total > budget && (
                               <span className="bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">Over!</span>
                             )}
