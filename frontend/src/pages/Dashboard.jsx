@@ -5,15 +5,7 @@ import {
 import StatCard from "../components/StatCard";
 import { getMonthlySummary, getTotals, getCategorySummary, getYears, getProjections } from "../api";
 import { getCategoryGroup } from "../constants";
-
-const MONTH_LABELS = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-const fmt = (n) =>
-  n == null ? "—" : "$" + Number(n).toLocaleString("en-CA", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-
-const currentYear = new Date().getFullYear();
-const currentMonth = new Date().getMonth() + 1;
+import { MONTH_LABELS, currentYear, currentMonth, fmt } from "../utils";
 
 function DarkTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
@@ -36,20 +28,26 @@ export default function Dashboard() {
   const [monthTotals, setMonthTotals] = useState({});
   const [categories, setCategories] = useState([]);
   const [projections, setProjections] = useState(null);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    getYears().then((y) => setYears(y.length ? y : [currentYear]));
+    getYears().then((y) => setYears(y.length ? y : [currentYear])).catch(() => {});
   }, []);
 
   useEffect(() => {
-    getMonthlySummary(year).then(setMonthly);
-    getTotals(year, null, month).then(setTotals);
+    setError("");
+    Promise.all([
+      getMonthlySummary(year).then(setMonthly),
+      getTotals(year, null, month).then(setTotals),
+    ]).catch((e) => setError(e.message));
   }, [year, month]);
 
   useEffect(() => {
-    getTotals(year, month).then(setMonthTotals);
-    getCategorySummary(year, month).then(setCategories);
-    getProjections(year, month).then(setProjections);
+    Promise.all([
+      getTotals(year, month).then(setMonthTotals),
+      getCategorySummary(year, month).then(setCategories),
+      getProjections(year, month).then(setProjections),
+    ]).catch((e) => setError(e.message));
   }, [year, month]);
 
   const chartData = monthly.map((m) => ({
@@ -87,6 +85,12 @@ export default function Dashboard() {
           </select>
         </div>
       </div>
+
+      {error && (
+        <div className="bg-red-900/20 border border-red-700/50 rounded-xl px-4 py-3 text-sm text-red-400">
+          Failed to load data: {error}
+        </div>
+      )}
 
       {/* Year stats */}
       <div>

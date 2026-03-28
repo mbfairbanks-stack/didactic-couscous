@@ -1,12 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { getTransactions, createTransaction, updateTransaction, deleteTransaction, getCategories, getYears } from "../api";
-
-const MONTH_LABELS = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const currentYear = new Date().getFullYear();
-const currentMonth = new Date().getMonth() + 1;
-
-const fmt = (n) => "$" + Number(n).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+import { MONTH_LABELS, currentYear, currentMonth, fmtCents as fmt } from "../utils";
 
 const emptyForm = {
   date: new Date().toISOString().slice(0, 10),
@@ -35,6 +29,8 @@ export default function Transactions() {
   const [editId, setEditId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 50;
 
   useEffect(() => {
     getYears().then((y) => setYears(y.length ? y : [currentYear]));
@@ -43,7 +39,8 @@ export default function Transactions() {
 
   const load = useCallback(() => {
     setLoading(true);
-    getTransactions({ year, month, category: filterCategory || undefined })
+    setPage(0);
+    getTransactions({ year, month, category: filterCategory || undefined, limit: 5000 })
       .then(setTransactions)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -59,6 +56,8 @@ export default function Transactions() {
     : transactions;
 
   const total = filtered.reduce((s, t) => s + t.amount, 0);
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const paginated = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -137,7 +136,7 @@ export default function Transactions() {
           className={`${inputCls} flex-1 min-w-[160px]`}
           placeholder="Search merchant or category..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => { setSearch(e.target.value); setPage(0); }}
         />
       </div>
 
@@ -146,7 +145,10 @@ export default function Transactions() {
       {/* Table */}
       <div className="bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden">
         <div className="flex justify-between items-center px-4 py-3 border-b border-zinc-700 bg-zinc-800">
-          <span className="text-xs text-zinc-500">{filtered.length} transactions</span>
+          <span className="text-xs text-zinc-500">
+            {filtered.length} transactions
+            {filtered.length > PAGE_SIZE && ` — showing ${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, filtered.length)}`}
+          </span>
           <span className="text-sm font-semibold text-yellow-400">Total: {fmt(total)}</span>
         </div>
         {loading ? (
@@ -167,7 +169,7 @@ export default function Transactions() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((txn) => (
+                {paginated.map((txn) => (
                   <tr key={txn.id} className="border-b border-zinc-800 last:border-0 hover:bg-zinc-800">
                     <td className="px-4 py-2 text-zinc-500">{txn.date}</td>
                     <td className="px-4 py-2 max-w-[240px] truncate text-zinc-200">{txn.merchant}</td>
@@ -189,6 +191,29 @@ export default function Transactions() {
           </div>
         )}
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2">
+          <button
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={page === 0}
+            className="px-3 py-1.5 text-sm border border-zinc-700 rounded-lg text-zinc-300 hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            Previous
+          </button>
+          <span className="text-xs text-zinc-500">
+            Page {page + 1} of {totalPages}
+          </span>
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+            disabled={page >= totalPages - 1}
+            className="px-3 py-1.5 text-sm border border-zinc-700 rounded-lg text-zinc-300 hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            Next
+          </button>
+        </div>
+      )}
 
       {/* Add / Edit form modal */}
       {showForm && (

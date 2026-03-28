@@ -1,10 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { streamInsights, getYears } from "../api";
-
-const MONTH_LABELS = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const currentYear = new Date().getFullYear();
-const currentMonth = new Date().getMonth() + 1;
+import { MONTH_LABELS, currentYear, currentMonth } from "../utils";
 
 function inlineFormat(text) {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);

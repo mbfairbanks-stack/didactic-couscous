@@ -1,13 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { getCategorySummary, getBudgetTargets, createBudgetTarget, updateBudgetTarget, deleteBudgetTarget, getYears } from "../api";
 import { getCategoryGroup } from "../constants";
+import { MONTH_LABELS, currentYear, currentMonth, fmt } from "../utils";
 
-const MONTH_LABELS = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const currentYear = new Date().getFullYear();
-const currentMonth = new Date().getMonth() + 1;
-
-const fmt = (n) => "$" + Number(n || 0).toLocaleString("en-CA", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 const inputCls = "bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400/50";
 
 function ProgressBar({ actual, budget }) {
@@ -34,14 +29,18 @@ export default function BudgetPlanner() {
   const [saving, setSaving] = useState(false);
   const [newCategory, setNewCategory] = useState("");
   const [newAmount, setNewAmount] = useState("");
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    getYears().then((y) => setYears(y.length ? y : [currentYear]));
+    getYears().then((y) => setYears(y.length ? y : [currentYear])).catch(() => {});
   }, []);
 
   const load = useCallback(() => {
-    getCategorySummary(year, month).then(setActuals);
-    getBudgetTargets({ year, month }).then(setTargets);
+    setError("");
+    Promise.all([
+      getCategorySummary(year, month).then(setActuals),
+      getBudgetTargets({ year, month }).then(setTargets),
+    ]).catch((e) => setError(e.message));
   }, [year, month]);
 
   useEffect(() => { load(); }, [load]);
@@ -103,6 +102,12 @@ export default function BudgetPlanner() {
           </select>
         </div>
       </div>
+
+      {error && (
+        <div className="bg-red-900/20 border border-red-700/50 rounded-xl px-4 py-3 text-sm text-red-400">
+          Failed to load data: {error}
+        </div>
+      )}
 
       {/* Summary bar */}
       <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-4 flex flex-wrap gap-6 items-center">

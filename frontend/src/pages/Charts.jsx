@@ -4,10 +4,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 import { getMonthlySummary, getCategorySummary, getCategoryTrend, getCategories, getYears } from "../api";
-
-const MONTH_LABELS = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const currentYear = new Date().getFullYear();
+import { MONTH_LABELS, currentYear } from "../utils";
 
 const COLORS = [
   "#fbbf24", "#ef4444", "#22c55e", "#a78bfa", "#06b6d4",

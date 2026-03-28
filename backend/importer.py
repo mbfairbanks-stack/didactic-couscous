@@ -227,8 +227,7 @@ def _add_fy24_txn(row, item_col, date_col, amt_col, cat_col, month, year, source
         month=month,
         source=source,
     )
-    db.add(txn)
-    counts["transactions"] += 1
+    _upsert_transaction(db, txn, counts)
 
 
 # ---------------------------------------------------------------------------
@@ -318,19 +317,17 @@ def _import_income_fy26(rows, detected_year: int | None, db: Session, counts: di
     Other rows: (None, 'Matt Pay', val, val, ...) and (None, 'Nicole Pay', val, val, ...)
     """
     col_months = {}
-    month_map = {"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
-                 "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12}
 
     # Find the header row with month column labels
     for row in rows:
         has_months = any(
-            isinstance(v, str) and v.strip().lower()[:3] in month_map
+            isinstance(v, str) and v.strip().lower()[:3] in MONTH_SHORT
             for v in (row or [])
         )
         if has_months:
             for col_idx, val in enumerate(row):
-                if isinstance(val, str) and val.strip().lower()[:3] in month_map:
-                    col_months[col_idx] = month_map[val.strip().lower()[:3]]
+                if isinstance(val, str) and val.strip().lower()[:3] in MONTH_SHORT:
+                    col_months[col_idx] = MONTH_SHORT[val.strip().lower()[:3]]
             break  # use first matching header row
 
     year = detected_year
@@ -398,20 +395,17 @@ def _import_expenses_fy26_summary(rows, detected_year: int | None, db: Session, 
     Rows look like: (None, 'Housing', 1967.98, 1967.98, ...)
     with month columns identified by the same header row used for income.
     """
-    month_map = {"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
-                 "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12}
-
     # Find col -> month mapping
     col_months: dict[int, int] = {}
     for row in rows:
         has_months = any(
-            isinstance(v, str) and v.strip().lower()[:3] in month_map
+            isinstance(v, str) and v.strip().lower()[:3] in MONTH_SHORT
             for v in (row or [])
         )
         if has_months:
             for col_idx, val in enumerate(row):
-                if isinstance(val, str) and val.strip().lower()[:3] in month_map:
-                    col_months[col_idx] = month_map[val.strip().lower()[:3]]
+                if isinstance(val, str) and val.strip().lower()[:3] in MONTH_SHORT:
+                    col_months[col_idx] = MONTH_SHORT[val.strip().lower()[:3]]
             break
 
     if not col_months:
@@ -447,8 +441,7 @@ def _import_expenses_fy26_summary(rows, detected_year: int | None, db: Session, 
                 month=month,
                 source="summary",
             )
-            db.add(txn)
-            counts["transactions"] += 1
+            _upsert_transaction(db, txn, counts)
 
 
 def _import_fy25_26_cc_sheet(ws, month: int, year: int, db: Session, counts: dict):
@@ -484,8 +477,7 @@ def _import_fy25_26_cc_sheet(ws, month: int, year: int, db: Session, counts: dic
             month=month,
             source="cc",
         )
-        db.add(txn)
-        counts["transactions"] += 1
+        _upsert_transaction(db, txn, counts)
 
 
 # ---------------------------------------------------------------------------
@@ -493,14 +485,15 @@ def _import_fy25_26_cc_sheet(ws, month: int, year: int, db: Session, counts: dic
 # ---------------------------------------------------------------------------
 
 def _upsert_income(db: Session, year: int, month: int, person: str, itype: str, amount: float, counts: dict):
-    from models import Income
-    from sqlalchemy import select
+    # Only match imported records (pay_date=None). Manually-entered payday records have a pay_date set
+    # and should never be overwritten by a re-import.
     existing = db.execute(
         select(Income).where(
             Income.year == year,
             Income.month == month,
             Income.person == person,
             Income.income_type == itype,
+            Income.pay_date == None,  # noqa: E711
         )
     ).scalar_one_or_none()
     if existing:
@@ -509,3 +502,22 @@ def _upsert_income(db: Session, year: int, month: int, person: str, itype: str, 
     else:
         db.add(Income(year=year, month=month, person=person, income_type=itype, amount=amount))
         counts["income"] += 1
+
+
+def _upsert_transaction(db: Session, txn: Transaction, counts: dict):
+    """Insert transaction only if no identical record exists (dedup at import time)."""
+    existing = db.execute(
+        select(Transaction).where(
+            Transaction.date == txn.date,
+            Transaction.merchant == txn.merchant,
+            Transaction.amount == txn.amount,
+            Transaction.category == txn.category,
+            Transaction.year == txn.year,
+            Transaction.month == txn.month,
+        )
+    ).first()
+    if existing:
+        counts["skipped"] += 1
+        return
+    db.add(txn)
+    counts["transactions"] += 1

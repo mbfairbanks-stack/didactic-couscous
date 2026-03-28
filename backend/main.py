@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import date
 import tempfile, os, io, json
+from collections import defaultdict
 
 import models, database
 from database import engine, get_db, run_migrations
@@ -349,8 +350,6 @@ def category_trend(category: str, db: Session = Depends(get_db)):
 @app.get("/summary/projections")
 def projections_summary(year: int, month: int, db: Session = Depends(get_db)):
     """Historical averages + year-end projections based on current run rate."""
-    from collections import defaultdict
-
     # Historical monthly income (all months except current)
     income_months = db.execute(
         select(models.Income.year, models.Income.month, func.sum(models.Income.amount).label("total"))
@@ -379,7 +378,7 @@ def projections_summary(year: int, month: int, db: Session = Depends(get_db)):
         .group_by(models.Transaction.category, models.Transaction.year, models.Transaction.month)
     ).all()
 
-    cat_monthly: dict[str, list[float]] = defaultdict(list)
+    cat_monthly = defaultdict(list)
     for r in fixed_rows:
         cat_monthly[r.category].append(r.total)
 
@@ -610,19 +609,8 @@ def _build_insights_context(year: int, month: int, db: Session) -> str:
     targets = {r.category: r.amount for r in target_rows}
 
     # Historical category averages (all data excluding current month)
-    hist_rows = db.execute(
-        select(
-            models.Transaction.category,
-            func.avg(func.sum(models.Transaction.amount)).label("avg_monthly"),
-        )
-        .where(
-            ~((models.Transaction.year == year) & (models.Transaction.month == month))
-        )
-        .group_by(models.Transaction.year, models.Transaction.month, models.Transaction.category)
-    ).all()
-    # Re-aggregate: avg per category across months
-    from collections import defaultdict
-    hist_totals: dict[str, list[float]] = defaultdict(list)
+    # Historical category averages (excluding current month)
+    hist_totals = defaultdict(list)
     raw_hist = db.execute(
         select(
             models.Transaction.year,
@@ -717,8 +705,8 @@ async def get_insights(year: int, month: int, db: Session = Depends(get_db)):
         try:
             with client.messages.stream(
                 model="claude-opus-4-6",
-                max_tokens=2048,
-                thinking={"type": "adaptive"},
+                max_tokens=8192,
+                thinking={"type": "enabled", "budget_tokens": 5000},
                 messages=[{"role": "user", "content": context}],
             ) as stream:
                 for text in stream.text_stream:
