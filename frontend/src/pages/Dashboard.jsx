@@ -3,20 +3,9 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 import StatCard from "../components/StatCard";
-import { getMonthlySummary, getTotals, getCategorySummary, getYears, getProjections, getBudgetTargets, createIncome } from "../api";
+import { getMonthlySummary, getTotals, getCategorySummary, getYears, getProjections, getBudgetTargets } from "../api";
 import { getCategoryGroup } from "../constants";
 import { MONTH_LABELS, currentYear, currentMonth, fmt } from "../utils";
-
-// ── CPI data (Canada, 2020 = 100 base) ──────────────────────────────────────
-const CPI_INDEX = { 2019: 96.5, 2020: 100, 2021: 103.4, 2022: 110.4, 2023: 114.7, 2024: 117.7, 2025: 120.4, 2026: 122.8 };
-const CURRENT_CPI = 122.8;
-const realIncome = (nominal, year) => nominal * (CURRENT_CPI / (CPI_INDEX[year] ?? CURRENT_CPI));
-
-// ── Shared input styles (mirrors Income.jsx) ─────────────────────────────────
-const inputCls = "bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400/50 w-full";
-const selectCls = "bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:outline-none";
-
-const emptyPayday = { date: "", matt_base: "", matt_commission: "", nicole_base: "" };
 
 // ── Tooltip shared by all charts ─────────────────────────────────────────────
 function DarkTooltip({ active, payload, label }) {
@@ -27,244 +16,6 @@ function DarkTooltip({ active, payload, label }) {
       {payload.map((p) => (
         <p key={p.name} style={{ color: p.color }}>{p.name}: {fmt(p.value)}</p>
       ))}
-    </div>
-  );
-}
-
-// ── Log Payday Modal ─────────────────────────────────────────────────────────
-function PaydayModal({ years, onClose, onSaved }) {
-  const [modalYear, setModalYear] = useState(currentYear);
-  const [modalMonth, setModalMonth] = useState(currentMonth);
-  const [payday1, setPayday1] = useState({ ...emptyPayday });
-  const [payday2, setPayday2] = useState({ ...emptyPayday });
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState("");
-
-  const savePayday = async (payday) => {
-    if (!payday.date) return;
-    const entries = [
-      { person: "Matt", income_type: "base", amount: parseFloat(payday.matt_base) },
-      { person: "Matt", income_type: "commission", amount: parseFloat(payday.matt_commission) },
-      { person: "Nicole", income_type: "base", amount: parseFloat(payday.nicole_base) },
-    ].filter((e) => e.amount > 0);
-    for (const entry of entries) {
-      await createIncome({ year: modalYear, month: modalMonth, pay_date: payday.date, ...entry });
-    }
-  };
-
-  const handleSave = async (e) => {
-    e.preventDefault();
-    if (!payday1.date && !payday2.date) { setError("Enter at least one payday date."); return; }
-    setSaving(true); setError(""); setSaved(false);
-    try {
-      await savePayday(payday1);
-      await savePayday(payday2);
-      setSaved(true);
-      onSaved();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Close on backdrop click
-  const handleBackdrop = (e) => { if (e.target === e.currentTarget) onClose(); };
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-      onClick={handleBackdrop}
-    >
-      <div className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-lg shadow-2xl">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
-          <h2 className="text-sm font-semibold text-zinc-200">Log Payday Income</h2>
-          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 text-lg leading-none">✕</button>
-        </div>
-
-        <form onSubmit={handleSave} className="p-6 space-y-5">
-          {/* Year / Month selectors */}
-          <div className="flex gap-3">
-            <select className={selectCls} value={modalYear} onChange={(e) => { setModalYear(Number(e.target.value)); setSaved(false); }}>
-              {[...new Set([...years, currentYear])].sort().map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-            <select className={selectCls} value={modalMonth} onChange={(e) => { setModalMonth(Number(e.target.value)); setSaved(false); }}>
-              {MONTH_LABELS.slice(1).map((m, i) => (
-                <option key={i + 1} value={i + 1}>{m}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Two payday blocks */}
-          {[
-            { label: "Payday 1", state: payday1, setState: setPayday1 },
-            { label: "Payday 2", state: payday2, setState: setPayday2 },
-          ].map(({ label, state, setState }) => (
-            <div key={label} className="border border-zinc-800 rounded-lg p-4 space-y-3">
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-bold text-yellow-400 uppercase tracking-widest">{label}</span>
-                <input
-                  type="date"
-                  className={`${inputCls} w-auto flex-1`}
-                  value={state.date}
-                  onChange={(e) => setState({ ...state, date: e.target.value })}
-                />
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="text-xs text-zinc-500 block mb-1">Matt Base ($)</label>
-                  <input type="number" step="0.01" min="0" placeholder="0.00"
-                    className={inputCls} value={state.matt_base}
-                    onChange={(e) => setState({ ...state, matt_base: e.target.value })} />
-                </div>
-                <div>
-                  <label className="text-xs text-zinc-500 block mb-1">Matt Commission ($)</label>
-                  <input type="number" step="0.01" min="0" placeholder="0.00"
-                    className={inputCls} value={state.matt_commission}
-                    onChange={(e) => setState({ ...state, matt_commission: e.target.value })} />
-                </div>
-                <div>
-                  <label className="text-xs text-zinc-500 block mb-1">Nicole Base ($)</label>
-                  <input type="number" step="0.01" min="0" placeholder="0.00"
-                    className={inputCls} value={state.nicole_base}
-                    onChange={(e) => setState({ ...state, nicole_base: e.target.value })} />
-                </div>
-              </div>
-            </div>
-          ))}
-
-          {error && <p className="text-red-400 text-sm">{error}</p>}
-          {saved && (
-            <p className="text-green-400 text-sm">
-              Paydays saved for {MONTH_LABELS[modalMonth]} {modalYear}.{" "}
-              <button type="button" onClick={onClose} className="underline hover:no-underline">Close</button>
-            </p>
-          )}
-
-          <div className="flex gap-3 pt-1">
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex-1 bg-yellow-400 text-black py-2.5 rounded-lg font-medium text-sm hover:bg-yellow-300 disabled:opacity-40"
-            >
-              {saving ? "Saving..." : `Save ${MONTH_LABELS[modalMonth]} ${modalYear} Paydays`}
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2.5 rounded-lg text-sm text-zinc-400 hover:text-zinc-200 border border-zinc-700 hover:border-zinc-500"
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-// ── Income History Section ───────────────────────────────────────────────────
-function IncomeHistory({ years }) {
-  const [historyData, setHistoryData] = useState([]);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!years.length) return;
-    setLoading(true);
-    Promise.all(years.map((y) => getTotals(y, null, 12).then((t) => ({ year: y, income: t.total_income ?? 0 }))))
-      .then((results) => {
-        const sorted = results.sort((a, b) => a.year - b.year);
-        setHistoryData(sorted);
-      })
-      .finally(() => setLoading(false));
-  }, [years]);
-
-  if (loading) {
-    return (
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5">
-        <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-4">Income History</h2>
-        <p className="text-zinc-600 text-sm text-center py-8">Loading...</p>
-      </div>
-    );
-  }
-
-  if (!historyData.length) return null;
-
-  // Build chart + table rows
-  const chartData = historyData.map((d) => ({
-    year: String(d.year),
-    Income: d.income,
-    "Real Income": Math.round(realIncome(d.income, d.year)),
-  }));
-
-  const tableRows = historyData.map((d, i) => {
-    const prev = i > 0 ? historyData[i - 1].income : null;
-    const yoyPct = prev && prev > 0 ? ((d.income - prev) / prev) * 100 : null;
-    return {
-      year: d.year,
-      income: d.income,
-      realIncome: realIncome(d.income, d.year),
-      yoyPct,
-    };
-  });
-
-  return (
-    <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5 space-y-6">
-      <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Income History</h2>
-
-      {/* Bar chart */}
-      <ResponsiveContainer width="100%" height={240}>
-        <BarChart data={chartData} margin={{ top: 0, right: 10, left: 0, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
-          <XAxis dataKey="year" tick={{ fontSize: 11, fill: "#71717a" }} axisLine={false} tickLine={false} />
-          <YAxis
-            tick={{ fontSize: 11, fill: "#71717a" }}
-            tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
-            axisLine={false}
-            tickLine={false}
-          />
-          <Tooltip content={<DarkTooltip />} />
-          <Legend wrapperStyle={{ fontSize: 12, color: "#a1a1aa" }} />
-          <Bar dataKey="Income" fill="#22c55e" radius={[3, 3, 0, 0]} />
-          <Bar dataKey="Real Income" fill="#22c55e" fillOpacity={0.4} radius={[3, 3, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
-
-      {/* Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-zinc-800 text-xs text-zinc-500 uppercase tracking-wide">
-              <th className="text-left pb-2 pr-4 font-semibold">Year</th>
-              <th className="text-right pb-2 pr-4 font-semibold">Income</th>
-              <th className="text-right pb-2 pr-4 font-semibold">Real Income (2026 $)</th>
-              <th className="text-right pb-2 font-semibold">YoY Change</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tableRows.map((r) => (
-              <tr key={r.year} className="border-b border-zinc-800/50 last:border-0 hover:bg-zinc-800/30">
-                <td className="py-2.5 pr-4 text-zinc-300 font-medium">{r.year}</td>
-                <td className="py-2.5 pr-4 text-right text-zinc-100">{fmt(r.income)}</td>
-                <td className="py-2.5 pr-4 text-right text-zinc-400">{fmt(Math.round(r.realIncome))}</td>
-                <td className="py-2.5 text-right">
-                  {r.yoyPct === null ? (
-                    <span className="text-zinc-600">—</span>
-                  ) : (
-                    <span className={r.yoyPct >= 0 ? "text-green-400" : "text-red-400"}>
-                      {r.yoyPct >= 0 ? "+" : ""}{r.yoyPct.toFixed(1)}%
-                    </span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 }
@@ -281,7 +32,6 @@ export default function Dashboard() {
   const [projections, setProjections] = useState(null);
   const [budgetTargets, setBudgetTargets] = useState([]);
   const [error, setError] = useState("");
-  const [showPaydayModal, setShowPaydayModal] = useState(false);
 
   useEffect(() => {
     getYears().then((y) => setYears(y.length ? y : [currentYear])).catch(() => {});
@@ -323,12 +73,6 @@ export default function Dashboard() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-zinc-100">Dashboard</h1>
         <div className="flex gap-3 items-center">
-          <button
-            onClick={() => setShowPaydayModal(true)}
-            className="bg-yellow-400 text-black px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-yellow-300"
-          >
-            + Log Payday
-          </button>
           <select
             className="bg-zinc-900 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100"
             value={year}
@@ -551,22 +295,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Income History */}
-      <IncomeHistory years={years} />
-
-      {/* Log Payday Modal */}
-      {showPaydayModal && (
-        <PaydayModal
-          years={years}
-          onClose={() => setShowPaydayModal(false)}
-          onSaved={() => {
-            loadDashboardData();
-            // Keep modal open briefly so the user sees the "saved" confirmation,
-            // then auto-close after 1.5 s
-            setTimeout(() => setShowPaydayModal(false), 1500);
-          }}
-        />
-      )}
     </div>
   );
 }

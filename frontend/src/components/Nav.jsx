@@ -6,6 +6,7 @@ const links = [
   { to: "/budget", label: "Budget" },
   { to: "/debts", label: "Debts" },
   { to: "/charts", label: "Charts" },
+  { to: "/income", label: "Income" },
   { to: "/insights", label: "AI Insights" },
   { to: "/import", label: "Import" },
   { to: "/category-audit", label: "Audit" },
