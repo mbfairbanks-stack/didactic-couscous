@@ -27,6 +27,7 @@ export default function Transactions() {
   const [fixedOnly, setFixedOnly] = useState(false);
   const [sortField, setSortField] = useState("date");
   const [sortDir, setSortDir] = useState("desc");
+  const [colFilter, setColFilter] = useState({ date: "", merchant: "", category: "", source: "" });
   const [years, setYears] = useState([currentYear]);
   const [allCategories, setAllCategories] = useState([]);
   const [transactions, setTransactions] = useState([]);
@@ -64,6 +65,10 @@ export default function Transactions() {
       if (amountMin !== "" && t.amount < parseFloat(amountMin)) return false;
       if (amountMax !== "" && t.amount > parseFloat(amountMax)) return false;
       if (fixedOnly && !t.is_fixed) return false;
+      if (colFilter.date && !t.date?.includes(colFilter.date)) return false;
+      if (colFilter.merchant && !t.merchant?.toLowerCase().includes(colFilter.merchant.toLowerCase())) return false;
+      if (colFilter.category && !t.category?.toLowerCase().includes(colFilter.category.toLowerCase())) return false;
+      if (colFilter.source && !(t.source || "").toLowerCase().includes(colFilter.source.toLowerCase())) return false;
       return true;
     })
     .sort((a, b) => {
@@ -202,12 +207,12 @@ export default function Transactions() {
               onChange={(e) => { setFixedOnly(e.target.checked); setPage(0); }} />
             Fixed only
           </label>
-          {(search || filterCategory || filterSource || amountMin || amountMax || fixedOnly) && (
+          {(search || filterCategory || filterSource || amountMin || amountMax || fixedOnly || Object.values(colFilter).some(Boolean)) && (
             <button
-              onClick={() => { setSearch(""); setFilterCategory(""); setFilterSource(""); setAmountMin(""); setAmountMax(""); setFixedOnly(false); setPage(0); }}
+              onClick={() => { setSearch(""); setFilterCategory(""); setFilterSource(""); setAmountMin(""); setAmountMax(""); setFixedOnly(false); setColFilter({ date: "", merchant: "", category: "", source: "" }); setPage(0); }}
               className="text-xs text-zinc-500 hover:text-zinc-300 underline ml-auto"
             >
-              Clear filters
+              Clear all filters
             </button>
           )}
         </div>
@@ -243,8 +248,40 @@ export default function Transactions() {
                     onClick={() => { if (sortField === "amount") setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortField("amount"); setSortDir("desc"); } }}>
                     Amount{sortField === "amount" ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
                   </th>
-                  <th className="px-4 py-2 font-medium">Source</th>
+                  <th className="px-4 py-2 font-medium cursor-pointer hover:text-zinc-300 select-none"
+                    onClick={() => { if (sortField === "source") setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortField("source"); setSortDir("asc"); } }}>
+                    Source{sortField === "source" ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
+                  </th>
                   <th className="px-4 py-2 font-medium"></th>
+                </tr>
+                <tr className="border-b border-zinc-700 bg-zinc-800/60">
+                  {["date","merchant","category"].map((f) => (
+                    <td key={f} className="px-2 py-1">
+                      <input
+                        type="text"
+                        placeholder="Filter..."
+                        className="w-full bg-zinc-700/60 border border-zinc-600/50 rounded px-2 py-0.5 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-yellow-400/50"
+                        value={colFilter[f]}
+                        onChange={(e) => { setColFilter(cf => ({ ...cf, [f]: e.target.value })); setPage(0); }}
+                      />
+                    </td>
+                  ))}
+                  <td className="px-2 py-1"></td>
+                  <td className="px-2 py-1">
+                    <input
+                      type="text"
+                      placeholder="Filter..."
+                      className="w-full bg-zinc-700/60 border border-zinc-600/50 rounded px-2 py-0.5 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-yellow-400/50"
+                      value={colFilter.source}
+                      onChange={(e) => { setColFilter(cf => ({ ...cf, source: e.target.value })); setPage(0); }}
+                    />
+                  </td>
+                  <td className="px-2 py-1 text-right">
+                    {Object.values(colFilter).some(Boolean) && (
+                      <button onClick={() => { setColFilter({ date: "", merchant: "", category: "", source: "" }); setPage(0); }}
+                        className="text-xs text-zinc-600 hover:text-zinc-400">✕</button>
+                    )}
+                  </td>
                 </tr>
               </thead>
               <tbody>
