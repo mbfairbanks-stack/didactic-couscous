@@ -8,6 +8,7 @@ FY24 format: sheets named "CC - Jan 24", "CB - Jan 24"
 FY25/FY26 format: sheets named "Jan-2025 (CC)", "Jan - 2026 (CC)"
   Single card per sheet, headers at row 1: DATE, ITEM, AMOUNT, CATEGORY
 """
+from __future__ import annotations
 import re
 from datetime import date, datetime
 import openpyxl
