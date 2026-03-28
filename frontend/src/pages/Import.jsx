@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { importFile, exportUrl, getYears, deduplicate } from "../api";
+import { importFile, exportUrl, getYears, deduplicate, cleanupSummary } from "../api";
 import { useEffect } from "react";
 
 const MONTH_LABELS = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -17,6 +17,8 @@ export default function Import() {
   const [years, setYears] = useState([currentYear]);
   const [deduping, setDeduping] = useState(false);
   const [dedupResult, setDedupResult] = useState(null);
+  const [cleaning, setCleaning] = useState(false);
+  const [cleanResult, setCleanResult] = useState(null);
   const fileRef = useRef();
 
   const handleDeduplicate = async () => {
@@ -29,6 +31,19 @@ export default function Import() {
       setError(e.message);
     } finally {
       setDeduping(false);
+    }
+  };
+
+  const handleCleanup = async () => {
+    setCleaning(true);
+    setCleanResult(null);
+    try {
+      const res = await cleanupSummary();
+      setCleanResult(res.removed);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setCleaning(false);
     }
   };
 
@@ -140,13 +155,27 @@ export default function Import() {
             {dedupResult === 0 ? "No duplicates found." : `Removed ${dedupResult} duplicate transaction${dedupResult !== 1 ? "s" : ""}.`}
           </div>
         )}
-        <button
-          onClick={handleDeduplicate}
-          disabled={deduping}
-          className="bg-zinc-700 text-zinc-100 px-6 py-2.5 rounded-lg font-medium text-sm hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          {deduping ? "Scanning..." : "Remove Duplicates"}
-        </button>
+        <div className="flex gap-3 flex-wrap">
+          <button
+            onClick={handleDeduplicate}
+            disabled={deduping}
+            className="bg-zinc-700 text-zinc-100 px-6 py-2.5 rounded-lg font-medium text-sm hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {deduping ? "Scanning..." : "Remove Duplicates"}
+          </button>
+          <button
+            onClick={handleCleanup}
+            disabled={cleaning}
+            className="bg-red-900/40 text-red-400 border border-red-700/50 px-6 py-2.5 rounded-lg font-medium text-sm hover:bg-red-900/60 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {cleaning ? "Cleaning..." : "Fix Bad Summary Rows"}
+          </button>
+        </div>
+        {cleanResult !== null && (
+          <div className="bg-green-900/20 border border-green-700/50 rounded-lg p-3 text-sm text-green-400">
+            {cleanResult === 0 ? "No bad rows found." : `Removed ${cleanResult} bad summary row${cleanResult !== 1 ? "s" : ""}.`}
+          </div>
+        )}
       </div>
 
       {/* Export section */}

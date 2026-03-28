@@ -417,6 +417,27 @@ def list_years(db: Session = Depends(get_db)):
 # Deduplicate
 # ---------------------------------------------------------------------------
 
+@app.post("/cleanup-summary")
+def cleanup_summary(db: Session = Depends(get_db)):
+    """Remove bad rows that were incorrectly imported from the Summary sheet."""
+    bad_merchants = {"Total Income", "Balance", "Savings", "Net Income", "Gross Income",
+                     "Savings Rate", "Surplus", "Deficit", "Income", "Subscriptions"}
+    bad_categories = {"Total Income", "Balance", "Savings", "Subscriptions"}
+    txns = db.execute(
+        select(models.Transaction).where(models.Transaction.source == "summary")
+    ).scalars().all()
+    removed = 0
+    for txn in txns:
+        merchant_lower = (txn.merchant or "").strip().lower()
+        if (txn.merchant in bad_merchants or txn.category in bad_categories
+                or "income" in merchant_lower or "saving" in merchant_lower
+                or merchant_lower.startswith("total") or merchant_lower == "balance"):
+            db.delete(txn)
+            removed += 1
+    db.commit()
+    return {"removed": removed}
+
+
 @app.post("/deduplicate")
 def deduplicate_transactions(db: Session = Depends(get_db)):
     """

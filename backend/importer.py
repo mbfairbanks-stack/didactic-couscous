@@ -362,7 +362,7 @@ def _import_income_fy26(rows, detected_year: int | None, db: Session, counts: di
 _SKIP_SUMMARY_LABELS = {
     "", "needs", "wants", "total", "total expenses", "expenses",
     "total income", "net income", "gross income", "savings", "savings rate",
-    "income", "balance", "surplus", "deficit",
+    "income", "balance", "surplus", "deficit", "subscriptions",
 }
 
 

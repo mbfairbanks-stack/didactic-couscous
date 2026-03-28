@@ -74,6 +74,7 @@ export const importFile = (file) => {
 
 // Deduplicate
 export const deduplicate = () => req("/deduplicate", { method: "POST" });
+export const cleanupSummary = () => req("/cleanup-summary", { method: "POST" });
 
 // Export
 export const exportUrl = (year, month) => {
