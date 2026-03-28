@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useLayoutEffect } from "react";
 import { getCategorySummary, getBudgetTargets, createBudgetTarget, updateBudgetTarget, deleteBudgetTarget, getYears, autoPopulateBudget, copyBudgetFromMonth, getCategories } from "../api";
 import { getCategoryGroup } from "../constants";
 import { MONTH_LABELS, currentYear, currentMonth, fmt } from "../utils";
@@ -54,6 +54,15 @@ export default function BudgetPlanner() {
   }, [year, month]);
 
   useEffect(() => { load(); }, [load]);
+
+  useLayoutEffect(() => {
+    document.querySelectorAll("tr").forEach((tr) => {
+      if (tr.textContent.includes("Entertainment Subscriptions")) {
+        const td = tr.querySelectorAll("td")[2];
+        if (td) console.log("[useLayoutEffect] EntSubs actual cell innerHTML:", td.innerHTML);
+      }
+    });
+  });
 
   useEffect(() => {
     const subs = actuals.filter(a => a.category.toLowerCase().includes("subscri"));
