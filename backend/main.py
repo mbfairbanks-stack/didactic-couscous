@@ -2,12 +2,15 @@ from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func, distinct
+from sqlalchemy import select, func, distinct, text
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import date
-import tempfile, os, io, json
+import tempfile, os, io, json, csv, re
 from collections import defaultdict
+
+from dotenv import load_dotenv
+load_dotenv()
 
 import models, database
 from database import engine, get_db, run_migrations
@@ -489,6 +492,325 @@ def deduplicate_transactions(db: Session = Depends(get_db)):
     db.commit()
 
     return {"duplicates_removed": len(to_delete)}
+
+
+# ---------------------------------------------------------------------------
+# Debts
+# ---------------------------------------------------------------------------
+
+class DebtCreate(BaseModel):
+    name: str
+    creditor: str
+    initial_balance: float = 0.0
+    current_balance: float = 0.0
+    monthly_payment: float = 0.0
+    monthly_extra: float = 0.0
+    savings: float = 0.0
+    due_date: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class DebtOut(DebtCreate):
+    id: int
+    model_config = {"from_attributes": True}
+
+
+@app.get("/debts", response_model=list[DebtOut])
+def list_debts(db: Session = Depends(get_db)):
+    return db.execute(select(models.Debt).order_by(models.Debt.name)).scalars().all()
+
+
+@app.post("/debts", response_model=DebtOut, status_code=201)
+def create_debt(body: DebtCreate, db: Session = Depends(get_db)):
+    debt = models.Debt(**body.model_dump())
+    db.add(debt)
+    db.commit()
+    db.refresh(debt)
+    return debt
+
+
+@app.put("/debts/{debt_id}", response_model=DebtOut)
+def update_debt(debt_id: int, body: DebtCreate, db: Session = Depends(get_db)):
+    debt = db.get(models.Debt, debt_id)
+    if not debt:
+        raise HTTPException(404, "Debt not found")
+    for field, val in body.model_dump().items():
+        setattr(debt, field, val)
+    db.commit()
+    db.refresh(debt)
+    return debt
+
+
+@app.delete("/debts/{debt_id}", status_code=204)
+def delete_debt(debt_id: int, db: Session = Depends(get_db)):
+    debt = db.get(models.Debt, debt_id)
+    if not debt:
+        raise HTTPException(404, "Debt not found")
+    db.delete(debt)
+    db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Category Audit
+# ---------------------------------------------------------------------------
+
+@app.get("/merchant-categories")
+def merchant_categories(db: Session = Depends(get_db)):
+    """Return merchants assigned to more than one category (inconsistencies)."""
+    rows = db.execute(
+        select(
+            models.Transaction.merchant,
+            models.Transaction.category,
+            func.count(models.Transaction.id).label("cnt"),
+        )
+        .group_by(models.Transaction.merchant, models.Transaction.category)
+        .order_by(models.Transaction.merchant)
+    ).all()
+
+    by_merchant: dict[str, dict] = defaultdict(lambda: {"categories": {}, "count": 0})
+    for r in rows:
+        by_merchant[r.merchant]["categories"][r.category] = r.cnt
+        by_merchant[r.merchant]["count"] += r.cnt
+
+    result = []
+    for merchant, data in sorted(by_merchant.items()):
+        if len(data["categories"]) > 1:
+            most_common = max(data["categories"], key=data["categories"].get)
+            result.append({
+                "merchant": merchant,
+                "categories": list(data["categories"].keys()),
+                "count": data["count"],
+                "most_common": most_common,
+            })
+    return result
+
+
+class BulkCategoryUpdate(BaseModel):
+    merchant: str
+    from_category: str
+    to_category: str
+
+
+@app.post("/transactions/bulk-category")
+def bulk_update_category(body: BulkCategoryUpdate, db: Session = Depends(get_db)):
+    """Reassign all transactions for a merchant from one category to another."""
+    txns = db.execute(
+        select(models.Transaction).where(
+            models.Transaction.merchant == body.merchant,
+            models.Transaction.category == body.from_category,
+        )
+    ).scalars().all()
+    for txn in txns:
+        txn.category = body.to_category
+    db.commit()
+    return {"updated": len(txns)}
+
+
+# ---------------------------------------------------------------------------
+# Smart CSV paste import
+# ---------------------------------------------------------------------------
+
+class ParseCsvRequest(BaseModel):
+    text: str
+    format: str = "auto"  # "auto", "amex", "td", "rbc", "cibc"
+
+
+def _parse_amount(s: str) -> Optional[float]:
+    if not s:
+        return None
+    cleaned = re.sub(r'[$,\s]', '', str(s))
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def _parse_date(s: str) -> Optional[str]:
+    from datetime import datetime
+    for fmt in ('%m/%d/%Y', '%Y-%m-%d', '%d/%m/%Y', '%m/%d/%y', '%Y/%m/%d'):
+        try:
+            return datetime.strptime(s.strip(), fmt).strftime('%Y-%m-%d')
+        except ValueError:
+            continue
+    return s.strip() or None
+
+
+def _lookup_category(merchant: str, db: Session) -> Optional[str]:
+    """Find the most common historical category for a merchant using fuzzy matching."""
+    # Try exact match first
+    rows = db.execute(
+        select(models.Transaction.category, func.count(models.Transaction.id).label("cnt"))
+        .where(models.Transaction.merchant == merchant)
+        .group_by(models.Transaction.category)
+        .order_by(func.count(models.Transaction.id).desc())
+    ).all()
+    if rows:
+        return rows[0].category
+
+    # Fuzzy: extract significant words and search
+    words = [w for w in re.sub(r'[^a-z\s]', '', merchant.lower()).split() if len(w) > 3]
+    if not words:
+        return None
+    search_word = words[0]
+    rows = db.execute(
+        select(models.Transaction.category, func.count(models.Transaction.id).label("cnt"))
+        .where(func.lower(models.Transaction.merchant).contains(search_word))
+        .group_by(models.Transaction.category)
+        .order_by(func.count(models.Transaction.id).desc())
+    ).all()
+    return rows[0].category if rows else None
+
+
+@app.post("/parse-csv")
+def parse_csv(body: ParseCsvRequest, db: Session = Depends(get_db)):
+    """Parse pasted CSV from AMEX/Visa/MC and return rows with suggested categories."""
+    reader = csv.reader(io.StringIO(body.text.strip()))
+    rows = list(reader)
+    if len(rows) < 2:
+        return {"rows": []}
+
+    header = [h.strip().lower().replace(' ', '_') for h in rows[0]]
+
+    def col(names):
+        for n in names:
+            for i, h in enumerate(header):
+                if n in h:
+                    return i
+        return None
+
+    date_col = col(['date', 'transaction_date'])
+    desc_col = col(['description', 'desc', 'merchant', 'name', 'payee'])
+    # Amount: prefer a single "amount" col; fall back to debit/cad$
+    amt_col  = col(['amount'])
+    debit_col = col(['debit'])
+    cad_col  = col(['cad$', 'cad'])
+
+    parsed = []
+    for row in rows[1:]:
+        if not row or all(not c.strip() for c in row):
+            continue
+        merchant = row[desc_col].strip() if desc_col is not None and desc_col < len(row) else ""
+        date_str = row[date_col].strip() if date_col is not None and date_col < len(row) else ""
+        if not merchant or not date_str:
+            continue
+
+        amount = None
+        if amt_col is not None and amt_col < len(row):
+            amount = _parse_amount(row[amt_col])
+        if (amount is None or amount <= 0) and debit_col is not None and debit_col < len(row):
+            amount = _parse_amount(row[debit_col])
+        if (amount is None or amount <= 0) and cad_col is not None and cad_col < len(row):
+            amount = _parse_amount(row[cad_col])
+
+        if amount is None or amount <= 0:
+            continue
+
+        parsed_date = _parse_date(date_str)
+        if not parsed_date:
+            continue
+
+        suggested = _lookup_category(merchant, db)
+        parsed.append({
+            "date": parsed_date,
+            "merchant": merchant,
+            "amount": round(amount, 2),
+            "suggested_category": suggested or "",
+            "confidence": "high" if suggested else "low",
+        })
+
+    return {"rows": parsed}
+
+
+class CsvImportRow(BaseModel):
+    date: str
+    merchant: str
+    amount: float
+    category: str
+
+
+@app.post("/import-csv-rows")
+def import_csv_rows(rows: List[CsvImportRow], db: Session = Depends(get_db)):
+    """Import reviewed CSV rows into the transactions table."""
+    from datetime import datetime
+    imported = 0
+    for row in rows:
+        try:
+            d = datetime.strptime(row.date, '%Y-%m-%d').date()
+        except ValueError:
+            continue
+        txn = models.Transaction(
+            date=d,
+            merchant=row.merchant,
+            amount=row.amount,
+            category=row.category,
+            year=d.year,
+            month=d.month,
+            source="csv_paste",
+        )
+        db.add(txn)
+        imported += 1
+    db.commit()
+    return {"imported": imported}
+
+
+# ---------------------------------------------------------------------------
+# Budget auto-populate from historical averages
+# ---------------------------------------------------------------------------
+
+class AutoPopulateRequest(BaseModel):
+    year: int
+    month: int
+    lookback_months: int = 3
+    overwrite: bool = False
+
+
+@app.post("/budget-targets/auto-populate")
+def auto_populate_budget(body: AutoPopulateRequest, db: Session = Depends(get_db)):
+    """Create budget targets for a month based on historical spending averages."""
+    # Determine the N months before the target month
+    target = body.year * 12 + body.month
+    history_months = []
+    for i in range(1, body.lookback_months + 1):
+        val = target - i
+        history_months.append((val // 12, val % 12 if val % 12 != 0 else 12))
+        if val % 12 == 0:
+            history_months[-1] = (val // 12 - 1, 12)
+
+    # Sum per category per month in the lookback window
+    cat_totals: dict[str, list[float]] = defaultdict(list)
+    for yr, mo in history_months:
+        rows = db.execute(
+            select(models.Transaction.category, func.sum(models.Transaction.amount).label("total"))
+            .where(models.Transaction.year == yr, models.Transaction.month == mo)
+            .group_by(models.Transaction.category)
+        ).all()
+        for r in rows:
+            cat_totals[r.category].append(r.total)
+
+    created = 0
+    skipped = 0
+    for category, monthly_vals in cat_totals.items():
+        avg = round(sum(monthly_vals) / len(monthly_vals), 2)
+        existing = db.execute(
+            select(models.BudgetTarget).where(
+                models.BudgetTarget.category == category,
+                models.BudgetTarget.year == body.year,
+                models.BudgetTarget.month == body.month,
+            )
+        ).scalar_one_or_none()
+
+        if existing:
+            if body.overwrite:
+                existing.amount = avg
+                created += 1
+            else:
+                skipped += 1
+        else:
+            db.add(models.BudgetTarget(category=category, year=body.year, month=body.month, amount=avg))
+            created += 1
+
+    db.commit()
+    return {"created": created, "skipped": skipped}
 
 
 # ---------------------------------------------------------------------------

@@ -45,6 +45,8 @@ export const updateBudgetTarget = (id, body) =>
   req(`/budget-targets/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 export const deleteBudgetTarget = (id) =>
   req(`/budget-targets/${id}`, { method: "DELETE" });
+export const autoPopulateBudget = (body) =>
+  req("/budget-targets/auto-populate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 // Analytics
 export const getMonthlySummary = (year) => req(`/summary/monthly?year=${year}`);
@@ -67,12 +69,30 @@ export const getProjections = (year, month) =>
 export const getCategories = () => req("/categories");
 export const getYears = () => req("/years");
 
+// Debts
+export const getDebts = () => req("/debts");
+export const createDebt = (body) =>
+  req("/debts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const updateDebt = (id, body) =>
+  req(`/debts/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteDebt = (id) =>
+  req(`/debts/${id}`, { method: "DELETE" });
+
+// Merchant categories (audit)
+export const getMerchantCategories = () => req("/merchant-categories");
+export const bulkUpdateCategory = (body) =>
+  req("/transactions/bulk-category", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
 // Import
 export const importFile = (file) => {
   const fd = new FormData();
   fd.append("file", file);
   return req("/import", { method: "POST", body: fd });
 };
+export const parseCsv = (body) =>
+  req("/parse-csv", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const importCsvRows = (body) =>
+  req("/import-csv-rows", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 // Deduplicate
 export const deduplicate = () => req("/deduplicate", { method: "POST" });

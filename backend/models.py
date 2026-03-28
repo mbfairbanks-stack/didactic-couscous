@@ -45,3 +45,18 @@ class BudgetTarget(Base):
     __table_args__ = (
         UniqueConstraint("category", "year", "month", name="uq_budget_target"),
     )
+
+
+class Debt(Base):
+    __tablename__ = "debts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)           # "Brookstone (Doors)"
+    creditor = Column(String, nullable=False)        # "FinanceIt"
+    initial_balance = Column(Float, default=0.0)
+    current_balance = Column(Float, default=0.0)
+    monthly_payment = Column(Float, default=0.0)    # minimum payment
+    monthly_extra = Column(Float, default=0.0)      # extra payment on top
+    savings = Column(Float, default=0.0)            # amount already set aside
+    due_date = Column(String, nullable=True)        # "Feb 2027" free-form
+    notes = Column(String, nullable=True)

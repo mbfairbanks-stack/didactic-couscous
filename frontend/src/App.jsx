@@ -7,6 +7,8 @@ import Charts from "./pages/Charts";
 import Import from "./pages/Import";
 import Insights from "./pages/Insights";
 import Income from "./pages/Income";
+import Debts from "./pages/Debts";
+import CategoryAudit from "./pages/CategoryAudit";
 
 export default function App() {
   return (
@@ -23,6 +25,8 @@ export default function App() {
             <Route path="/import" element={<Import />} />
             <Route path="/insights" element={<Insights />} />
             <Route path="/income" element={<Income />} />
+            <Route path="/debts" element={<Debts />} />
+            <Route path="/category-audit" element={<CategoryAudit />} />
           </Routes>
         </main>
       </div>

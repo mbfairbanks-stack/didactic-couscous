@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { getCategorySummary, getBudgetTargets, createBudgetTarget, updateBudgetTarget, deleteBudgetTarget, getYears } from "../api";
+import { getCategorySummary, getBudgetTargets, createBudgetTarget, updateBudgetTarget, deleteBudgetTarget, getYears, autoPopulateBudget } from "../api";
 import { getCategoryGroup } from "../constants";
 import { MONTH_LABELS, currentYear, currentMonth, fmt } from "../utils";
 
@@ -30,6 +30,10 @@ export default function BudgetPlanner() {
   const [newCategory, setNewCategory] = useState("");
   const [newAmount, setNewAmount] = useState("");
   const [error, setError] = useState("");
+  const [autoPopulating, setAutoPopulating] = useState(false);
+  const [autoPopResult, setAutoPopResult] = useState(null);
+  const [lookback, setLookback] = useState(3);
+  const [overwrite, setOverwrite] = useState(false);
 
   useEffect(() => {
     getYears().then((y) => setYears(y.length ? y : [currentYear])).catch(() => {});
@@ -87,6 +91,21 @@ export default function BudgetPlanner() {
     load();
   };
 
+  const handleAutoPopulate = async () => {
+    setAutoPopulating(true);
+    setAutoPopResult(null);
+    setError("");
+    try {
+      const res = await autoPopulateBudget({ year, month, lookback_months: lookback, overwrite });
+      setAutoPopResult(res);
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setAutoPopulating(false);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -139,6 +158,46 @@ export default function BudgetPlanner() {
                 style={{ width: `${Math.min((totalActual / totalBudget) * 100, 100)}%` }}
               />
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* Auto-populate from history */}
+      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-4 space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <p className="text-sm font-semibold text-zinc-200">Auto-populate from history</p>
+            <p className="text-xs text-zinc-500 mt-0.5">Set budget targets based on your spending averages from recent months.</p>
+          </div>
+          <div className="flex gap-3 items-end flex-wrap">
+            <div>
+              <label className="text-xs text-zinc-500 block mb-1">Look back</label>
+              <select className={inputCls} value={lookback} onChange={(e) => setLookback(Number(e.target.value))}>
+                {[1, 2, 3, 6, 12].map((n) => <option key={n} value={n}>{n} month{n !== 1 ? "s" : ""}</option>)}
+              </select>
+            </div>
+            <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer pb-1.5">
+              <input
+                type="checkbox"
+                className="accent-yellow-400"
+                checked={overwrite}
+                onChange={(e) => setOverwrite(e.target.checked)}
+              />
+              Overwrite existing
+            </label>
+            <button
+              onClick={handleAutoPopulate}
+              disabled={autoPopulating}
+              className="bg-zinc-700 text-zinc-100 px-4 py-1.5 rounded text-sm font-medium hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {autoPopulating ? "Calculating..." : "Auto-populate"}
+            </button>
+          </div>
+        </div>
+        {autoPopResult && (
+          <div className="bg-green-900/20 border border-green-700/50 rounded-lg p-3 text-sm text-green-400">
+            Set <strong>{autoPopResult.set}</strong> budget target{autoPopResult.set !== 1 ? "s" : ""} from {autoPopResult.months_analyzed} month{autoPopResult.months_analyzed !== 1 ? "s" : ""} of history.
+            {autoPopResult.skipped > 0 && <span className="text-zinc-500"> ({autoPopResult.skipped} skipped — already set)</span>}
           </div>
         )}
       </div>

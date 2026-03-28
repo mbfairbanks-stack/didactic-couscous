@@ -1,10 +1,14 @@
-import { useState, useRef } from "react";
-import { importFile, exportUrl, getYears, deduplicate, cleanupSummary } from "../api";
-import { useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
+import { importFile, exportUrl, getYears, deduplicate, cleanupSummary, parseCsv, importCsvRows } from "../api";
+import { MONTH_LABELS, currentYear } from "../utils";
 
-const MONTH_LABELS = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const currentYear = new Date().getFullYear();
+const CARD_FORMATS = [
+  { value: "auto", label: "Auto-detect" },
+  { value: "amex", label: "AMEX" },
+  { value: "td_visa", label: "TD Visa" },
+  { value: "rbc_visa", label: "RBC Visa" },
+  { value: "cibc_visa", label: "CIBC Visa" },
+];
 
 export default function Import() {
   const [dragging, setDragging] = useState(false);
@@ -20,6 +24,16 @@ export default function Import() {
   const [cleaning, setCleaning] = useState(false);
   const [cleanResult, setCleanResult] = useState(null);
   const fileRef = useRef();
+
+  // CSV paste state
+  const [csvText, setCsvText] = useState("");
+  const [csvFormat, setCsvFormat] = useState("auto");
+  const [csvSource, setCsvSource] = useState("");
+  const [parsing, setParsing] = useState(false);
+  const [parsedRows, setParsedRows] = useState(null);
+  const [parseError, setParseError] = useState("");
+  const [csvImporting, setCsvImporting] = useState(false);
+  const [csvResult, setCsvResult] = useState(null);
 
   const handleDeduplicate = async () => {
     setDeduping(true);
@@ -76,10 +90,53 @@ export default function Import() {
     }
   };
 
+  const handleParse = async () => {
+    if (!csvText.trim()) return;
+    setParsing(true);
+    setParseError("");
+    setParsedRows(null);
+    setCsvResult(null);
+    try {
+      const res = await parseCsv({ csv_text: csvText, format: csvFormat, source: csvSource || undefined });
+      setParsedRows(res.rows);
+      if (!res.rows.length) setParseError("No transactions found in the pasted data.");
+    } catch (e) {
+      setParseError(e.message);
+    } finally {
+      setParsing(false);
+    }
+  };
+
+  const updateRow = (idx, field, value) => {
+    setParsedRows((rows) => rows.map((r, i) => i === idx ? { ...r, [field]: value } : r));
+  };
+
+  const removeRow = (idx) => {
+    setParsedRows((rows) => rows.filter((_, i) => i !== idx));
+  };
+
+  const handleCsvImport = async () => {
+    if (!parsedRows?.length) return;
+    setCsvImporting(true);
+    setCsvResult(null);
+    try {
+      const res = await importCsvRows({ rows: parsedRows });
+      setCsvResult(res);
+      setParsedRows(null);
+      setCsvText("");
+      getYears().then((y) => setYears(y.length ? y : [currentYear]));
+    } catch (e) {
+      setParseError(e.message);
+    } finally {
+      setCsvImporting(false);
+    }
+  };
+
   const selectCls = "bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400/50";
+  const inputCls = "bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-100 focus:outline-none focus:border-yellow-400/50";
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 max-w-4xl">
       <h1 className="text-2xl font-bold text-zinc-100">Import / Export</h1>
 
       {/* Import section */}
@@ -89,7 +146,6 @@ export default function Import() {
           Upload your FY24, FY25, or FY26 budget xlsx file. Transactions and income will be imported automatically.
         </p>
 
-        {/* Drop zone */}
         <div
           onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
@@ -141,6 +197,123 @@ export default function Import() {
         >
           {importing ? "Importing..." : "Import File"}
         </button>
+      </div>
+
+      {/* CSV Paste Import */}
+      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-zinc-200">Paste Credit Card CSV</h2>
+          <p className="text-sm text-zinc-500 mt-1">
+            Copy rows directly from your AMEX, TD, RBC, or CIBC statement and paste below.
+            Categories are suggested based on your transaction history.
+          </p>
+        </div>
+
+        <div className="flex gap-3 flex-wrap">
+          <div>
+            <label className="text-xs text-zinc-500 block mb-1">Format</label>
+            <select className={selectCls} value={csvFormat} onChange={(e) => setCsvFormat(e.target.value)}>
+              {CARD_FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-zinc-500 block mb-1">Source label (optional)</label>
+            <input
+              type="text"
+              placeholder="e.g. amex, visa"
+              className={`${selectCls} w-36`}
+              value={csvSource}
+              onChange={(e) => setCsvSource(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <textarea
+          className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-3 text-xs font-mono text-zinc-300 focus:outline-none focus:border-yellow-400/50 resize-y"
+          rows={6}
+          placeholder={"Paste CSV rows here, e.g.:\n2026-01-15,Tim Hortons,4.75\n2026-01-16,Amazon.ca,53.20\n..."}
+          value={csvText}
+          onChange={(e) => { setCsvText(e.target.value); setParsedRows(null); setCsvResult(null); setParseError(""); }}
+        />
+
+        {parseError && (
+          <div className="bg-red-900/20 border border-red-700/50 rounded-lg p-3 text-sm text-red-400">{parseError}</div>
+        )}
+
+        {csvResult && (
+          <div className="bg-green-900/20 border border-green-700/50 rounded-lg p-3 text-sm text-green-400">
+            Imported <strong>{csvResult.imported}</strong> transactions.
+          </div>
+        )}
+
+        {!parsedRows ? (
+          <button
+            onClick={handleParse}
+            disabled={!csvText.trim() || parsing}
+            className="bg-zinc-700 text-zinc-100 px-5 py-2 rounded-lg font-medium text-sm hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {parsing ? "Parsing..." : "Parse & Review"}
+          </button>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-zinc-400">{parsedRows.length} transactions — review categories before importing</p>
+              <button onClick={() => setParsedRows(null)} className="text-xs text-zinc-600 hover:text-zinc-400">Clear</button>
+            </div>
+            <div className="overflow-x-auto rounded-lg border border-zinc-700">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-zinc-800 text-left text-zinc-500 border-b border-zinc-700">
+                    <th className="px-3 py-2">Date</th>
+                    <th className="px-3 py-2">Merchant</th>
+                    <th className="px-3 py-2 text-right">Amount</th>
+                    <th className="px-3 py-2">Category</th>
+                    <th className="px-3 py-2">Source</th>
+                    <th className="px-3 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {parsedRows.map((row, idx) => (
+                    <tr key={idx} className="border-b border-zinc-800 last:border-0 hover:bg-zinc-800/50">
+                      <td className="px-3 py-1.5 text-zinc-400">{row.date}</td>
+                      <td className="px-3 py-1.5 text-zinc-200 max-w-[180px] truncate">{row.merchant}</td>
+                      <td className="px-3 py-1.5 text-right text-zinc-300">${Number(row.amount).toFixed(2)}</td>
+                      <td className="px-3 py-1.5">
+                        <input
+                          type="text"
+                          className={`${inputCls} w-32`}
+                          value={row.category}
+                          onChange={(e) => updateRow(idx, "category", e.target.value)}
+                        />
+                        {row.suggested && row.suggested !== row.category && (
+                          <span className="ml-1 text-zinc-600 italic">← {row.suggested}</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-1.5">
+                        <input
+                          type="text"
+                          className={`${inputCls} w-20`}
+                          value={row.source || ""}
+                          onChange={(e) => updateRow(idx, "source", e.target.value)}
+                        />
+                      </td>
+                      <td className="px-3 py-1.5 text-right">
+                        <button onClick={() => removeRow(idx)} className="text-red-600 hover:text-red-400">✕</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <button
+              onClick={handleCsvImport}
+              disabled={csvImporting || parsedRows.length === 0}
+              className="bg-yellow-400 text-black px-6 py-2.5 rounded-lg font-medium text-sm hover:bg-yellow-300 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {csvImporting ? "Importing..." : `Import ${parsedRows.length} Transactions`}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Deduplicate section */}
@@ -217,6 +390,7 @@ export default function Import() {
           <li>FY24 — "CC - Jan 24" sheets with VISA/AMEX side-by-side layout</li>
           <li>FY25 — "Jan-2025 (CC)" sheets with single-card layout</li>
           <li>FY26 — "Jan - 2026 (CC)" sheets with single-card layout</li>
+          <li>CSV paste — AMEX, TD Visa, RBC Visa, CIBC Visa (auto-detected or manually selected)</li>
         </ul>
         <p className="mt-2 text-zinc-500">Income is imported from the Summary or Balance Sheet tab automatically.</p>
       </div>

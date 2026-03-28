@@ -4,10 +4,12 @@ const links = [
   { to: "/dashboard", label: "Dashboard" },
   { to: "/transactions", label: "Transactions" },
   { to: "/budget", label: "Budget Planner" },
+  { to: "/debts", label: "Debts" },
   { to: "/charts", label: "Charts" },
   { to: "/income", label: "Log Income" },
   { to: "/insights", label: "AI Insights" },
   { to: "/import", label: "Import / Export" },
+  { to: "/category-audit", label: "Category Audit" },
 ];
 
 export default function Nav() {
