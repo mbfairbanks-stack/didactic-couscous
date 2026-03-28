@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select, func, distinct, text
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import date as Date
+import datetime
 import tempfile, os, io, json, csv, re
 from collections import defaultdict
 
@@ -34,7 +34,7 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 
 class TransactionCreate(BaseModel):
-    date: Date
+    date: datetime.date
     merchant: str
     amount: float
     category: str
@@ -47,7 +47,7 @@ class TransactionCreate(BaseModel):
 
 
 class TransactionUpdate(BaseModel):
-    date: Optional[Date] = None
+    date: Optional[datetime.date] = None
     merchant: Optional[str] = None
     amount: Optional[float] = None
     category: Optional[str] = None
@@ -67,7 +67,7 @@ class IncomeCreate(BaseModel):
     person: str
     income_type: str
     amount: float
-    pay_date: Optional[Date] = None
+    pay_date: Optional[datetime.date] = None
 
 
 class IncomeOut(IncomeCreate):
