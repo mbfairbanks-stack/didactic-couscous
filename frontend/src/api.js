@@ -110,6 +110,18 @@ export const cleanupSummary = () => req("/cleanup-summary", { method: "POST" });
 export const getSuggestedRenames = () => req("/categories/suggested-renames");
 export const migrateCategories = () => req("/categories/migrate", { method: "POST" });
 
+// Export CSV (transactions)
+export const exportTransactionsCsv = (params) =>
+  fetch(BASE + "/transactions/export?" + new URLSearchParams(params))
+    .then((r) => r.blob())
+    .then((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "transactions.csv";
+      a.click();
+    });
+
 // Export
 export const exportUrl = (year, month) => {
   const qs = month ? `?year=${year}&month=${month}` : `?year=${year}`;

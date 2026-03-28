@@ -10,6 +10,7 @@ const links = [
   { to: "/insights", label: "AI Insights" },
   { to: "/import", label: "Import" },
   { to: "/category-audit", label: "Audit" },
+  { to: "/net-worth", label: "Net Worth" },
 ];
 
 export default function Nav() {

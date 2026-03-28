@@ -9,6 +9,7 @@ import Insights from "./pages/Insights";
 import Income from "./pages/Income";
 import Debts from "./pages/Debts";
 import CategoryAudit from "./pages/CategoryAudit";
+import NetWorth from "./pages/NetWorth";
 
 export default function App() {
   return (
@@ -27,6 +28,7 @@ export default function App() {
             <Route path="/income" element={<Income />} />
             <Route path="/debts" element={<Debts />} />
             <Route path="/category-audit" element={<CategoryAudit />} />
+            <Route path="/net-worth" element={<NetWorth />} />
           </Routes>
         </main>
       </div>
