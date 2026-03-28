@@ -4,6 +4,7 @@ import {
 } from "recharts";
 import StatCard from "../components/StatCard";
 import { getMonthlySummary, getTotals, getCategorySummary, getYears, getProjections } from "../api";
+import { getCategoryGroup } from "../constants";
 
 const MONTH_LABELS = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -110,6 +111,63 @@ export default function Dashboard() {
           <StatCard label="Savings Rate" value={`${monthTotals.savings_rate ?? 0}%`} color="purple" />
         </div>
       </div>
+
+      {/* Needs / Wants breakdown */}
+      {categories.length > 0 && (() => {
+        const needs = categories.filter((c) => getCategoryGroup(c.category) === "Needs");
+        const wants = categories.filter((c) => getCategoryGroup(c.category) === "Wants");
+        const needsTotal = needs.reduce((s, c) => s + c.total, 0);
+        const wantsTotal = wants.reduce((s, c) => s + c.total, 0);
+        const grandTotal = needsTotal + wantsTotal || 1;
+        const needsPct = Math.round((needsTotal / grandTotal) * 100);
+        const wantsPct = 100 - needsPct;
+        return (
+          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5 space-y-4">
+            <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">
+              Needs vs Wants — {MONTH_LABELS[month]} {year}
+            </h2>
+
+            {/* Split bar */}
+            <div className="space-y-1">
+              <div className="flex h-4 rounded-full overflow-hidden">
+                <div className="bg-yellow-400 transition-all" style={{ width: `${needsPct}%` }} />
+                <div className="bg-zinc-600 transition-all" style={{ width: `${wantsPct}%` }} />
+              </div>
+              <div className="flex justify-between text-xs text-zinc-500">
+                <span className="text-yellow-400 font-medium">Needs {needsPct}% — {fmt(needsTotal)}</span>
+                <span className="text-zinc-400 font-medium">{fmt(wantsTotal)} — {wantsPct}% Wants</span>
+              </div>
+            </div>
+
+            {/* Two column breakdown */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-1">
+              {[{ label: "Needs", rows: needs, color: "text-yellow-400" },
+                { label: "Wants", rows: wants, color: "text-zinc-400" }].map(({ label, rows, color }) => (
+                <div key={label}>
+                  <p className={`text-xs font-bold uppercase tracking-widest mb-2 ${color}`}>{label}</p>
+                  <div className="space-y-1.5">
+                    {rows.sort((a, b) => b.total - a.total).map((c) => {
+                      const pct = Math.round((c.total / (label === "Needs" ? needsTotal : wantsTotal)) * 100);
+                      return (
+                        <div key={c.category}>
+                          <div className="flex justify-between text-xs mb-0.5">
+                            <span className="text-zinc-400 truncate max-w-[160px]">{c.category}</span>
+                            <span className="text-zinc-300 font-medium">{fmt(c.total)}</span>
+                          </div>
+                          <div className="h-1 bg-zinc-800 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full ${label === "Needs" ? "bg-yellow-400/60" : "bg-zinc-500"}`}
+                              style={{ width: `${pct}%` }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Projections */}
       {projections && (
