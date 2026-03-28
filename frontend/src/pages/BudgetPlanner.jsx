@@ -57,7 +57,10 @@ export default function BudgetPlanner() {
 
   useEffect(() => {
     const subs = actuals.filter(a => a.category.toLowerCase().includes("subscri"));
-    if (subs.length) console.log("[Budget debug] subscription actuals:", JSON.stringify(subs));
+    if (subs.length) {
+      console.log("[Budget debug] subscription actuals:", JSON.stringify(subs));
+      subs.forEach(s => console.log(`[Budget debug] fmt(${s.total}) =`, fmt(s.total)));
+    }
   }, [actuals]);
 
   const targetMap = Object.fromEntries(targets.map((t) => [t.category, t]));
