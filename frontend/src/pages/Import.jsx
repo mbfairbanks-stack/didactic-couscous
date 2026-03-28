@@ -24,8 +24,11 @@ export default function Import() {
   const [cleaning, setCleaning] = useState(false);
   const [cleanResult, setCleanResult] = useState(null);
   const fileRef = useRef();
+  const csvFileRef = useRef();
 
-  // CSV paste state
+  // CSV import state
+  const [csvFile, setCsvFile] = useState(null);
+  const [csvDragging, setCsvDragging] = useState(false);
   const [csvText, setCsvText] = useState("");
   const [csvFormat, setCsvFormat] = useState("auto");
   const [csvSource, setCsvSource] = useState("");
@@ -91,20 +94,32 @@ export default function Import() {
   };
 
   const handleParse = async () => {
-    if (!csvText.trim()) return;
     setParsing(true);
     setParseError("");
     setParsedRows(null);
     setCsvResult(null);
     try {
-      const res = await parseCsv({ csv_text: csvText, format: csvFormat, source: csvSource || undefined });
+      let text = csvText;
+      if (csvFile) {
+        text = await csvFile.text();
+      }
+      if (!text.trim()) { setParseError("No data to parse."); return; }
+      const res = await parseCsv({ csv_text: text, format: csvFormat, source: csvSource || undefined });
       setParsedRows(res.rows);
-      if (!res.rows.length) setParseError("No transactions found in the pasted data.");
+      if (!res.rows.length) setParseError("No transactions found. Check the format selection.");
     } catch (e) {
       setParseError(e.message);
     } finally {
       setParsing(false);
     }
+  };
+
+  const handleCsvFileDrop = (e) => {
+    e.preventDefault();
+    setCsvDragging(false);
+    const f = e.dataTransfer.files[0];
+    if (f && f.name.endsWith(".csv")) { setCsvFile(f); setParsedRows(null); setCsvResult(null); setParseError(""); }
+    else setParseError("Please drop a .csv file");
   };
 
   const updateRow = (idx, field, value) => {
@@ -228,13 +243,51 @@ export default function Import() {
           </div>
         </div>
 
-        <textarea
-          className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-3 text-xs font-mono text-zinc-300 focus:outline-none focus:border-yellow-400/50 resize-y"
-          rows={6}
-          placeholder={"Paste CSV rows here, e.g.:\n2026-01-15,Tim Hortons,4.75\n2026-01-16,Amazon.ca,53.20\n..."}
-          value={csvText}
-          onChange={(e) => { setCsvText(e.target.value); setParsedRows(null); setCsvResult(null); setParseError(""); }}
-        />
+        {/* File drop zone */}
+        <div
+          onDragOver={(e) => { e.preventDefault(); setCsvDragging(true); }}
+          onDragLeave={() => setCsvDragging(false)}
+          onDrop={handleCsvFileDrop}
+          onClick={() => csvFileRef.current.click()}
+          className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
+            csvDragging
+              ? "border-yellow-400 bg-yellow-400/5"
+              : "border-zinc-700 hover:border-yellow-400/40 hover:bg-zinc-800"
+          }`}
+        >
+          <input
+            ref={csvFileRef}
+            type="file"
+            accept=".csv"
+            className="hidden"
+            onChange={(e) => { const f = e.target.files[0]; if (f) { setCsvFile(f); setParsedRows(null); setCsvResult(null); setParseError(""); setCsvText(""); } }}
+          />
+          {csvFile ? (
+            <div>
+              <p className="text-yellow-400 font-medium">{csvFile.name}</p>
+              <p className="text-xs text-zinc-600 mt-1">{(csvFile.size / 1024).toFixed(0)} KB — click to change</p>
+            </div>
+          ) : (
+            <div>
+              <p className="text-zinc-400 font-medium">Drop CSV file here</p>
+              <p className="text-xs text-zinc-600 mt-1">or click to browse</p>
+            </div>
+          )}
+        </div>
+
+        {/* Paste fallback */}
+        <details className="group">
+          <summary className="text-xs text-zinc-600 cursor-pointer hover:text-zinc-400 select-none">
+            Paste text instead
+          </summary>
+          <textarea
+            className="mt-2 w-full bg-zinc-800 border border-zinc-700 rounded-lg p-3 text-xs font-mono text-zinc-300 focus:outline-none focus:border-yellow-400/50 resize-y"
+            rows={5}
+            placeholder={"2026-01-15,Tim Hortons,4.75\n2026-01-16,Amazon.ca,53.20\n..."}
+            value={csvText}
+            onChange={(e) => { setCsvText(e.target.value); setCsvFile(null); setParsedRows(null); setCsvResult(null); setParseError(""); }}
+          />
+        </details>
 
         {parseError && (
           <div className="bg-red-900/20 border border-red-700/50 rounded-lg p-3 text-sm text-red-400">{parseError}</div>
@@ -249,7 +302,7 @@ export default function Import() {
         {!parsedRows ? (
           <button
             onClick={handleParse}
-            disabled={!csvText.trim() || parsing}
+            disabled={(!csvFile && !csvText.trim()) || parsing}
             className="bg-zinc-700 text-zinc-100 px-5 py-2 rounded-lg font-medium text-sm hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {parsing ? "Parsing..." : "Parse & Review"}
