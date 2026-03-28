@@ -634,6 +634,21 @@ def bulk_update_category(body: BulkCategoryUpdate, db: Session = Depends(get_db)
     return {"updated": len(txns)}
 
 
+class SetMerchantCategoryRequest(BaseModel):
+    merchant: str
+    category: str
+
+@app.post("/transactions/set-merchant-category")
+def set_merchant_category(body: SetMerchantCategoryRequest, db: Session = Depends(get_db)):
+    """Reassign ALL transactions for a merchant to a single category."""
+    result = db.execute(
+        text("UPDATE transactions SET category = :cat WHERE merchant = :merchant"),
+        {"cat": body.category, "merchant": body.merchant}
+    )
+    db.commit()
+    return {"updated": result.rowcount}
+
+
 # ---------------------------------------------------------------------------
 # Smart CSV paste import
 # ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { getMerchantCategories, bulkUpdateCategory, getSuggestedRenames, migrateCategories } from "../api";
-import { getCategoryGroup } from "../constants";
+import { getMerchantCategories, setMerchantCategory, getSuggestedRenames, migrateCategories } from "../api";
+import { getCategoryGroup, ALL_CATEGORIES } from "../constants";
 
 export default function CategoryAudit() {
   const [rows, setRows] = useState([]);
@@ -8,6 +8,7 @@ export default function CategoryAudit() {
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
   const [reassigning, setReassigning] = useState(null);
+  const [pendingCategory, setPendingCategory] = useState({});  // merchant → chosen category
   const [renames, setRenames] = useState([]);
   const [migrating, setMigrating] = useState(false);
 
@@ -24,16 +25,18 @@ export default function CategoryAudit() {
 
   useEffect(() => { load(); }, [load]);
 
-  const handleReassign = async (merchant, fromCategory, toCategory) => {
-    const key = `${merchant}||${fromCategory}`;
-    setReassigning(key);
+  const handleReassign = async (merchant) => {
+    const toCategory = pendingCategory[merchant];
+    if (!toCategory) return;
+    setReassigning(merchant);
     setSuccessMsg("");
     setError("");
     try {
-      const result = await bulkUpdateCategory({ merchant, from_category: fromCategory, to_category: toCategory });
+      const result = await setMerchantCategory({ merchant, category: toCategory });
       setSuccessMsg(
-        `Reassigned ${result.updated} transaction${result.updated !== 1 ? "s" : ""}: "${fromCategory}" → "${toCategory}" for ${merchant}`
+        `Reassigned ${result.updated} transaction${result.updated !== 1 ? "s" : ""} for "${merchant}" → "${toCategory}"`
       );
+      setPendingCategory((prev) => { const next = { ...prev }; delete next[merchant]; return next; });
       load();
     } catch (e) {
       setError(e.message);
@@ -148,7 +151,6 @@ export default function CategoryAudit() {
               </thead>
               <tbody>
                 {rows.map((row) => {
-                  const others = row.categories.filter((c) => c !== row.most_common);
                   return (
                     <tr
                       key={row.merchant}
@@ -191,23 +193,24 @@ export default function CategoryAudit() {
 
                       {/* Actions */}
                       <td className="px-4 py-3">
-                        <div className="flex flex-col gap-1.5">
-                          {others.map((otherCat) => {
-                            const key = `${row.merchant}||${otherCat}`;
-                            const busy = reassigning === key;
-                            return (
-                              <button
-                                key={otherCat}
-                                disabled={busy || reassigning != null}
-                                onClick={() => handleReassign(row.merchant, otherCat, row.most_common)}
-                                className="text-xs bg-zinc-800 border border-zinc-700 hover:border-yellow-400/50 hover:text-yellow-400 text-zinc-300 px-3 py-1.5 rounded transition-colors whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed text-left"
-                              >
-                                {busy
-                                  ? "Reassigning..."
-                                  : `Reassign "${otherCat}" → "${row.most_common}"`}
-                              </button>
-                            );
-                          })}
+                        <div className="flex items-center gap-2">
+                          <select
+                            className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-yellow-400/50"
+                            value={pendingCategory[row.merchant] ?? ""}
+                            onChange={(e) => setPendingCategory((prev) => ({ ...prev, [row.merchant]: e.target.value }))}
+                          >
+                            <option value="">Set all to...</option>
+                            {ALL_CATEGORIES.map((cat) => (
+                              <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                          </select>
+                          <button
+                            disabled={!pendingCategory[row.merchant] || reassigning === row.merchant}
+                            onClick={() => handleReassign(row.merchant)}
+                            className="text-xs bg-yellow-400 text-black px-3 py-1.5 rounded font-medium hover:bg-yellow-300 disabled:opacity-30 disabled:cursor-not-allowed whitespace-nowrap"
+                          >
+                            {reassigning === row.merchant ? "Saving..." : "Apply"}
+                          </button>
                         </div>
                       </td>
                     </tr>

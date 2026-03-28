@@ -88,6 +88,8 @@ export const deleteDebt = (id) =>
 export const getMerchantCategories = () => req("/merchant-categories");
 export const bulkUpdateCategory = (body) =>
   req("/transactions/bulk-category", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const setMerchantCategory = (body) =>
+  req("/transactions/set-merchant-category", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 // Import
 export const importFile = (file) => {
