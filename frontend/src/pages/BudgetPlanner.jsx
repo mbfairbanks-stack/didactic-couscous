@@ -360,6 +360,7 @@ export default function BudgetPlanner() {
                     const budget = target?.amount ?? 0;
                     const diff = budget - row.total;
                     const isEditing = editing[row.category] !== undefined;
+                    if (row.category.toLowerCase().includes("subscri")) console.log("[Render]", row.category, "total=", row.total, "fmt=", fmt(row.total), "budget=", budget);
                     return (
                       <tr key={row.category} className="border-b border-zinc-800 last:border-0 hover:bg-zinc-800">
                         <td className="px-4 py-2.5 font-medium text-zinc-200">{row.category}</td>
