@@ -361,6 +361,8 @@ def _import_income_fy26(rows, detected_year: int | None, db: Session, counts: di
 
 _SKIP_SUMMARY_LABELS = {
     "", "needs", "wants", "total", "total expenses", "expenses",
+    "total income", "net income", "gross income", "savings", "savings rate",
+    "income", "balance", "surplus", "deficit",
 }
 
 
@@ -424,8 +426,10 @@ def _import_expenses_fy26_summary(rows, detected_year: int | None, db: Session, 
         if label.lower() in _SKIP_SUMMARY_LABELS:
             continue
         lower = label.lower()
-        # Skip income rows already handled
+        # Skip income rows and summary/total rows
         if ("matt" in lower and "pay" in lower) or ("nicole" in lower and "pay" in lower):
+            continue
+        if "income" in lower or "saving" in lower or lower.startswith("total"):
             continue
 
         category = _map_summary_expense_category(label)
