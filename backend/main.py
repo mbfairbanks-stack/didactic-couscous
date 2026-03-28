@@ -509,6 +509,10 @@ async def import_file(file: UploadFile = File(...), db: Session = Depends(get_db
         counts = import_xlsx(tmp_path, db)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, f"Import failed: {type(e).__name__}: {e}")
     finally:
         os.unlink(tmp_path)
 

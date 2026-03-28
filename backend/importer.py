@@ -513,7 +513,7 @@ def _upsert_income(db: Session, year: int, month: int, person: str, itype: str, 
             Income.income_type == itype,
             Income.pay_date == None,  # noqa: E711
         )
-    ).scalar_one_or_none()
+    ).scalars().first()
     if existing:
         existing.amount = amount
         counts["skipped"] += 1
