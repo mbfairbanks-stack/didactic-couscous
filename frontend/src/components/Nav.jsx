@@ -1,4 +1,5 @@
 import { NavLink } from "react-router-dom";
+import { useSettings } from "../contexts/SettingsContext";
 
 const links = [
   { to: "/dashboard", label: "Dashboard" },
@@ -11,14 +12,18 @@ const links = [
   { to: "/import", label: "Import" },
   { to: "/category-audit", label: "Audit" },
   { to: "/net-worth", label: "Net Worth" },
+  { to: "/settings", label: "Settings" },
 ];
 
 export default function Nav() {
+  const { settings } = useSettings();
+  const householdName = settings.household_name || "My Budget";
+
   return (
     <header className="bg-zinc-950 border-b border-zinc-800">
       <div className="max-w-7xl mx-auto px-6 flex items-center gap-5 h-14">
         <NavLink to="/dashboard" className="shrink-0 flex items-center gap-2">
-          <span className="text-yellow-400 font-bold text-base tracking-tight">Wetbanks</span>
+          <span className="text-yellow-400 font-bold text-base tracking-tight">{householdName}</span>
           <span className="text-zinc-600 text-sm font-medium">Budget</span>
         </NavLink>
 

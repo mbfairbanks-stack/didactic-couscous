@@ -532,6 +532,94 @@ def forecast_summary(year: int, month: int, db: Session = Depends(get_db)):
     return result
 
 
+@app.get("/settings")
+def get_settings(db: Session = Depends(get_db)):
+    rows = db.execute(select(models.AppSettings)).scalars().all()
+    return {r.key: r.value for r in rows}
+
+
+@app.put("/settings")
+def update_settings(body: dict, db: Session = Depends(get_db)):
+    for key, value in body.items():
+        existing = db.get(models.AppSettings, key)
+        if existing:
+            existing.value = str(value)
+        else:
+            db.add(models.AppSettings(key=key, value=str(value)))
+    db.commit()
+    return {"ok": True}
+
+
+@app.get("/category-definitions")
+def list_category_definitions(db: Session = Depends(get_db)):
+    rows = db.execute(select(models.Category).order_by(models.Category.group_name, models.Category.name)).scalars().all()
+    return [{"id": r.id, "name": r.name, "group": r.group_name, "is_legacy": bool(r.is_legacy)} for r in rows]
+
+
+class CategoryCreate(BaseModel):
+    name: str
+    group: str
+
+
+class CategoryUpdate(BaseModel):
+    name: Optional[str] = None
+    group: Optional[str] = None
+
+
+@app.post("/category-definitions", status_code=201)
+def create_category_definition(body: CategoryCreate, db: Session = Depends(get_db)):
+    existing = db.execute(select(models.Category).where(models.Category.name == body.name)).scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=409, detail=f"Category '{body.name}' already exists")
+    cat = models.Category(name=body.name, group_name=body.group, is_legacy=False)
+    db.add(cat)
+    db.commit()
+    db.refresh(cat)
+    return {"id": cat.id, "name": cat.name, "group": cat.group_name, "is_legacy": False}
+
+
+@app.put("/category-definitions/{cat_id}")
+def update_category_definition(cat_id: int, body: CategoryUpdate, db: Session = Depends(get_db)):
+    cat = db.get(models.Category, cat_id)
+    if not cat:
+        raise HTTPException(status_code=404, detail="Category not found")
+    if body.name is not None:
+        cat.name = body.name
+    if body.group is not None:
+        cat.group_name = body.group
+    db.commit()
+    return {"id": cat.id, "name": cat.name, "group": cat.group_name, "is_legacy": bool(cat.is_legacy)}
+
+
+@app.delete("/category-definitions/{cat_id}", status_code=204)
+def delete_category_definition(cat_id: int, db: Session = Depends(get_db)):
+    cat = db.get(models.Category, cat_id)
+    if not cat:
+        raise HTTPException(status_code=404, detail="Category not found")
+    count = db.execute(
+        select(func.count()).where(models.Transaction.category == cat.name)
+    ).scalar()
+    if count > 0:
+        raise HTTPException(status_code=409, detail=f"Cannot delete: {count} transaction(s) use this category")
+    db.delete(cat)
+    db.commit()
+
+
+@app.get("/onboarding-status")
+def onboarding_status(db: Session = Depends(get_db)):
+    setting = db.get(models.AppSettings, "onboarding_complete")
+    has_transactions = db.execute(select(func.count()).select_from(models.Transaction)).scalar() > 0
+    p1 = db.get(models.AppSettings, "person_1")
+    p2 = db.get(models.AppSettings, "person_2")
+    has_people = (p1 and p1.value not in ("Person 1", "")) or (p2 and p2.value not in ("Person 2", ""))
+    needs_onboarding = not (setting and setting.value == "true")
+    return {
+        "needs_onboarding": needs_onboarding,
+        "has_transactions": has_transactions,
+        "has_people_configured": has_people,
+    }
+
+
 @app.get("/categories")
 def list_categories(db: Session = Depends(get_db)):
     rows = db.execute(

@@ -4,11 +4,12 @@ import {
 } from "recharts";
 import { getIncome, createIncome, deleteIncome, getYears, getTotals } from "../api";
 import { MONTH_LABELS, currentYear, currentMonth, fmt } from "../utils";
+import { useSettings } from "../contexts/SettingsContext";
 
 const inputCls = "bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400/50 w-full";
 const selectCls = "bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:outline-none";
 
-const emptyPayday = { date: "", matt_base: "", matt_commission: "", nicole_base: "" };
+const emptyPayday = { date: "", p1_base: "", p1_commission: "", p2_base: "" };
 
 // ── CPI data (Canada, 2020 = 100 base) ──────────────────────────────────────
 const CPI_INDEX = { 2019: 96.5, 2020: 100, 2021: 103.4, 2022: 110.4, 2023: 114.7, 2024: 117.7, 2025: 120.4, 2026: 122.8 };
@@ -28,6 +29,9 @@ function DarkTooltip({ active, payload, label }) {
 }
 
 export default function Income() {
+  const { settings } = useSettings();
+  const p1 = settings.person_1 || "Person 1";
+  const p2 = settings.person_2 || "Person 2";
   const [year, setYear] = useState(currentYear);
   const [month, setMonth] = useState(currentMonth);
   const [years, setYears] = useState([currentYear]);
@@ -64,9 +68,9 @@ export default function Income() {
   const savePayday = async (payday) => {
     if (!payday.date) return;
     const entries = [
-      { person: "Matt", income_type: "base", amount: parseFloat(payday.matt_base) },
-      { person: "Matt", income_type: "commission", amount: parseFloat(payday.matt_commission) },
-      { person: "Nicole", income_type: "base", amount: parseFloat(payday.nicole_base) },
+      { person: p1, income_type: "base", amount: parseFloat(payday.p1_base) },
+      { person: p1, income_type: "commission", amount: parseFloat(payday.p1_commission) },
+      { person: p2, income_type: "base", amount: parseFloat(payday.p2_base) },
     ].filter((e) => e.amount > 0);
     for (const entry of entries) {
       await createIncome({ year, month, pay_date: payday.date, ...entry });
@@ -162,22 +166,22 @@ export default function Income() {
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="text-xs text-zinc-500 block mb-1">Matt Base ($)</label>
+                  <label className="text-xs text-zinc-500 block mb-1">{p1} Base ($)</label>
                   <input type="number" step="0.01" min="0" placeholder="0.00"
-                    className={inputCls} value={state.matt_base}
-                    onChange={(e) => setState({ ...state, matt_base: e.target.value })} />
+                    className={inputCls} value={state.p1_base}
+                    onChange={(e) => setState({ ...state, p1_base: e.target.value })} />
                 </div>
                 <div>
-                  <label className="text-xs text-zinc-500 block mb-1">Matt Commission ($)</label>
+                  <label className="text-xs text-zinc-500 block mb-1">{p1} Commission ($)</label>
                   <input type="number" step="0.01" min="0" placeholder="0.00"
-                    className={inputCls} value={state.matt_commission}
-                    onChange={(e) => setState({ ...state, matt_commission: e.target.value })} />
+                    className={inputCls} value={state.p1_commission}
+                    onChange={(e) => setState({ ...state, p1_commission: e.target.value })} />
                 </div>
                 <div>
-                  <label className="text-xs text-zinc-500 block mb-1">Nicole Base ($)</label>
+                  <label className="text-xs text-zinc-500 block mb-1">{p2} Base ($)</label>
                   <input type="number" step="0.01" min="0" placeholder="0.00"
-                    className={inputCls} value={state.nicole_base}
-                    onChange={(e) => setState({ ...state, nicole_base: e.target.value })} />
+                    className={inputCls} value={state.p2_base}
+                    onChange={(e) => setState({ ...state, p2_base: e.target.value })} />
                 </div>
               </div>
             </div>

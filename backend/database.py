@@ -38,6 +38,46 @@ def run_migrations():
         # Backfill any NULL values left by the migration
         conn.execute(sa.text("UPDATE transactions SET is_recurring = 0 WHERE is_recurring IS NULL"))
         conn.execute(sa.text("UPDATE transactions SET is_fixed = 0 WHERE is_fixed IS NULL"))
+
+        # Create app_settings table if missing
+        tables = inspector.get_table_names()
+        if "app_settings" not in tables:
+            conn.execute(sa.text("""
+                CREATE TABLE app_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+            """))
+            # Seed defaults
+            for k, v in [("household_name", "My Budget"), ("person_1", "Person 1"), ("person_2", "Person 2")]:
+                conn.execute(sa.text("INSERT INTO app_settings (key, value) VALUES (:k, :v)"), {"k": k, "v": v})
+
+        # Create categories table if missing and seed from categories.py
+        if "categories" not in tables:
+            conn.execute(sa.text("""
+                CREATE TABLE categories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    group_name TEXT NOT NULL,
+                    is_legacy INTEGER NOT NULL DEFAULT 0
+                )
+            """))
+            from categories import CATEGORY_GROUPS
+            canonical = {
+                "Mortgage", "Natural Gas", "Hydro", "Groceries", "Pets",
+                "Transportation", "Internet", "Security", "Mobile", "Insurance",
+                "Municipal Taxes", "Debt Payment", "Medical",
+                "Entertainment", "Dining", "Coffee", "Alcohol", "Cannabis",
+                "Clothes", "Gifts", "Charity", "Travel", "Fitness", "Home",
+                "Entertainment Subscriptions", "Subscriptions",
+                "Health & Beauty", "Canva Sub", "Ipsy Sub", "Misc",
+            }
+            for name, group in CATEGORY_GROUPS.items():
+                is_legacy = 0 if name in canonical else 1
+                conn.execute(sa.text(
+                    "INSERT INTO categories (name, group_name, is_legacy) VALUES (:n, :g, :l)"
+                ), {"n": name, "g": group, "l": is_legacy})
+
         conn.commit()
 
 

@@ -74,6 +74,23 @@ export const getCategoryTrend = (category) =>
 export const getProjections = (year, month) =>
   req(`/summary/projections?year=${year}&month=${month}`);
 
+// Settings
+export const getSettings = () => req("/settings");
+export const updateSettings = (body) =>
+  req("/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+// Onboarding
+export const getOnboardingStatus = () => req("/onboarding-status");
+
+// Category definitions
+export const getCategoryDefinitions = () => req("/category-definitions");
+export const createCategoryDefinition = (body) =>
+  req("/category-definitions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const updateCategoryDefinition = (id, body) =>
+  req(`/category-definitions/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteCategoryDefinition = (id) =>
+  req(`/category-definitions/${id}`, { method: "DELETE" });
+
 // Meta
 export const getCategories = () => req("/categories");
 export const getYears = () => req("/years");
