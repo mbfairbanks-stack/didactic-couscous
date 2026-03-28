@@ -327,6 +327,75 @@ def category_trend(category: str, db: Session = Depends(get_db)):
     return [{"year": r.year, "month": r.month, "total": r.total} for r in rows]
 
 
+@app.get("/summary/projections")
+def projections_summary(year: int, month: int, db: Session = Depends(get_db)):
+    """Historical averages + year-end projections based on current run rate."""
+    from collections import defaultdict
+
+    # Historical monthly income (all months except current)
+    income_months = db.execute(
+        select(models.Income.year, models.Income.month, func.sum(models.Income.amount).label("total"))
+        .where(~((models.Income.year == year) & (models.Income.month == month)))
+        .group_by(models.Income.year, models.Income.month)
+    ).all()
+    avg_monthly_income = (sum(r.total for r in income_months) / len(income_months)) if income_months else 0
+
+    # Historical monthly expenses (all months except current)
+    expense_months = db.execute(
+        select(models.Transaction.year, models.Transaction.month, func.sum(models.Transaction.amount).label("total"))
+        .where(~((models.Transaction.year == year) & (models.Transaction.month == month)))
+        .group_by(models.Transaction.year, models.Transaction.month)
+    ).all()
+    avg_monthly_expenses = (sum(r.total for r in expense_months) / len(expense_months)) if expense_months else 0
+
+    # Fixed expense categories from summary source — avg per category per month
+    fixed_rows = db.execute(
+        select(
+            models.Transaction.category,
+            models.Transaction.year,
+            models.Transaction.month,
+            func.sum(models.Transaction.amount).label("total"),
+        )
+        .where(models.Transaction.source == "summary")
+        .group_by(models.Transaction.category, models.Transaction.year, models.Transaction.month)
+    ).all()
+
+    cat_monthly: dict[str, list[float]] = defaultdict(list)
+    for r in fixed_rows:
+        cat_monthly[r.category].append(r.total)
+
+    fixed_categories = sorted(
+        [{"category": cat, "avg_monthly": round(sum(v) / len(v), 2)} for cat, v in cat_monthly.items()],
+        key=lambda x: -x["avg_monthly"],
+    )
+    fixed_monthly_total = sum(c["avg_monthly"] for c in fixed_categories)
+
+    # YTD actuals
+    ytd_income = db.execute(
+        select(func.sum(models.Income.amount))
+        .where(models.Income.year == year, models.Income.month <= month)
+    ).scalar() or 0
+
+    ytd_expenses = db.execute(
+        select(func.sum(models.Transaction.amount))
+        .where(models.Transaction.year == year, models.Transaction.month <= month)
+    ).scalar() or 0
+
+    remaining = 12 - month
+    projected_income = ytd_income + remaining * avg_monthly_income
+    projected_expenses = ytd_expenses + remaining * avg_monthly_expenses
+
+    return {
+        "avg_monthly_income": round(avg_monthly_income, 2),
+        "avg_monthly_expenses": round(avg_monthly_expenses, 2),
+        "fixed_monthly_total": round(fixed_monthly_total, 2),
+        "fixed_categories": fixed_categories,
+        "projected_year_income": round(projected_income, 2),
+        "projected_year_expenses": round(projected_expenses, 2),
+        "projected_year_balance": round(projected_income - projected_expenses, 2),
+    }
+
+
 @app.get("/categories")
 def list_categories(db: Session = Depends(get_db)):
     rows = db.execute(

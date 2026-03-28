@@ -58,6 +58,8 @@ export const getTotals = (year, month) => {
 };
 export const getCategoryTrend = (category) =>
   req(`/summary/category-trend?category=${encodeURIComponent(category)}`);
+export const getProjections = (year, month) =>
+  req(`/summary/projections?year=${year}&month=${month}`);
 
 // Meta
 export const getCategories = () => req("/categories");

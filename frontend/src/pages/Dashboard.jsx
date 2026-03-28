@@ -3,7 +3,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 import StatCard from "../components/StatCard";
-import { getMonthlySummary, getTotals, getCategorySummary, getYears } from "../api";
+import { getMonthlySummary, getTotals, getCategorySummary, getYears, getProjections } from "../api";
 
 const MONTH_LABELS = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -34,6 +34,7 @@ export default function Dashboard() {
   const [totals, setTotals] = useState({});
   const [monthTotals, setMonthTotals] = useState({});
   const [categories, setCategories] = useState([]);
+  const [projections, setProjections] = useState(null);
 
   useEffect(() => {
     getYears().then((y) => setYears(y.length ? y : [currentYear]));
@@ -47,6 +48,7 @@ export default function Dashboard() {
   useEffect(() => {
     getTotals(year, month).then(setMonthTotals);
     getCategorySummary(year, month).then(setCategories);
+    getProjections(year, month).then(setProjections);
   }, [year, month]);
 
   const chartData = monthly.map((m) => ({
@@ -105,6 +107,65 @@ export default function Dashboard() {
           <StatCard label="Savings Rate" value={`${monthTotals.savings_rate ?? 0}%`} color="purple" />
         </div>
       </div>
+
+      {/* Projections */}
+      {projections && (
+        <div className="space-y-3">
+          <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">
+            Projections — based on historical averages
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <StatCard label="Avg Monthly Income" value={fmt(projections.avg_monthly_income)} color="green" />
+            <StatCard label="Avg Monthly Expenses" value={fmt(projections.avg_monthly_expenses)} color="red" />
+            <StatCard label="Fixed Monthly Costs" value={fmt(projections.fixed_monthly_total)} color="yellow" />
+            <StatCard label="Projected Year Balance" value={fmt(projections.projected_year_balance)}
+              color={projections.projected_year_balance >= 0 ? "purple" : "red"} />
+          </div>
+
+          {/* Fixed expense breakdown */}
+          {projections.fixed_categories?.length > 0 && (
+            <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Fixed Monthly Expenses</h3>
+                <span className="text-xs text-zinc-600">avg per month · from budget summary</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-8 gap-y-2">
+                {projections.fixed_categories.map((c) => (
+                  <div key={c.category} className="flex justify-between text-sm">
+                    <span className="text-zinc-400 truncate mr-2">{c.category}</span>
+                    <span className="text-yellow-400 font-medium whitespace-nowrap">{fmt(c.avg_monthly)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="border-t border-zinc-800 mt-3 pt-3 flex justify-between text-sm font-semibold">
+                <span className="text-zinc-300">Total Fixed</span>
+                <span className="text-yellow-400">{fmt(projections.fixed_monthly_total)}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Year-end projection bar */}
+          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5">
+            <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-4">Year-End Projection</h3>
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div>
+                <p className="text-xs text-zinc-500 mb-1">Projected Income</p>
+                <p className="text-lg font-bold text-green-400">{fmt(projections.projected_year_income)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-zinc-500 mb-1">Projected Expenses</p>
+                <p className="text-lg font-bold text-red-400">{fmt(projections.projected_year_expenses)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-zinc-500 mb-1">Projected Savings</p>
+                <p className={`text-lg font-bold ${projections.projected_year_balance >= 0 ? "text-yellow-400" : "text-red-400"}`}>
+                  {fmt(projections.projected_year_balance)}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
