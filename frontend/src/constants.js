@@ -15,10 +15,12 @@ export const NEEDS = new Set([
 export const WANTS = new Set([
   // Discretionary
   "Entertainment", "Dining", "Take Out",
-  "Clothes", "Gifts", "Charity", "Travel", "Coffee",
+  "Clothes", "Gifts", "Charity", "Travel", "Hotels", "Flights", "Coffee",
   "Home", "Misc",
   // Transportation legacy (migrate → Transportation)
   "Fuel", "Gas", "Car Maintenance", "Car", "Car Payment", "Uber", "Parking",
+  // Misc legacy
+  "CC Fees", "CC Fee",
   "Alcohol", "Cannabis", "Fitness", "Newspaper", "Health & Beauty",
   "Subscriptions", "Entertainment Subscriptions",
   // Subscription legacy (migrate → Entertainment Subscriptions)

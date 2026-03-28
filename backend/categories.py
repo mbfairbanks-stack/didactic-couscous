@@ -45,6 +45,10 @@ CATEGORY_GROUPS: dict[str, str] = {
     "Car Payment": "Wants",                 # kept for backward compat — migrates to Transportation
     "Uber": "Wants",                        # kept for backward compat — migrates to Transportation
     "Parking": "Wants",                     # kept for backward compat — migrates to Transportation
+    "Hotels": "Wants",                      # kept for backward compat — migrates to Travel
+    "Flights": "Wants",                     # kept for backward compat — migrates to Travel
+    "CC Fees": "Wants",                     # kept for backward compat — migrates to Misc
+    "CC Fee": "Wants",                      # kept for backward compat — migrates to Misc
     "Alcohol": "Wants",
     "Cannabis": "Wants",
     "Fitness": "Wants",
@@ -91,6 +95,12 @@ SUGGESTED_RENAMES: dict[str, str] = {
     "Car Payment": "Transportation",
     "Uber": "Transportation",
     "Parking": "Transportation",
+    # Travel consolidation
+    "Hotels": "Travel",
+    "Flights": "Travel",
+    # Misc
+    "CC Fees": "Misc",
+    "CC Fee": "Misc",
     # Entertainment Subscriptions consolidation
     "Netflix": "Entertainment Subscriptions",
     "Spotify": "Entertainment Subscriptions",
