@@ -7,13 +7,14 @@ const currentYear = new Date().getFullYear();
 const currentMonth = new Date().getMonth() + 1;
 
 const fmt = (n) => "$" + Number(n || 0).toLocaleString("en-CA", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+const inputCls = "bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400/50";
 
 function ProgressBar({ actual, budget }) {
   if (!budget) return null;
   const pct = Math.min((actual / budget) * 100, 100);
   const over = actual > budget;
   return (
-    <div className="h-2 bg-gray-100 rounded-full overflow-hidden w-full">
+    <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden w-full">
       <div
         className={`h-full rounded-full transition-all ${over ? "bg-red-500" : "bg-green-500"}`}
         style={{ width: `${pct}%` }}
@@ -28,7 +29,7 @@ export default function BudgetPlanner() {
   const [years, setYears] = useState([currentYear]);
   const [actuals, setActuals] = useState([]);
   const [targets, setTargets] = useState([]);
-  const [editing, setEditing] = useState({}); // category -> draft amount
+  const [editing, setEditing] = useState({});
   const [saving, setSaving] = useState(false);
   const [newCategory, setNewCategory] = useState("");
   const [newAmount, setNewAmount] = useState("");
@@ -46,7 +47,6 @@ export default function BudgetPlanner() {
 
   const targetMap = Object.fromEntries(targets.map((t) => [t.category, t]));
 
-  // Merge actuals with targets, including categories that have a target but no actuals
   const allCategories = [
     ...actuals,
     ...targets
@@ -90,12 +90,12 @@ export default function BudgetPlanner() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-2xl font-bold">Budget Planner</h1>
+        <h1 className="text-2xl font-bold text-zinc-100">Budget Planner</h1>
         <div className="flex gap-3">
-          <select className="border rounded px-3 py-1.5 text-sm" value={year} onChange={(e) => setYear(Number(e.target.value))}>
+          <select className={inputCls} value={year} onChange={(e) => setYear(Number(e.target.value))}>
             {years.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
-          <select className="border rounded px-3 py-1.5 text-sm" value={month} onChange={(e) => setMonth(Number(e.target.value))}>
+          <select className={inputCls} value={month} onChange={(e) => setMonth(Number(e.target.value))}>
             {MONTH_LABELS.slice(1).map((m, i) => (
               <option key={i + 1} value={i + 1}>{m}</option>
             ))}
@@ -104,32 +104,32 @@ export default function BudgetPlanner() {
       </div>
 
       {/* Summary bar */}
-      <div className="bg-white border rounded-xl p-4 flex flex-wrap gap-6 items-center">
+      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-4 flex flex-wrap gap-6 items-center">
         <div>
-          <p className="text-xs text-gray-500">Total Budgeted</p>
-          <p className="text-xl font-bold text-blue-700">{fmt(totalBudget)}</p>
+          <p className="text-xs text-zinc-500 uppercase tracking-wide">Total Budgeted</p>
+          <p className="text-xl font-bold text-yellow-400">{fmt(totalBudget)}</p>
         </div>
         <div>
-          <p className="text-xs text-gray-500">Total Actual</p>
-          <p className={`text-xl font-bold ${totalActual > totalBudget ? "text-red-600" : "text-green-600"}`}>
+          <p className="text-xs text-zinc-500 uppercase tracking-wide">Total Actual</p>
+          <p className={`text-xl font-bold ${totalActual > totalBudget ? "text-red-400" : "text-green-400"}`}>
             {fmt(totalActual)}
           </p>
         </div>
         <div>
-          <p className="text-xs text-gray-500">Remaining</p>
-          <p className={`text-xl font-bold ${totalBudget - totalActual < 0 ? "text-red-600" : "text-gray-700"}`}>
+          <p className="text-xs text-zinc-500 uppercase tracking-wide">Remaining</p>
+          <p className={`text-xl font-bold ${totalBudget - totalActual < 0 ? "text-red-400" : "text-zinc-200"}`}>
             {fmt(totalBudget - totalActual)}
           </p>
         </div>
         {totalBudget > 0 && (
           <div className="flex-1 min-w-[160px]">
-            <div className="flex justify-between text-xs text-gray-500 mb-1">
+            <div className="flex justify-between text-xs text-zinc-500 mb-1">
               <span>{Math.round((totalActual / totalBudget) * 100)}% used</span>
               <span>{fmt(totalBudget)}</span>
             </div>
-            <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+            <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
               <div
-                className={`h-full rounded-full ${totalActual > totalBudget ? "bg-red-500" : "bg-blue-500"}`}
+                className={`h-full rounded-full ${totalActual > totalBudget ? "bg-red-500" : "bg-yellow-400"}`}
                 style={{ width: `${Math.min((totalActual / totalBudget) * 100, 100)}%` }}
               />
             </div>
@@ -138,39 +138,39 @@ export default function BudgetPlanner() {
       </div>
 
       {/* Add new category budget */}
-      <form onSubmit={addNew} className="bg-white border rounded-xl p-4 flex gap-3 flex-wrap items-end">
+      <form onSubmit={addNew} className="bg-zinc-900 border border-zinc-700 rounded-xl p-4 flex gap-3 flex-wrap items-end">
         <div>
-          <label className="text-xs text-gray-500 block mb-1">Category</label>
+          <label className="text-xs text-zinc-500 block mb-1">Category</label>
           <input
             type="text"
             placeholder="e.g. Groceries"
-            className="border rounded px-3 py-1.5 text-sm w-44"
+            className={`${inputCls} w-44`}
             value={newCategory}
             onChange={(e) => setNewCategory(e.target.value)}
           />
         </div>
         <div>
-          <label className="text-xs text-gray-500 block mb-1">Monthly Budget ($)</label>
+          <label className="text-xs text-zinc-500 block mb-1">Monthly Budget ($)</label>
           <input
             type="number"
             step="0.01"
             min="0"
             placeholder="0.00"
-            className="border rounded px-3 py-1.5 text-sm w-32"
+            className={`${inputCls} w-32`}
             value={newAmount}
             onChange={(e) => setNewAmount(e.target.value)}
           />
         </div>
-        <button type="submit" className="bg-blue-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-blue-700">
+        <button type="submit" className="bg-yellow-400 text-black px-4 py-1.5 rounded text-sm font-medium hover:bg-yellow-300">
           Set Budget
         </button>
       </form>
 
       {/* Table */}
-      <div className="bg-white border rounded-xl overflow-hidden">
+      <div className="bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b text-left text-gray-500 bg-gray-50">
+            <tr className="border-b border-zinc-700 text-left text-zinc-500 bg-zinc-800">
               <th className="px-4 py-3 font-medium">Category</th>
               <th className="px-4 py-3 font-medium text-right">Budget</th>
               <th className="px-4 py-3 font-medium text-right">Actual</th>
@@ -182,7 +182,7 @@ export default function BudgetPlanner() {
           <tbody>
             {allCategories.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center text-gray-400 py-10">
+                <td colSpan={6} className="text-center text-zinc-600 py-10">
                   No data. Import a spreadsheet or add transactions.
                 </td>
               </tr>
@@ -194,15 +194,15 @@ export default function BudgetPlanner() {
                 const isEditing = editing[row.category] !== undefined;
 
                 return (
-                  <tr key={row.category} className="border-b last:border-0 hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium">{row.category}</td>
+                  <tr key={row.category} className="border-b border-zinc-800 last:border-0 hover:bg-zinc-800">
+                    <td className="px-4 py-3 font-medium text-zinc-200">{row.category}</td>
                     <td className="px-4 py-3 text-right">
                       {isEditing ? (
                         <input
                           type="number"
                           step="0.01"
                           min="0"
-                          className="border rounded px-2 py-0.5 text-sm w-24 text-right"
+                          className="bg-zinc-800 border border-zinc-600 rounded px-2 py-0.5 text-sm w-24 text-right text-zinc-100 focus:outline-none focus:border-yellow-400/50"
                           value={editing[row.category]}
                           onChange={(e) => setEditing({ ...editing, [row.category]: e.target.value })}
                           onKeyDown={(e) => {
@@ -214,14 +214,14 @@ export default function BudgetPlanner() {
                       ) : (
                         <button
                           onClick={() => setEditing({ ...editing, [row.category]: String(budget) })}
-                          className="text-right hover:text-blue-600 w-full"
+                          className="text-right hover:text-yellow-400 w-full text-zinc-300"
                         >
-                          {budget ? fmt(budget) : <span className="text-gray-300">Set</span>}
+                          {budget ? fmt(budget) : <span className="text-zinc-700">Set</span>}
                         </button>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right">{fmt(row.total)}</td>
-                    <td className={`px-4 py-3 text-right font-medium ${diff < 0 ? "text-red-600" : "text-green-600"}`}>
+                    <td className="px-4 py-3 text-right text-zinc-300">{fmt(row.total)}</td>
+                    <td className={`px-4 py-3 text-right font-medium ${diff < 0 ? "text-red-400" : "text-green-400"}`}>
                       {budget ? (diff < 0 ? `-${fmt(Math.abs(diff))}` : `+${fmt(diff)}`) : "—"}
                     </td>
                     <td className="px-4 py-3">
@@ -232,13 +232,13 @@ export default function BudgetPlanner() {
                         <button
                           onClick={() => saveTarget(row.category, editing[row.category])}
                           disabled={saving}
-                          className="text-blue-600 hover:text-blue-800 mr-2"
+                          className="text-yellow-400 hover:text-yellow-300 mr-2"
                         >
                           Save
                         </button>
                       ) : null}
                       {target && (
-                        <button onClick={() => removeTarget(row.category)} className="text-red-400 hover:text-red-600">
+                        <button onClick={() => removeTarget(row.category)} className="text-red-500 hover:text-red-400">
                           Remove
                         </button>
                       )}
@@ -250,7 +250,7 @@ export default function BudgetPlanner() {
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-gray-400">Click any budget amount to edit inline. Press Enter to save, Escape to cancel.</p>
+      <p className="text-xs text-zinc-600">Click any budget amount to edit inline. Press Enter to save, Escape to cancel.</p>
     </div>
   );
 }

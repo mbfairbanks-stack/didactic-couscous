@@ -11,9 +11,11 @@ const links = [
 
 export default function Nav() {
   return (
-    <header className="bg-blue-700 text-white shadow">
+    <header className="bg-zinc-950 border-b border-zinc-800 shadow">
       <div className="max-w-7xl mx-auto px-6 flex items-center gap-8 h-14">
-        <span className="font-bold text-lg tracking-tight">Wetbanks Budget</span>
+        <span className="font-bold text-lg tracking-tight text-yellow-400">
+          $ wetbanks_budget
+        </span>
         <nav className="flex gap-1">
           {links.map((l) => (
             <NavLink
@@ -22,8 +24,8 @@ export default function Nav() {
               className={({ isActive }) =>
                 `px-3 py-1 rounded text-sm font-medium transition-colors ${
                   isActive
-                    ? "bg-white text-blue-700"
-                    : "hover:bg-blue-600 text-blue-100"
+                    ? "bg-yellow-400 text-black"
+                    : "hover:bg-zinc-800 text-zinc-400 hover:text-zinc-100"
                 }`
               }
             >
