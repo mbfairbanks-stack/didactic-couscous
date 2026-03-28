@@ -378,7 +378,7 @@ def _map_summary_expense_category(label: str) -> str:
     if "insurance" in l:                     return "Insurance"
     if "property tax" in l:                  return "Municipal Taxes"
     if "debit payment" in l or "loan" in l: return "Debt Payment"
-    if "subscription" in l:                  return "Subscriptions"
+    if "subscription" in l:                  return "Entertainment"
     if "entertainment" in l or "dining" in l: return "Entertainment"
     if "clothing" in l or "personal care" in l: return "Clothes"
     if "gift" in l or "donation" in l:      return "Gifts"
