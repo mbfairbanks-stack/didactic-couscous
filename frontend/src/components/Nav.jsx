@@ -7,7 +7,6 @@ const links = [
   { to: "/debts", label: "Debts" },
   { to: "/charts", label: "Charts" },
   { to: "/insights", label: "AI Insights" },
-  { to: "/income", label: "Income" },
   { to: "/import", label: "Import" },
   { to: "/category-audit", label: "Audit" },
 ];
