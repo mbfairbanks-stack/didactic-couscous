@@ -634,11 +634,13 @@ export default function Transactions() {
               </div>
               <div>
                 <label className="text-xs text-zinc-500">Category</label>
-                <input type="text" required list="cat-list" className={`w-full mt-0.5 ${inputCls}`}
-                  value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
-                <datalist id="cat-list">
-                  {allCategories.map((c) => <option key={c} value={c} />)}
-                </datalist>
+                <select required className={`w-full mt-0.5 ${inputCls}`}
+                  value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+                  {form.category && !allCategories.includes(form.category) && (
+                    <option value={form.category}>{form.category}</option>
+                  )}
+                  {allCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
