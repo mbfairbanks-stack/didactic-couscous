@@ -526,6 +526,15 @@ export default function Transactions() {
                       "text-right"
                     )}
                     <td className="px-4 py-2 text-zinc-600 text-xs uppercase">{txn.source || "—"}</td>
+                    <td className="px-3 py-2 text-center">
+                      <button
+                        onClick={() => toggleRecurring(txn)}
+                        title={txn.is_recurring ? "Mark as non-recurring" : "Mark as recurring"}
+                        className={`text-base leading-none transition-colors ${txn.is_recurring ? "text-yellow-400" : "text-zinc-700 hover:text-zinc-400"}`}
+                      >
+                        ↻
+                      </button>
+                    </td>
                     <td className="px-4 py-2 text-right">
                       <button onClick={() => handleEdit(txn)} className="text-yellow-400 hover:text-yellow-300 mr-3 text-xs">Edit</button>
                       <button onClick={() => handleDelete(txn.id)} className="text-red-500 hover:text-red-400 text-xs">Delete</button>
