@@ -95,8 +95,8 @@ export const importFile = (file) => {
 };
 export const parseCsv = ({ csv_text, format, source }) =>
   req("/parse-csv", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: csv_text, format, source }) });
-export const importCsvRows = (body) =>
-  req("/import-csv-rows", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const importCsvRows = ({ rows }) =>
+  req("/import-csv-rows", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(rows) });
 
 // Deduplicate
 export const deduplicate = () => req("/deduplicate", { method: "POST" });
