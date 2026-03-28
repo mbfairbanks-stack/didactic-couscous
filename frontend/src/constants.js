@@ -9,17 +9,22 @@ export const NEEDS = new Set([
   "Pets", "Pet Food & Toys", "Day Care", "Vet", "Pet Insurance",
   "Transportation", "Internet", "Security", "Mobile",
   "Insurance", "Car Insurance", "Home Insurance",
-  "Municipal Taxes", "Debt Payment", "Reliance", "Medical",
+  "Municipal Taxes", "Debt Payment", "Medical",
 ]);
 
 export const WANTS = new Set([
   // Discretionary
-  "Entertainment", "Dining",
+  "Entertainment", "Dining", "Take Out",
   "Clothes", "Gifts", "Charity", "Travel", "Coffee",
-  "Home", "Misc", "Fuel", "Gas", "Car Maintenance", "Car", "Car Payment", "Uber",
+  "Home", "Misc",
+  // Transportation legacy (migrate → Transportation)
+  "Fuel", "Gas", "Car Maintenance", "Car", "Car Payment", "Uber", "Parking",
   "Alcohol", "Cannabis", "Fitness", "Newspaper", "Health & Beauty",
-  "Subscriptions", "Apple Sub", "Spotify", "Prime Video", "Netflix",
-  "YouTube", "Canva Sub", "Ipsy Sub",
+  "Subscriptions", "Entertainment Subscriptions",
+  // Subscription legacy (migrate → Entertainment Subscriptions)
+  "Apple Sub", "Spotify", "Prime Video", "Netflix", "YouTube",
+  "Disney+", "Disney Plus Sub", "Paramount",
+  "Canva Sub", "Ipsy Sub",
 ]);
 
 export const getCategoryGroup = (category) => {
@@ -33,12 +38,11 @@ export const ALL_CATEGORIES = [
   // Needs
   "Mortgage", "Natural Gas", "Hydro", "Groceries", "Pets",
   "Day Care", "Transportation", "Internet", "Security", "Mobile",
-  "Insurance", "Municipal Taxes", "Debt Payment", "Reliance", "Medical",
+  "Insurance", "Municipal Taxes", "Debt Payment", "Medical",
   // Wants
   "Entertainment", "Dining", "Coffee", "Alcohol", "Cannabis",
   "Clothes", "Gifts", "Charity", "Travel", "Fitness",
-  "Home", "Car Maintenance", "Car Payment", "Fuel", "Uber",
-  "Health & Beauty", "Subscriptions", "Apple Sub", "Spotify",
-  "Prime Video", "Netflix", "YouTube", "Canva Sub", "Ipsy Sub",
+  "Home", "Entertainment Subscriptions", "Subscriptions",
+  "Health & Beauty", "Canva Sub", "Ipsy Sub",
   "Newspaper", "Misc",
 ];

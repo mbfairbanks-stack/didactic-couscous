@@ -17,7 +17,7 @@ CATEGORY_GROUPS: dict[str, str] = {
     "Day Care": "Needs",
     "Vet": "Needs",               # kept for backward compat
     "Pet Insurance": "Needs",     # kept for backward compat
-    "Transportation": "Needs",    # public transit / bus passes
+    "Transportation": "Needs",    # all transport: transit, car, fuel, uber
     "Internet": "Needs",
     "Security": "Needs",
     "Mobile": "Needs",
@@ -26,12 +26,11 @@ CATEGORY_GROUPS: dict[str, str] = {
     "Home Insurance": "Needs",    # kept for backward compat
     "Municipal Taxes": "Needs",
     "Debt Payment": "Needs",
-    "Reliance": "Needs",
     "Medical": "Needs",           # new: pharmacy, doctor, dentist, prescriptions
     # --- Wants (discretionary) ---
     "Entertainment": "Wants",
     "Dining": "Wants",
-    "Take Out": "Wants",     # kept for backward compat — migrates to Dining
+    "Take Out": "Wants",                    # kept for backward compat — migrates to Dining
     "Clothes": "Wants",
     "Gifts": "Wants",
     "Charity": "Wants",
@@ -39,23 +38,28 @@ CATEGORY_GROUPS: dict[str, str] = {
     "Coffee": "Wants",
     "Home": "Wants",
     "Misc": "Wants",
-    "Fuel": "Wants",              # renamed from "Gas" (vehicle fuel)
-    "Gas": "Wants",               # kept for backward compat
-    "Car Maintenance": "Wants",   # renamed from "Car"
-    "Car": "Wants",               # kept for backward compat
-    "Car Payment": "Wants",
-    "Uber": "Wants",
+    "Fuel": "Wants",                        # kept for backward compat — migrates to Transportation
+    "Gas": "Wants",                         # kept for backward compat — migrates to Transportation
+    "Car Maintenance": "Wants",             # kept for backward compat — migrates to Transportation
+    "Car": "Wants",                         # kept for backward compat — migrates to Transportation
+    "Car Payment": "Wants",                 # kept for backward compat — migrates to Transportation
+    "Uber": "Wants",                        # kept for backward compat — migrates to Transportation
+    "Parking": "Wants",                     # kept for backward compat — migrates to Transportation
     "Alcohol": "Wants",
     "Cannabis": "Wants",
-    "Fitness": "Wants",           # new: gym, sports, recreation (curling, etc.)
+    "Fitness": "Wants",
     "Newspaper": "Wants",
     "Health & Beauty": "Wants",
-    "Subscriptions": "Wants",     # new: catch-all for streaming/digital subscriptions
-    "Apple Sub": "Wants",
-    "Spotify": "Wants",
-    "Prime Video": "Wants",
-    "Netflix": "Wants",
-    "YouTube": "Wants",
+    "Subscriptions": "Wants",
+    "Entertainment Subscriptions": "Wants", # consolidated: Netflix, Spotify, Prime Video, YouTube, Disney+, Paramount
+    "Apple Sub": "Wants",                   # kept for backward compat — migrates to Entertainment Subscriptions
+    "Spotify": "Wants",                     # kept for backward compat — migrates to Entertainment Subscriptions
+    "Prime Video": "Wants",                 # kept for backward compat — migrates to Entertainment Subscriptions
+    "Netflix": "Wants",                     # kept for backward compat — migrates to Entertainment Subscriptions
+    "YouTube": "Wants",                     # kept for backward compat — migrates to Entertainment Subscriptions
+    "Disney+": "Wants",                     # kept for backward compat — migrates to Entertainment Subscriptions
+    "Disney Plus Sub": "Wants",             # kept for backward compat — migrates to Entertainment Subscriptions
+    "Paramount": "Wants",                   # kept for backward compat — migrates to Entertainment Subscriptions
     "Canva Sub": "Wants",
     "Ipsy Sub": "Wants",
 }
@@ -71,13 +75,29 @@ def get_category_group(category: str) -> str:
 # Suggested renames for existing transactions (old → new).
 # Apply via the /categories/migrate endpoint.
 SUGGESTED_RENAMES: dict[str, str] = {
+    # previously suggested
     "Gas (Utility)": "Natural Gas",
-    "Gas": "Fuel",
-    "Car": "Car Maintenance",
     "Pet Food & Toys": "Pets",
     "Vet": "Pets",
     "Pet Insurance": "Pets",
     "Car Insurance": "Insurance",
     "Home Insurance": "Insurance",
     "Take Out": "Dining",
+    # Transportation consolidation
+    "Gas": "Transportation",
+    "Fuel": "Transportation",
+    "Car": "Transportation",
+    "Car Maintenance": "Transportation",
+    "Car Payment": "Transportation",
+    "Uber": "Transportation",
+    "Parking": "Transportation",
+    # Entertainment Subscriptions consolidation
+    "Netflix": "Entertainment Subscriptions",
+    "Spotify": "Entertainment Subscriptions",
+    "Prime Video": "Entertainment Subscriptions",
+    "YouTube": "Entertainment Subscriptions",
+    "Apple Sub": "Entertainment Subscriptions",
+    "Disney+": "Entertainment Subscriptions",
+    "Disney Plus Sub": "Entertainment Subscriptions",
+    "Paramount": "Entertainment Subscriptions",
 }
