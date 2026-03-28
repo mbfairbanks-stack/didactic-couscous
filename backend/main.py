@@ -1,11 +1,12 @@
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Query
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func, distinct, text
 from pydantic import BaseModel
 from typing import Optional, List
 import datetime
+import hashlib
 import tempfile, os, io, json, csv, re
 from collections import defaultdict
 
@@ -13,11 +14,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import models, database
-from database import engine, get_db, run_migrations
+from database import engine, get_db, run_migrations, DEMO_MODE
 from importer import import_xlsx
 
 models.Base.metadata.create_all(bind=engine)
 run_migrations()
+
+BUDGET_PASSWORD = os.getenv("BUDGET_PASSWORD", "")
+_pw_hash = hashlib.sha256(BUDGET_PASSWORD.encode()).hexdigest() if BUDGET_PASSWORD else ""
 
 app = FastAPI(title="Budget App API")
 
@@ -27,6 +31,43 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    # Skip auth when no password is configured
+    if not BUDGET_PASSWORD:
+        return await call_next(request)
+    # Always allow CORS preflight and the login endpoint
+    if request.method == "OPTIONS" or request.url.path == "/auth/login":
+        return await call_next(request)
+    token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    if token != _pw_hash:
+        return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+    return await call_next(request)
+
+
+# ---------------------------------------------------------------------------
+# Auth endpoints
+# ---------------------------------------------------------------------------
+
+class LoginRequest(BaseModel):
+    password: str
+
+
+@app.post("/auth/login")
+def auth_login(body: LoginRequest):
+    if not BUDGET_PASSWORD:
+        return {"token": ""}
+    if hashlib.sha256(body.password.encode()).hexdigest() != _pw_hash:
+        raise HTTPException(status_code=401, detail="Incorrect password")
+    return {"token": _pw_hash}
+
+
+@app.get("/auth/check")
+def auth_check():
+    """Returns 200 if the caller is authenticated (or no auth is required)."""
+    return {"ok": True, "demo": DEMO_MODE}
 
 
 # ---------------------------------------------------------------------------

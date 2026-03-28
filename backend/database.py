@@ -2,7 +2,9 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
-DATABASE_URL = "sqlite:///./budget.db"
+DEMO_MODE = os.getenv("DEMO_MODE", "").lower() in ("1", "true", "yes")
+DB_PATH = os.getenv("DB_PATH", "demo.db" if DEMO_MODE else "budget.db")
+DATABASE_URL = f"sqlite:///./{DB_PATH}"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -79,6 +81,11 @@ def run_migrations():
                 ), {"n": name, "g": group, "l": is_legacy})
 
         conn.commit()
+
+    # Seed demo data on first run in demo mode
+    if DEMO_MODE:
+        from demo_seed import seed_demo_data
+        seed_demo_data(engine)
 
 
 def get_db():

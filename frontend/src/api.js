@@ -1,7 +1,20 @@
 const BASE = "/api";
+const TOKEN_KEY = "budget_token";
+
+const getToken = () => localStorage.getItem(TOKEN_KEY) || "";
 
 async function req(path, options = {}) {
-  const res = await fetch(`${BASE}${path}`, options);
+  const token = getToken();
+  const headers = {
+    ...(options.headers || {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+  const res = await fetch(`${BASE}${path}`, { ...options, headers });
+  if (res.status === 401) {
+    localStorage.removeItem(TOKEN_KEY);
+    window.location.replace("/");
+    return;
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     const detail = err.detail;
@@ -16,6 +29,25 @@ async function req(path, options = {}) {
   if (res.status === 204) return null;
   return res.json();
 }
+
+// Auth
+export const loginApi = (password) =>
+  fetch(`${BASE}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  }).then(async (r) => {
+    if (!r.ok) throw new Error("Incorrect password");
+    return r.json();
+  });
+
+export const checkAuth = () =>
+  fetch(`${BASE}/auth/check`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  }).then(async (r) => {
+    if (!r.ok) return { ok: false, demo: false };
+    return r.json();
+  });
 
 // Transactions
 export const getTransactions = (params = {}) => {
@@ -131,8 +163,11 @@ export const getSuggestedRenames = () => req("/categories/suggested-renames");
 export const migrateCategories = () => req("/categories/migrate", { method: "POST" });
 
 // Export CSV (transactions)
-export const exportTransactionsCsv = (params) =>
-  fetch(BASE + "/transactions/export?" + new URLSearchParams(params))
+export const exportTransactionsCsv = (params) => {
+  const token = getToken();
+  return fetch(BASE + "/transactions/export?" + new URLSearchParams(params), {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
     .then((r) => r.blob())
     .then((blob) => {
       const url = URL.createObjectURL(blob);
@@ -141,6 +176,7 @@ export const exportTransactionsCsv = (params) =>
       a.download = "transactions.csv";
       a.click();
     });
+};
 
 // Export
 export const exportUrl = (year, month) => {
@@ -150,7 +186,10 @@ export const exportUrl = (year, month) => {
 
 // AI Insights (streaming SSE)
 export const streamInsights = async (year, month, onChunk, onDone, onError) => {
-  const res = await fetch(`${BASE}/insights?year=${year}&month=${month}`);
+  const token = getToken();
+  const res = await fetch(`${BASE}/insights?year=${year}&month=${month}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     onError(err.detail || "Request failed");
