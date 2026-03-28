@@ -3,7 +3,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 import StatCard from "../components/StatCard";
-import { getMonthlySummary, getTotals, getCategorySummary, getYears, getProjections } from "../api";
+import { getMonthlySummary, getTotals, getCategorySummary, getYears, getProjections, getBudgetTargets } from "../api";
 import { getCategoryGroup } from "../constants";
 import { MONTH_LABELS, currentYear, currentMonth, fmt } from "../utils";
 
@@ -28,6 +28,7 @@ export default function Dashboard() {
   const [monthTotals, setMonthTotals] = useState({});
   const [categories, setCategories] = useState([]);
   const [projections, setProjections] = useState(null);
+  const [budgetTargets, setBudgetTargets] = useState([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -47,6 +48,7 @@ export default function Dashboard() {
       getTotals(year, month).then(setMonthTotals),
       getCategorySummary(year, month).then(setCategories),
       getProjections(year, month).then(setProjections),
+      getBudgetTargets({ year, month }).then(setBudgetTargets).catch(() => setBudgetTargets([])),
     ]).catch((e) => setError(e.message));
   }, [year, month]);
 
@@ -118,6 +120,7 @@ export default function Dashboard() {
 
       {/* Needs / Wants breakdown */}
       {categories.length > 0 && (() => {
+        const budgetMap = Object.fromEntries(budgetTargets.map((t) => [t.category, t.amount]));
         const needs = categories.filter((c) => getCategoryGroup(c.category) === "Needs");
         const wants = categories.filter((c) => getCategoryGroup(c.category) === "Wants");
         const needsTotal = needs.reduce((s, c) => s + c.total, 0);
@@ -151,16 +154,24 @@ export default function Dashboard() {
                   <p className={`text-xs font-bold uppercase tracking-widest mb-2 ${color}`}>{label}</p>
                   <div className="space-y-1.5">
                     {rows.sort((a, b) => b.total - a.total).map((c) => {
-                      const pct = Math.round((c.total / (label === "Needs" ? needsTotal : wantsTotal)) * 100);
+                      const budget = budgetMap[c.category];
+                      const pct = budget
+                        ? Math.min(Math.round((c.total / budget) * 100), 100)
+                        : Math.round((c.total / (label === "Needs" ? needsTotal : wantsTotal)) * 100);
+                      const over = budget && c.total > budget;
                       return (
                         <div key={c.category}>
                           <div className="flex justify-between text-xs mb-0.5">
-                            <span className="text-zinc-400 truncate max-w-[160px]">{c.category}</span>
-                            <span className="text-zinc-300 font-medium">{fmt(c.total)}</span>
+                            <span className="text-zinc-400 truncate max-w-[140px]">{c.category}</span>
+                            <span className={`font-medium ${over ? "text-red-400" : "text-zinc-300"}`}>
+                              {fmt(c.total)}{budget ? <span className="text-zinc-600"> / {fmt(budget)}</span> : null}
+                            </span>
                           </div>
-                          <div className="h-1 bg-zinc-800 rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full ${label === "Needs" ? "bg-yellow-400/60" : "bg-zinc-500"}`}
-                              style={{ width: `${pct}%` }} />
+                          <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${over ? "bg-red-500" : label === "Needs" ? "bg-yellow-400/70" : "bg-zinc-500"}`}
+                              style={{ width: `${pct}%` }}
+                            />
                           </div>
                         </div>
                       );

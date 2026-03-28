@@ -5,20 +5,20 @@
 
 export const NEEDS = new Set([
   // Non-discretionary
-  "Mortgage", "Gas (Utility)", "Hydro", "Groceries",
+  "Mortgage", "Natural Gas", "Gas (Utility)", "Hydro", "Groceries",
   "Pets", "Pet Food & Toys", "Day Care", "Vet", "Pet Insurance",
   "Transportation", "Internet", "Security", "Mobile",
   "Insurance", "Car Insurance", "Home Insurance",
-  "Municipal Taxes", "Debt Payment", "Reliance",
+  "Municipal Taxes", "Debt Payment", "Reliance", "Medical",
 ]);
 
 export const WANTS = new Set([
   // Discretionary
   "Entertainment", "Dining", "Take Out",
   "Clothes", "Gifts", "Charity", "Travel", "Coffee",
-  "Home", "Misc", "Gas", "Car", "Car Payment", "Uber",
-  "Alcohol", "Cannabis", "Newspaper", "Health & Beauty",
-  "Apple Sub", "Spotify", "Prime Video", "Netflix",
+  "Home", "Misc", "Fuel", "Gas", "Car Maintenance", "Car", "Car Payment", "Uber",
+  "Alcohol", "Cannabis", "Fitness", "Newspaper", "Health & Beauty",
+  "Subscriptions", "Apple Sub", "Spotify", "Prime Video", "Netflix",
   "YouTube", "Canva Sub", "Ipsy Sub",
 ]);
 
@@ -27,3 +27,18 @@ export const getCategoryGroup = (category) => {
   if (WANTS.has(category)) return "Wants";
   return "Other";
 };
+
+// Canonical list for dropdowns (preferred names only, no legacy aliases)
+export const ALL_CATEGORIES = [
+  // Needs
+  "Mortgage", "Natural Gas", "Hydro", "Groceries", "Pets",
+  "Day Care", "Transportation", "Internet", "Security", "Mobile",
+  "Insurance", "Municipal Taxes", "Debt Payment", "Reliance", "Medical",
+  // Wants
+  "Entertainment", "Dining", "Take Out", "Coffee", "Alcohol", "Cannabis",
+  "Clothes", "Gifts", "Charity", "Travel", "Fitness",
+  "Home", "Car Maintenance", "Car Payment", "Fuel", "Uber",
+  "Health & Beauty", "Subscriptions", "Apple Sub", "Spotify",
+  "Prime Video", "Netflix", "YouTube", "Canva Sub", "Ipsy Sub",
+  "Newspaper", "Misc",
+];

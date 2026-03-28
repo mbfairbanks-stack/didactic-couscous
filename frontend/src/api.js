@@ -51,6 +51,8 @@ export const deleteBudgetTarget = (id) =>
   req(`/budget-targets/${id}`, { method: "DELETE" });
 export const autoPopulateBudget = (body) =>
   req("/budget-targets/auto-populate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const copyBudgetFromMonth = (body) =>
+  req("/budget-targets/copy-from-month", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 // Analytics
 export const getMonthlySummary = (year) => req(`/summary/monthly?year=${year}`);
@@ -101,6 +103,10 @@ export const importCsvRows = ({ rows }) =>
 // Deduplicate
 export const deduplicate = () => req("/deduplicate", { method: "POST" });
 export const cleanupSummary = () => req("/cleanup-summary", { method: "POST" });
+
+// Category migration
+export const getSuggestedRenames = () => req("/categories/suggested-renames");
+export const migrateCategories = () => req("/categories/migrate", { method: "POST" });
 
 // Export
 export const exportUrl = (year, month) => {

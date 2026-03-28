@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { getTransactions, createTransaction, updateTransaction, deleteTransaction, getCategories, getYears } from "../api";
 import { MONTH_LABELS, currentYear, currentMonth, fmtCents as fmt } from "../utils";
 
@@ -39,6 +39,14 @@ export default function Transactions() {
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 50;
 
+  // Inline cell editing: { id, field, value } or null
+  const [cellEdit, setCellEdit] = useState(null);
+  const cellInputRef = useRef(null);
+
+  // Bulk selection
+  const [selected, setSelected] = useState(new Set());
+  const [bulkCategory, setBulkCategory] = useState("");
+
   useEffect(() => {
     getYears().then((y) => setYears(y.length ? y : [currentYear]));
     getCategories().then(setAllCategories);
@@ -54,6 +62,11 @@ export default function Transactions() {
   }, [year, month, filterCategory]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Clear selection when visible set changes due to filter changes
+  useEffect(() => {
+    setSelected(new Set());
+  }, [year, month, filterCategory, filterSource, search, amountMin, amountMax, fixedOnly, colFilter]);
 
   const allSources = [...new Set(transactions.map((t) => t.source).filter(Boolean))].sort();
 
@@ -83,6 +96,135 @@ export default function Transactions() {
   const total = filtered.reduce((s, t) => s + t.amount, 0);
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paginated = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+  // ── Inline cell editing ──────────────────────────────────────────────────────
+
+  const startCellEdit = (txn, field) => {
+    const value = field === "amount" ? String(txn.amount) : txn[field];
+    setCellEdit({ id: txn.id, field, value });
+    setTimeout(() => { if (cellInputRef.current) cellInputRef.current.focus(); }, 0);
+  };
+
+  const commitCellEdit = async () => {
+    if (!cellEdit) return;
+    const { id, field, value } = cellEdit;
+    const txn = transactions.find((t) => t.id === id);
+    if (!txn) { setCellEdit(null); return; }
+    const coerced = field === "amount" ? parseFloat(value) : value;
+    if (String(coerced) !== String(txn[field])) {
+      try {
+        await updateTransaction(id, { ...txn, [field]: coerced });
+        load();
+      } catch (e) {
+        setError(e.message);
+      }
+    }
+    setCellEdit(null);
+  };
+
+  const cancelCellEdit = () => setCellEdit(null);
+
+  const handleCellKeyDown = (e) => {
+    if (e.key === "Enter") { e.preventDefault(); commitCellEdit(); }
+    else if (e.key === "Escape") { e.preventDefault(); cancelCellEdit(); }
+  };
+
+  // Renders a td that is either an inline editor or a clickable display value
+  const renderEditableCell = (txn, field, displayNode, cellClass = "") => {
+    const isEditing = cellEdit && cellEdit.id === txn.id && cellEdit.field === field;
+
+    if (isEditing) {
+      const inputCommon = {
+        ref: cellInputRef,
+        value: cellEdit.value,
+        onChange: (e) => setCellEdit((ce) => ({ ...ce, value: e.target.value })),
+        onBlur: commitCellEdit,
+        onKeyDown: handleCellKeyDown,
+        className: "bg-zinc-700 border border-yellow-400/70 rounded px-2 py-0.5 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400 w-full",
+      };
+
+      return (
+        <td className={`px-4 py-2 ${cellClass}`}>
+          {field === "category" ? (
+            <select {...inputCommon}>
+              {allCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+              {!allCategories.includes(cellEdit.value) && cellEdit.value && (
+                <option value={cellEdit.value}>{cellEdit.value}</option>
+              )}
+            </select>
+          ) : (
+            <input
+              {...inputCommon}
+              type={field === "amount" ? "number" : "text"}
+              step={field === "amount" ? "0.01" : undefined}
+              min={field === "amount" ? "0" : undefined}
+            />
+          )}
+        </td>
+      );
+    }
+
+    return (
+      <td
+        className={`px-4 py-2 cursor-pointer group/cell ${cellClass}`}
+        onClick={() => startCellEdit(txn, field)}
+        title="Click to edit"
+      >
+        <span className="group-hover/cell:underline group-hover/cell:decoration-dotted group-hover/cell:decoration-zinc-500">
+          {displayNode}
+        </span>
+      </td>
+    );
+  };
+
+  // ── Bulk selection ───────────────────────────────────────────────────────────
+
+  const filteredIds = filtered.map((t) => t.id);
+  const allVisibleSelected = filteredIds.length > 0 && filteredIds.every((id) => selected.has(id));
+  const someSelected = selected.size > 0;
+
+  const toggleSelectAll = () => {
+    if (allVisibleSelected) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(filteredIds));
+    }
+  };
+
+  const toggleSelectRow = (id) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleBulkApplyCategory = async () => {
+    if (!bulkCategory) return;
+    for (const id of selected) {
+      const txn = transactions.find((t) => t.id === id);
+      if (txn) {
+        try { await updateTransaction(id, { ...txn, category: bulkCategory }); }
+        catch (e) { setError(e.message); }
+      }
+    }
+    setSelected(new Set());
+    setBulkCategory("");
+    load();
+  };
+
+  const handleBulkDelete = async () => {
+    const ids = [...selected];
+    if (!confirm(`Delete ${ids.length} selected transaction${ids.length === 1 ? "" : "s"}?`)) return;
+    for (const id of ids) {
+      try { await deleteTransaction(id); }
+      catch (e) { setError(e.message); }
+    }
+    setSelected(new Set());
+    load();
+  };
+
+  // ── Form handlers ────────────────────────────────────────────────────────────
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -129,6 +271,8 @@ export default function Transactions() {
     await deleteTransaction(id);
     load();
   };
+
+  // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-4">
@@ -238,6 +382,16 @@ export default function Transactions() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-zinc-700 text-left text-zinc-500 bg-zinc-800">
+                  {/* Checkbox select-all */}
+                  <th className="px-3 py-2 w-8">
+                    <input
+                      type="checkbox"
+                      className="accent-yellow-400 cursor-pointer"
+                      checked={allVisibleSelected}
+                      onChange={toggleSelectAll}
+                      title={allVisibleSelected ? "Deselect all" : "Select all visible"}
+                    />
+                  </th>
                   {[["date","Date"],["merchant","Merchant"],["category","Category"]].map(([f,label]) => (
                     <th key={f} className="px-4 py-2 font-medium cursor-pointer hover:text-zinc-300 select-none"
                       onClick={() => { if (sortField === f) setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortField(f); setSortDir("asc"); } }}>
@@ -255,6 +409,8 @@ export default function Transactions() {
                   <th className="px-4 py-2 font-medium"></th>
                 </tr>
                 <tr className="border-b border-zinc-700 bg-zinc-800/60">
+                  {/* Empty cell for checkbox column */}
+                  <td className="px-3 py-1"></td>
                   {["date","merchant","category"].map((f) => (
                     <td key={f} className="px-2 py-1">
                       <input
@@ -286,15 +442,42 @@ export default function Transactions() {
               </thead>
               <tbody>
                 {paginated.map((txn) => (
-                  <tr key={txn.id} className="border-b border-zinc-800 last:border-0 hover:bg-zinc-800">
+                  <tr
+                    key={txn.id}
+                    className={`border-b border-zinc-800 last:border-0 hover:bg-zinc-800 ${selected.has(txn.id) ? "bg-yellow-400/5" : ""}`}
+                  >
+                    {/* Row checkbox */}
+                    <td className="px-3 py-2 w-8">
+                      <input
+                        type="checkbox"
+                        className="accent-yellow-400 cursor-pointer"
+                        checked={selected.has(txn.id)}
+                        onChange={() => toggleSelectRow(txn.id)}
+                      />
+                    </td>
                     <td className="px-4 py-2 text-zinc-500">{txn.date}</td>
-                    <td className="px-4 py-2 max-w-[240px] truncate text-zinc-200">{txn.merchant}</td>
-                    <td className="px-4 py-2">
+                    {/* Inline-editable: merchant */}
+                    {renderEditableCell(
+                      txn,
+                      "merchant",
+                      <span className="max-w-[220px] truncate block text-zinc-200">{txn.merchant}</span>,
+                      "max-w-[240px]"
+                    )}
+                    {/* Inline-editable: category */}
+                    {renderEditableCell(
+                      txn,
+                      "category",
                       <span className="bg-yellow-400/10 text-yellow-400 px-2 py-0.5 rounded text-xs font-medium">
                         {txn.category}
                       </span>
-                    </td>
-                    <td className="px-4 py-2 text-right font-medium text-zinc-100">{fmt(txn.amount)}</td>
+                    )}
+                    {/* Inline-editable: amount */}
+                    {renderEditableCell(
+                      txn,
+                      "amount",
+                      <span className="font-medium text-zinc-100">{fmt(txn.amount)}</span>,
+                      "text-right"
+                    )}
                     <td className="px-4 py-2 text-zinc-600 text-xs uppercase">{txn.source || "—"}</td>
                     <td className="px-4 py-2 text-right">
                       <button onClick={() => handleEdit(txn)} className="text-yellow-400 hover:text-yellow-300 mr-3 text-xs">Edit</button>
@@ -327,6 +510,44 @@ export default function Transactions() {
             className="px-3 py-1.5 text-sm border border-zinc-700 rounded-lg text-zinc-300 hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed"
           >
             Next
+          </button>
+        </div>
+      )}
+
+      {/* Bulk action bar — sticky at bottom when ≥1 row selected */}
+      {someSelected && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 flex items-center gap-3 px-6 py-3 bg-zinc-900 border-t border-zinc-700 shadow-2xl">
+          <span className="text-sm font-medium text-zinc-300 shrink-0">
+            {selected.size} selected
+          </span>
+          <div className="flex items-center gap-2 flex-1">
+            <select
+              className="bg-zinc-800 border border-zinc-600 rounded px-2 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400/50"
+              value={bulkCategory}
+              onChange={(e) => setBulkCategory(e.target.value)}
+            >
+              <option value="">— choose category —</option>
+              {allCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <button
+              onClick={handleBulkApplyCategory}
+              disabled={!bulkCategory}
+              className="bg-yellow-400 text-black px-3 py-1.5 rounded text-sm font-medium hover:bg-yellow-300 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Apply Category
+            </button>
+          </div>
+          <button
+            onClick={handleBulkDelete}
+            className="bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded text-sm font-medium shrink-0"
+          >
+            Delete Selected
+          </button>
+          <button
+            onClick={() => setSelected(new Set())}
+            className="text-zinc-500 hover:text-zinc-300 text-xs underline shrink-0"
+          >
+            Clear
           </button>
         </div>
       )}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { getMerchantCategories, bulkUpdateCategory } from "../api";
+import { getMerchantCategories, bulkUpdateCategory, getSuggestedRenames, migrateCategories } from "../api";
 import { getCategoryGroup } from "../constants";
 
 export default function CategoryAudit() {
@@ -7,13 +7,17 @@ export default function CategoryAudit() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
-  const [reassigning, setReassigning] = useState(null); // "merchant||from_cat"
+  const [reassigning, setReassigning] = useState(null);
+  const [renames, setRenames] = useState([]);
+  const [migrating, setMigrating] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
     setError("");
-    getMerchantCategories()
-      .then(setRows)
+    Promise.all([
+      getMerchantCategories().then(setRows),
+      getSuggestedRenames().then(setRenames).catch(() => {}),
+    ])
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
@@ -46,6 +50,22 @@ export default function CategoryAudit() {
     return "bg-zinc-700 text-zinc-400 border-zinc-600";
   }
 
+  const handleMigrate = async () => {
+    if (!confirm(`Apply ${renames.length} category renames to all existing transactions? This cannot be undone.`)) return;
+    setMigrating(true);
+    setError("");
+    try {
+      const res = await migrateCategories();
+      setSuccessMsg(`Updated ${res.updated} transaction${res.updated !== 1 ? "s" : ""} with improved category names.`);
+      setRenames([]);
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setMigrating(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -53,6 +73,36 @@ export default function CategoryAudit() {
         <h1 className="text-2xl font-bold text-zinc-100">Category Audit</h1>
         <p className="text-sm text-zinc-500 mt-1">Merchants assigned to multiple categories</p>
       </div>
+
+      {/* Suggested renames panel */}
+      {renames.length > 0 && (
+        <div className="bg-yellow-400/5 border border-yellow-400/20 rounded-xl p-5 space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <p className="text-sm font-semibold text-yellow-400">Suggested Category Improvements</p>
+              <p className="text-xs text-zinc-500 mt-0.5">
+                These renames will consolidate redundant categories and fix naming inconsistencies across all your transactions.
+              </p>
+            </div>
+            <button
+              onClick={handleMigrate}
+              disabled={migrating}
+              className="bg-yellow-400 text-black px-4 py-2 rounded-lg text-sm font-medium hover:bg-yellow-300 disabled:opacity-40"
+            >
+              {migrating ? "Applying..." : `Apply All ${renames.length} Renames`}
+            </button>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {renames.map((r) => (
+              <div key={r.from_category} className="bg-zinc-800 rounded-lg px-3 py-2 flex items-center gap-2 text-xs">
+                <span className="text-zinc-400 truncate">{r.from_category}</span>
+                <span className="text-zinc-600">→</span>
+                <span className="text-yellow-400 font-medium truncate">{r.to_category}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Feedback messages */}
       {successMsg && (

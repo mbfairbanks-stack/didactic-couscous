@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { getCategorySummary, getBudgetTargets, createBudgetTarget, updateBudgetTarget, deleteBudgetTarget, getYears, autoPopulateBudget } from "../api";
+import { getCategorySummary, getBudgetTargets, createBudgetTarget, updateBudgetTarget, deleteBudgetTarget, getYears, autoPopulateBudget, copyBudgetFromMonth } from "../api";
 import { getCategoryGroup } from "../constants";
 import { MONTH_LABELS, currentYear, currentMonth, fmt } from "../utils";
 
@@ -34,6 +34,9 @@ export default function BudgetPlanner() {
   const [autoPopResult, setAutoPopResult] = useState(null);
   const [lookback, setLookback] = useState(3);
   const [overwrite, setOverwrite] = useState(false);
+  const [copying, setCopying] = useState(false);
+  const [copyResult, setCopyResult] = useState(null);
+  const [yoyActuals, setYoyActuals] = useState([]);
 
   useEffect(() => {
     getYears().then((y) => setYears(y.length ? y : [currentYear])).catch(() => {});
@@ -44,6 +47,7 @@ export default function BudgetPlanner() {
     Promise.all([
       getCategorySummary(year, month).then(setActuals),
       getBudgetTargets({ year, month }).then(setTargets),
+      getCategorySummary(year - 1, month).then(setYoyActuals).catch(() => setYoyActuals([])),
     ]).catch((e) => setError(e.message));
   }, [year, month]);
 
@@ -105,6 +109,29 @@ export default function BudgetPlanner() {
       setAutoPopulating(false);
     }
   };
+
+  const prevMonth = month === 1 ? 12 : month - 1;
+  const prevMonthYear = month === 1 ? year - 1 : year;
+
+  const handleCopyFromLastMonth = async () => {
+    setCopying(true);
+    setCopyResult(null);
+    setError("");
+    try {
+      const res = await copyBudgetFromMonth({
+        from_year: prevMonthYear, from_month: prevMonth,
+        to_year: year, to_month: month, overwrite: false,
+      });
+      setCopyResult(res);
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setCopying(false);
+    }
+  };
+
+  const yoyMap = Object.fromEntries(yoyActuals.map((r) => [r.category, r.total]));
 
   return (
     <div className="space-y-5">
@@ -196,10 +223,28 @@ export default function BudgetPlanner() {
         </div>
         {autoPopResult && (
           <div className="bg-green-900/20 border border-green-700/50 rounded-lg p-3 text-sm text-green-400">
-            Set <strong>{autoPopResult.set}</strong> budget target{autoPopResult.set !== 1 ? "s" : ""} from {autoPopResult.months_analyzed} month{autoPopResult.months_analyzed !== 1 ? "s" : ""} of history.
-            {autoPopResult.skipped > 0 && <span className="text-zinc-500"> ({autoPopResult.skipped} skipped — already set)</span>}
+            Set <strong>{autoPopResult.set}</strong> targets from {autoPopResult.months_analyzed} month{autoPopResult.months_analyzed !== 1 ? "s" : ""} of history.
+            {autoPopResult.skipped > 0 && <span className="text-zinc-500"> ({autoPopResult.skipped} skipped)</span>}
           </div>
         )}
+        <div className="border-t border-zinc-800 pt-3 flex items-center gap-3 flex-wrap">
+          <div>
+            <p className="text-xs text-zinc-500 mb-1">Or copy from {MONTH_LABELS[prevMonth]} {prevMonthYear}</p>
+            <button
+              onClick={handleCopyFromLastMonth}
+              disabled={copying}
+              className="bg-zinc-700 text-zinc-100 px-4 py-1.5 rounded text-sm font-medium hover:bg-zinc-600 disabled:opacity-40"
+            >
+              {copying ? "Copying..." : `Copy from ${MONTH_LABELS[prevMonth]}`}
+            </button>
+          </div>
+          {copyResult && (
+            <span className="text-xs text-green-400">
+              Copied {copyResult.copied} target{copyResult.copied !== 1 ? "s" : ""}.
+              {copyResult.skipped > 0 && ` (${copyResult.skipped} already set, skipped)`}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Add new category budget */}
@@ -257,7 +302,8 @@ export default function BudgetPlanner() {
                     <th className="px-4 py-2 font-medium text-right">Budget</th>
                     <th className="px-4 py-2 font-medium text-right">Actual</th>
                     <th className="px-4 py-2 font-medium text-right">Diff</th>
-                    <th className="px-4 py-2 font-medium w-32">Progress</th>
+                    <th className="px-4 py-2 font-medium text-right text-zinc-600">{year - 1}</th>
+                    <th className="px-4 py-2 font-medium w-28">Progress</th>
                     <th className="px-4 py-2"></th>
                   </tr>
                 </thead>
@@ -290,6 +336,9 @@ export default function BudgetPlanner() {
                         <td className="px-4 py-2.5 text-right text-zinc-300">{fmt(row.total)}</td>
                         <td className={`px-4 py-2.5 text-right font-medium ${diff < 0 ? "text-red-400" : "text-green-400"}`}>
                           {budget ? (diff < 0 ? `-${fmt(Math.abs(diff))}` : `+${fmt(diff)}`) : "—"}
+                        </td>
+                        <td className="px-4 py-2.5 text-right text-zinc-600 text-xs">
+                          {yoyMap[row.category] != null ? fmt(yoyMap[row.category]) : "—"}
                         </td>
                         <td className="px-4 py-2.5"><ProgressBar actual={row.total} budget={budget} /></td>
                         <td className="px-4 py-2.5 text-right text-xs">

@@ -494,6 +494,28 @@ def deduplicate_transactions(db: Session = Depends(get_db)):
     return {"duplicates_removed": len(to_delete)}
 
 
+@app.get("/categories/suggested-renames")
+def get_suggested_renames():
+    """Return the list of suggested category renames (old → new)."""
+    from categories import SUGGESTED_RENAMES
+    return [{"from_category": k, "to_category": v} for k, v in SUGGESTED_RENAMES.items()]
+
+
+@app.post("/categories/migrate")
+def migrate_categories(db: Session = Depends(get_db)):
+    """Apply all suggested category renames to existing transactions."""
+    from categories import SUGGESTED_RENAMES
+    total = 0
+    for old, new in SUGGESTED_RENAMES.items():
+        result = db.execute(
+            text("UPDATE transactions SET category = :new WHERE category = :old"),
+            {"new": new, "old": old}
+        )
+        total += result.rowcount
+    db.commit()
+    return {"updated": total}
+
+
 # ---------------------------------------------------------------------------
 # Debts
 # ---------------------------------------------------------------------------
@@ -780,18 +802,31 @@ class CsvImportRow(BaseModel):
     merchant: str
     amount: float
     category: str
+    source: Optional[str] = None
 
 
 @app.post("/import-csv-rows")
 def import_csv_rows(rows: List[CsvImportRow], db: Session = Depends(get_db)):
-    """Import reviewed CSV rows into the transactions table."""
+    """Import reviewed CSV rows into the transactions table, skipping exact duplicates."""
     from datetime import datetime
     imported = 0
+    skipped_duplicates = 0
     for row in rows:
         try:
             d = datetime.strptime(row.date, '%Y-%m-%d').date()
         except ValueError:
             continue
+        dup = db.execute(
+            select(models.Transaction).where(
+                models.Transaction.date == d,
+                models.Transaction.merchant == row.merchant,
+                func.round(models.Transaction.amount, 2) == round(row.amount, 2),
+            )
+        ).first()
+        if dup:
+            skipped_duplicates += 1
+            continue
+        source = getattr(row, 'source', None) or "csv_import"
         txn = models.Transaction(
             date=d,
             merchant=row.merchant,
@@ -799,12 +834,12 @@ def import_csv_rows(rows: List[CsvImportRow], db: Session = Depends(get_db)):
             category=row.category,
             year=d.year,
             month=d.month,
-            source="csv_paste",
+            source=source,
         )
         db.add(txn)
         imported += 1
     db.commit()
-    return {"imported": imported}
+    return {"imported": imported, "skipped_duplicates": skipped_duplicates}
 
 
 # ---------------------------------------------------------------------------
@@ -864,7 +899,49 @@ def auto_populate_budget(body: AutoPopulateRequest, db: Session = Depends(get_db
             created += 1
 
     db.commit()
-    return {"created": created, "skipped": skipped}
+    return {"set": created, "skipped": skipped, "months_analyzed": len(history_months)}
+
+
+class CopyBudgetRequest(BaseModel):
+    from_year: int
+    from_month: int
+    to_year: int
+    to_month: int
+    overwrite: bool = False
+
+
+@app.post("/budget-targets/copy-from-month")
+def copy_budget_from_month(body: CopyBudgetRequest, db: Session = Depends(get_db)):
+    """Copy budget targets from one month to another."""
+    source = db.execute(
+        select(models.BudgetTarget).where(
+            models.BudgetTarget.year == body.from_year,
+            models.BudgetTarget.month == body.from_month,
+        )
+    ).scalars().all()
+    copied = 0
+    skipped = 0
+    for t in source:
+        existing = db.execute(
+            select(models.BudgetTarget).where(
+                models.BudgetTarget.category == t.category,
+                models.BudgetTarget.year == body.to_year,
+                models.BudgetTarget.month == body.to_month,
+            )
+        ).scalar_one_or_none()
+        if existing and not body.overwrite:
+            skipped += 1
+            continue
+        if existing:
+            existing.amount = t.amount
+        else:
+            db.add(models.BudgetTarget(
+                category=t.category, year=body.to_year,
+                month=body.to_month, amount=t.amount,
+            ))
+        copied += 1
+    db.commit()
+    return {"copied": copied, "skipped": skipped}
 
 
 # ---------------------------------------------------------------------------

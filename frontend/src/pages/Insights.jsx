@@ -57,12 +57,15 @@ function renderMarkdown(text) {
   return elements;
 }
 
+const cacheKey = (year, month) => `insights_${year}_${month}`;
+
 export default function Insights() {
   const [year, setYear] = useState(currentYear);
   const [month, setMonth] = useState(currentMonth);
   const [years, setYears] = useState([currentYear]);
   const [loading, setLoading] = useState(false);
   const [text, setText] = useState("");
+  const [cached, setCached] = useState(false);
   const [error, setError] = useState("");
   const bottomRef = useRef(null);
 
@@ -70,20 +73,29 @@ export default function Insights() {
     getYears().then((y) => setYears(y.length ? y : [currentYear]));
   }, []);
 
+  // Load cache when month/year changes
+  useEffect(() => {
+    const saved = localStorage.getItem(cacheKey(year, month));
+    if (saved) { setText(saved); setCached(true); }
+    else { setText(""); setCached(false); }
+  }, [year, month]);
+
   useEffect(() => {
     if (loading) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [text, loading]);
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (forceRefresh = false) => {
     setText("");
+    setCached(false);
     setError("");
     setLoading(true);
     try {
+      let full = "";
       await streamInsights(
         year,
         month,
-        (chunk) => setText((prev) => prev + chunk),
-        () => setLoading(false),
+        (chunk) => { full += chunk; setText((prev) => prev + chunk); },
+        () => { setLoading(false); if (full) localStorage.setItem(cacheKey(year, month), full); },
         (err) => { setError(err); setLoading(false); }
       );
     } catch (e) {
@@ -115,7 +127,7 @@ export default function Insights() {
           </select>
         </div>
         <button
-          onClick={handleGenerate}
+          onClick={() => handleGenerate()}
           disabled={loading}
           className="bg-yellow-400 text-black px-5 py-2 rounded-lg text-sm font-medium hover:bg-yellow-300 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
         >
@@ -124,9 +136,12 @@ export default function Insights() {
               <span className="inline-block w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
               Analyzing...
             </>
-          ) : "Generate Insights"}
+          ) : cached ? "Regenerate" : "Generate Insights"}
         </button>
-        <p className="text-xs text-zinc-600 self-center">Powered by Claude — takes 10–20 seconds</p>
+        {cached && !loading && (
+          <span className="text-xs text-zinc-500 self-center bg-zinc-800 px-2 py-1 rounded">Cached</span>
+        )}
+        {!cached && <p className="text-xs text-zinc-600 self-center">Powered by Claude — takes 10–20 seconds</p>}
       </div>
 
       {error && (

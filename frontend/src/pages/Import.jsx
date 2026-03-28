@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { importFile, exportUrl, getYears, deduplicate, cleanupSummary, parseCsv, importCsvRows } from "../api";
+import { importFile, exportUrl, getYears, deduplicate, cleanupSummary, parseCsv, importCsvRows, getCategories } from "../api";
 import { MONTH_LABELS, currentYear } from "../utils";
 
 const CARD_FORMATS = [
@@ -23,8 +23,11 @@ export default function Import() {
   const [dedupResult, setDedupResult] = useState(null);
   const [cleaning, setCleaning] = useState(false);
   const [cleanResult, setCleanResult] = useState(null);
+  const [allCategories, setAllCategories] = useState([]);
   const fileRef = useRef();
   const csvFileRef = useRef();
+
+  useEffect(() => { getCategories().then(setAllCategories); }, []);
 
   // CSV import state
   const [csvFile, setCsvFile] = useState(null);
@@ -267,7 +270,21 @@ export default function Import() {
             type="file"
             accept=".csv"
             className="hidden"
-            onChange={(e) => { const f = e.target.files[0]; if (f) { setCsvFile(f); setParsedRows(null); setCsvResult(null); setParseError(""); setCsvText(""); } }}
+            onChange={(e) => {
+              const f = e.target.files[0];
+              if (f) {
+                setCsvFile(f);
+                setParsedRows(null); setCsvResult(null); setParseError(""); setCsvText("");
+                // Auto-fill source from filename (e.g. "accountactivity" → "visa", "amex" → "amex")
+                const name = f.name.toLowerCase();
+                if (!csvSource) {
+                  if (name.includes("amex")) setCsvSource("amex");
+                  else if (name.includes("visa")) setCsvSource("visa");
+                  else if (name.includes("mc") || name.includes("mastercard")) setCsvSource("mc");
+                  else setCsvSource("visa");
+                }
+              }
+            }}
           />
           {csvFile ? (
             <div>
@@ -302,7 +319,10 @@ export default function Import() {
 
         {csvResult && (
           <div className="bg-green-900/20 border border-green-700/50 rounded-lg p-3 text-sm text-green-400">
-            Imported <strong>{csvResult.imported}</strong> transactions.
+            Imported <strong>{csvResult.imported}</strong> transaction{csvResult.imported !== 1 ? "s" : ""}.
+            {csvResult.skipped_duplicates > 0 && (
+              <span className="text-zinc-500"> ({csvResult.skipped_duplicates} duplicate{csvResult.skipped_duplicates !== 1 ? "s" : ""} skipped)</span>
+            )}
           </div>
         )}
 
@@ -339,14 +359,19 @@ export default function Import() {
                       <td className="px-3 py-1.5 text-zinc-200 max-w-[180px] truncate">{row.merchant}</td>
                       <td className="px-3 py-1.5 text-right text-zinc-300">${Number(row.amount).toFixed(2)}</td>
                       <td className="px-3 py-1.5">
-                        <input
-                          type="text"
-                          className={`${inputCls} w-32`}
+                        <select
+                          className={`${inputCls} w-36 text-xs`}
                           value={row.category}
                           onChange={(e) => updateRow(idx, "category", e.target.value)}
-                        />
-                        {row.suggested && row.suggested !== row.category && (
-                          <span className="ml-1 text-zinc-600 italic">← {row.suggested}</span>
+                        >
+                          {row.category && !allCategories.includes(row.category) && (
+                            <option value={row.category}>{row.category}</option>
+                          )}
+                          {allCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+                          <option value="">— Uncategorized —</option>
+                        </select>
+                        {row.confidence === "high" && (
+                          <span className="ml-1 text-xs text-green-600">✓</span>
                         )}
                       </td>
                       <td className="px-3 py-1.5">

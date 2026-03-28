@@ -1,4 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+} from "recharts";
 import { getDebts, createDebt, updateDebt, deleteDebt } from "../api";
 import { fmt } from "../utils";
 
@@ -43,6 +52,117 @@ function computeDebtStats(debt) {
       ? Math.min(100, ((debt.initial_balance - debt.current_balance) / debt.initial_balance) * 100)
       : 0;
   return { remaining, monthsLeft, totalMonthly, balanceAtDue, monthlyNeeded, onTrack, pctPaid };
+}
+
+function buildPayoffData(debt) {
+  const MONTH_ABBRS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const monthsLeft = parseMonthsRemaining(debt.due_date);
+  const totalMonthly = debt.monthly_payment + debt.monthly_extra;
+  const MAX_MONTHS = 60;
+  const cap = monthsLeft != null ? Math.min(monthsLeft, MAX_MONTHS) : MAX_MONTHS;
+
+  const now = new Date();
+  const startMonth = now.getMonth();
+  const startYear = now.getFullYear();
+
+  const data = [];
+  let balance = debt.current_balance;
+
+  // Include month 0 (today's balance)
+  for (let i = 0; i <= cap; i++) {
+    const absMonth = startMonth + i;
+    const month = absMonth % 12;
+    const year = startYear + Math.floor(absMonth / 12);
+    const label = `${MONTH_ABBRS[month]} ${String(year).slice(2)}`;
+    data.push({ month: label, balance: Math.round(balance * 100) / 100 });
+    if (balance <= 0) break;
+    balance = Math.max(0, balance - totalMonthly);
+    if (balance === 0) {
+      // push the zero point then stop
+      const nextAbsMonth = startMonth + i + 1;
+      const nextMonth = nextAbsMonth % 12;
+      const nextYear = startYear + Math.floor(nextAbsMonth / 12);
+      const nextLabel = `${MONTH_ABBRS[nextMonth]} ${String(nextYear).slice(2)}`;
+      data.push({ month: nextLabel, balance: 0 });
+      break;
+    }
+  }
+
+  return data;
+}
+
+function PayoffTooltip({ active, payload, label }) {
+  if (!active || !payload || !payload.length) return null;
+  return (
+    <div className="bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-xs text-zinc-100 shadow-lg">
+      <p className="text-zinc-400 mb-0.5">{label}</p>
+      <p className="font-semibold text-yellow-400">{fmt(payload[0].value)}</p>
+    </div>
+  );
+}
+
+function PayoffChart({ debt }) {
+  const [open, setOpen] = useState(false);
+  const data = open ? buildPayoffData(debt) : null;
+
+  return (
+    <div className="border-t border-zinc-800 pt-3">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 text-xs font-medium text-zinc-400 hover:text-yellow-400 transition-colors"
+      >
+        <span
+          className="inline-block transition-transform duration-200"
+          style={{ transform: open ? "rotate(90deg)" : "rotate(0deg)" }}
+        >
+          ▶
+        </span>
+        Payoff Timeline
+      </button>
+
+      {open && (
+        <div className="mt-3 bg-zinc-950 rounded-lg px-2 py-3">
+          {data && data.length > 1 ? (
+            <ResponsiveContainer width="100%" height={160}>
+              <LineChart data={data} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#3f3f46" vertical={false} />
+                <XAxis
+                  dataKey="month"
+                  tick={{ fill: "#71717a", fontSize: 10 }}
+                  tickLine={false}
+                  axisLine={false}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  tick={{ fill: "#71717a", fontSize: 10 }}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+                  width={42}
+                />
+                <Tooltip content={<PayoffTooltip />} />
+                <Line
+                  type="monotone"
+                  dataKey="balance"
+                  stroke="#facc15"
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={{ r: 4, fill: "#facc15", stroke: "#18181b", strokeWidth: 2 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <p className="text-xs text-zinc-500 text-center py-4">
+              {(debt.monthly_payment + debt.monthly_extra) <= 0
+                ? "Set a monthly payment to see the timeline."
+                : "Not enough data to render timeline."}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function StatBox({ label, value }) {
@@ -296,6 +416,9 @@ export default function Debts() {
                   {debt.notes}
                 </p>
               )}
+
+              {/* Payoff Timeline */}
+              <PayoffChart debt={debt} />
             </div>
           </div>
         );
