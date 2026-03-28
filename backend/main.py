@@ -672,15 +672,18 @@ def parse_csv(body: ParseCsvRequest, db: Session = Depends(get_db)):
 
     lines = raw.splitlines()
 
-    # Detect TD-style: tab-delimited, no header
-    # TD format: date\tmerchant\tdebit\tcredit\tbalance
-    def _is_td_row(line: str) -> bool:
-        parts = line.split('\t')
-        if len(parts) < 3:
-            return False
-        return bool(_parse_date(parts[0]))
+    # Detect headerless format: tab or comma delimited, first cell is a date
+    # TD format: date,merchant,debit,credit,balance  (or tab-separated)
+    def _split_first(line: str):
+        if '\t' in line:
+            return [p.strip() for p in line.split('\t')]
+        return next(csv.reader([line]))
 
-    use_td = any('\t' in l for l in lines[:3]) and _is_td_row(lines[0])
+    def _is_headerless(line: str) -> bool:
+        parts = _split_first(line)
+        return len(parts) >= 3 and bool(_parse_date(parts[0]))
+
+    use_td = bool(lines) and _is_headerless(lines[0])
 
     parsed = []
 
@@ -688,7 +691,7 @@ def parse_csv(body: ParseCsvRequest, db: Session = Depends(get_db)):
         for line in lines:
             if not line.strip():
                 continue
-            parts = [p.strip() for p in line.split('\t')]
+            parts = _split_first(line)
             if len(parts) < 3:
                 continue
             date_str = parts[0]
