@@ -142,6 +142,17 @@ export default function BudgetPlanner() {
 
   const yoyMap = Object.fromEntries(yoyActuals.map((r) => [r.category, r.total]));
 
+  // Budget alert computations
+  const alertRows = allCategories.filter((row) => {
+    const budget = targetMap[row.category]?.amount;
+    return budget && row.total > 0;
+  });
+  const overBudgetCount = alertRows.filter((row) => row.total >= targetMap[row.category].amount).length;
+  const approachingCount = alertRows.filter((row) => {
+    const budget = targetMap[row.category].amount;
+    return row.total >= budget * 0.8 && row.total < budget;
+  }).length;
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -161,6 +172,22 @@ export default function BudgetPlanner() {
       {error && (
         <div className="bg-red-900/20 border border-red-700/50 rounded-xl px-4 py-3 text-sm text-red-400">
           Failed to load data: {error}
+        </div>
+      )}
+
+      {/* Budget alerts summary */}
+      {(overBudgetCount > 0 || approachingCount > 0) && (
+        <div className={`border rounded-xl px-4 py-3 text-sm flex flex-wrap gap-4 items-center ${overBudgetCount > 0 ? "bg-red-900/20 border-red-700/50" : "bg-yellow-900/20 border-yellow-700/50"}`}>
+          {overBudgetCount > 0 && (
+            <span className="text-red-400 font-medium">
+              {overBudgetCount} {overBudgetCount === 1 ? "category" : "categories"} over budget
+            </span>
+          )}
+          {approachingCount > 0 && (
+            <span className="text-yellow-400 font-medium">
+              {approachingCount} {approachingCount === 1 ? "category" : "categories"} approaching limit
+            </span>
+          )}
         </div>
       )}
 
@@ -342,7 +369,23 @@ export default function BudgetPlanner() {
                             </button>
                           )}
                         </td>
-                        <td className="px-4 py-2.5 text-right text-zinc-300">{fmt(row.total)}</td>
+                        <td className={`px-4 py-2.5 text-right font-medium ${
+                          budget && row.total >= budget
+                            ? "bg-red-900/30 text-red-400"
+                            : budget && row.total >= budget * 0.8
+                            ? "bg-yellow-900/20 text-yellow-300"
+                            : "text-zinc-300"
+                        }`}>
+                          <span className="flex items-center justify-end gap-1.5">
+                            {fmt(row.total)}
+                            {budget && row.total >= budget && (
+                              <span className="bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">Over!</span>
+                            )}
+                            {budget && row.total >= budget * 0.8 && row.total < budget && (
+                              <span title="Approaching limit">⚠</span>
+                            )}
+                          </span>
+                        </td>
                         <td className={`px-4 py-2.5 text-right font-medium ${diff < 0 ? "text-red-400" : "text-green-400"}`}>
                           {budget ? (diff < 0 ? `-${fmt(Math.abs(diff))}` : `+${fmt(diff)}`) : "—"}
                         </td>
