@@ -7,6 +7,7 @@ const links = [
   { to: "/charts", label: "Charts" },
   { to: "/insights", label: "AI Insights" },
   { to: "/import", label: "Import / Export" },
+  { to: "/game", label: "🏴‍☠️ Space RPG" },
 ];
 
 export default function Nav() {
