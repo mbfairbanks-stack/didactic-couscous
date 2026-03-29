@@ -93,7 +93,7 @@ export default function Settings() {
           <label className="text-xs text-zinc-500 block mb-1">Household Name</label>
           <input className={`${inputCls} w-full`} value={form.household_name}
             onChange={(e) => setForm({ ...form, household_name: e.target.value })}
-            placeholder="My Budget" />
+            placeholder="BudgetBot" />
           <p className="text-xs text-zinc-600 mt-1">Shown in the top-left of the nav bar.</p>
         </div>
         <div className="grid grid-cols-2 gap-4">

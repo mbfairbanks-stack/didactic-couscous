@@ -13,7 +13,7 @@ export default function Onboarding() {
   const handleFinish = async () => {
     setSaving(true);
     await updateSettings({
-      household_name: form.household_name || "My Budget",
+      household_name: form.household_name || "BudgetBot",
       person_1: form.person_1 || "Person 1",
       person_2: form.person_2 || "Person 2",
       onboarding_complete: "true",
@@ -103,7 +103,7 @@ export default function Onboarding() {
               </p>
             </div>
             <div className="bg-zinc-800 rounded-lg p-4 space-y-1 text-sm">
-              <p className="text-zinc-400">Household: <span className="text-zinc-100">{form.household_name || "My Budget"}</span></p>
+              <p className="text-zinc-400">Household: <span className="text-zinc-100">{form.household_name || "BudgetBot"}</span></p>
               {form.person_1 && <p className="text-zinc-400">Person 1: <span className="text-zinc-100">{form.person_1}</span></p>}
               {form.person_2 && <p className="text-zinc-400">Person 2: <span className="text-zinc-100">{form.person_2}</span></p>}
             </div>

@@ -19,7 +19,7 @@ const links = [
 export default function Nav() {
   const { settings } = useSettings();
   const { logout, demo } = useAuth();
-  const householdName = settings.household_name || "My Budget";
+  const householdName = settings.household_name || "BudgetBot";
 
   return (
     <header className="bg-zinc-950 border-b border-zinc-800">

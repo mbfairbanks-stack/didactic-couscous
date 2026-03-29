@@ -3,14 +3,14 @@ import { getSettings, getCategoryDefinitions } from "../api";
 import { updateCategoryGroups } from "../constants";
 
 const SettingsContext = createContext({
-  settings: { household_name: "My Budget", person_1: "Person 1", person_2: "Person 2" },
+  settings: { household_name: "BudgetBot", person_1: "Person 1", person_2: "Person 2" },
   loading: true,
   refresh: () => {},
 });
 
 export function SettingsProvider({ children }) {
   const [settings, setSettings] = useState({
-    household_name: "My Budget",
+    household_name: "BudgetBot",
     person_1: "Person 1",
     person_2: "Person 2",
   });

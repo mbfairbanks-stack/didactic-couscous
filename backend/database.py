@@ -51,7 +51,7 @@ def run_migrations():
                 )
             """))
             # Seed defaults
-            for k, v in [("household_name", "My Budget"), ("person_1", "Person 1"), ("person_2", "Person 2")]:
+            for k, v in [("household_name", "BudgetBot"), ("person_1", "Person 1"), ("person_2", "Person 2")]:
                 conn.execute(sa.text("INSERT INTO app_settings (key, value) VALUES (:k, :v)"), {"k": k, "v": v})
 
         # Create categories table if missing and seed from categories.py

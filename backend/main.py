@@ -23,7 +23,7 @@ run_migrations()
 BUDGET_PASSWORD = os.getenv("BUDGET_PASSWORD", "")
 _pw_hash = hashlib.sha256(BUDGET_PASSWORD.encode()).hexdigest() if BUDGET_PASSWORD else ""
 
-app = FastAPI(title="Budget App API")
+app = FastAPI(title="BudgetBot API")
 
 app.add_middleware(
     CORSMiddleware,

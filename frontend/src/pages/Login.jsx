@@ -27,7 +27,7 @@ export default function Login() {
           <div className="w-14 h-14 bg-yellow-400 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <span className="text-black text-2xl font-bold">$</span>
           </div>
-          <h1 className="text-2xl font-bold text-zinc-100">Wetbanks Budget</h1>
+          <h1 className="text-2xl font-bold text-zinc-100">BudgetBot</h1>
           <p className="text-zinc-500 text-sm mt-1">Enter your password to continue</p>
         </div>
 
