@@ -87,6 +87,25 @@ def run_migrations():
         if 'parent_name' not in cat_cols:
             conn.execute(sa.text("ALTER TABLE categories ADD COLUMN parent_name TEXT"))
 
+        # Seed categories if the table is empty (e.g. created by create_all before this migration ran)
+        cat_count = conn.execute(sa.text("SELECT COUNT(*) FROM categories")).scalar()
+        if cat_count == 0:
+            from categories import CATEGORY_GROUPS
+            canonical = {
+                "Mortgage", "Natural Gas", "Hydro", "Groceries", "Pets",
+                "Transportation", "Internet", "Security", "Mobile", "Insurance",
+                "Municipal Taxes", "Debt Payment", "Medical",
+                "Entertainment", "Dining", "Coffee", "Alcohol", "Cannabis",
+                "Clothes", "Gifts", "Charity", "Travel", "Fitness", "Home",
+                "Entertainment Subscriptions", "Subscriptions",
+                "Health & Beauty", "Canva Sub", "Ipsy Sub", "Misc",
+            }
+            for name, group in CATEGORY_GROUPS.items():
+                is_legacy = 0 if name in canonical else 1
+                conn.execute(sa.text(
+                    'INSERT INTO categories (name, "group", is_legacy) VALUES (:n, :g, :l)'
+                ), {"n": name, "g": group, "l": is_legacy})
+
         conn.commit()
 
     # Seed demo data on first run in demo mode
