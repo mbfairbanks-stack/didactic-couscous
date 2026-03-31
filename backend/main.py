@@ -594,17 +594,21 @@ def update_settings(body: dict, db: Session = Depends(get_db)):
 @app.get("/category-definitions")
 def list_category_definitions(db: Session = Depends(get_db)):
     rows = db.execute(select(models.Category).order_by(models.Category.group_name, models.Category.name)).scalars().all()
-    return [{"id": r.id, "name": r.name, "group": r.group_name, "is_legacy": bool(r.is_legacy)} for r in rows]
+    return [{"id": r.id, "name": r.name, "group": r.group_name, "is_legacy": bool(r.is_legacy),
+             "is_hidden": bool(r.is_hidden), "parent_name": r.parent_name} for r in rows]
 
 
 class CategoryCreate(BaseModel):
     name: str
     group: str
+    parent_name: Optional[str] = None
 
 
 class CategoryUpdate(BaseModel):
     name: Optional[str] = None
     group: Optional[str] = None
+    is_hidden: Optional[bool] = None
+    parent_name: Optional[str] = None
 
 
 @app.post("/category-definitions", status_code=201)
@@ -612,11 +616,12 @@ def create_category_definition(body: CategoryCreate, db: Session = Depends(get_d
     existing = db.execute(select(models.Category).where(models.Category.name == body.name)).scalar_one_or_none()
     if existing:
         raise HTTPException(status_code=409, detail=f"Category '{body.name}' already exists")
-    cat = models.Category(name=body.name, group_name=body.group, is_legacy=False)
+    cat = models.Category(name=body.name, group_name=body.group, is_legacy=False, parent_name=body.parent_name)
     db.add(cat)
     db.commit()
     db.refresh(cat)
-    return {"id": cat.id, "name": cat.name, "group": cat.group_name, "is_legacy": False}
+    return {"id": cat.id, "name": cat.name, "group": cat.group_name, "is_legacy": False,
+            "is_hidden": False, "parent_name": cat.parent_name}
 
 
 @app.put("/category-definitions/{cat_id}")
@@ -628,8 +633,15 @@ def update_category_definition(cat_id: int, body: CategoryUpdate, db: Session = 
         cat.name = body.name
     if body.group is not None:
         cat.group_name = body.group
+    if body.is_hidden is not None:
+        cat.is_hidden = body.is_hidden
+    if body.parent_name is not None:
+        cat.parent_name = body.parent_name
+    elif "parent_name" in body.model_fields_set:
+        cat.parent_name = None  # explicitly clearing it
     db.commit()
-    return {"id": cat.id, "name": cat.name, "group": cat.group_name, "is_legacy": bool(cat.is_legacy)}
+    return {"id": cat.id, "name": cat.name, "group": cat.group_name, "is_legacy": bool(cat.is_legacy),
+            "is_hidden": bool(cat.is_hidden), "parent_name": cat.parent_name}
 
 
 @app.delete("/category-definitions/{cat_id}", status_code=204)

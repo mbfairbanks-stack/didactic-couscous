@@ -12,9 +12,10 @@ export default function Settings() {
 
   const [categories, setCategories] = useState([]);
   const [catLoading, setCatLoading] = useState(true);
-  const [newCat, setNewCat] = useState({ name: "", group: "Wants" });
-  const [editingCat, setEditingCat] = useState(null); // { id, name, group }
+  const [newCat, setNewCat] = useState({ name: "", group: "Wants", parent_name: "" });
+  const [editingCat, setEditingCat] = useState(null);
   const [catError, setCatError] = useState("");
+  const [showHidden, setShowHidden] = useState(false);
 
   useEffect(() => {
     setForm({
@@ -46,8 +47,12 @@ export default function Settings() {
     setCatError("");
     if (!newCat.name.trim()) return;
     try {
-      await createCategoryDefinition({ name: newCat.name.trim(), group: newCat.group });
-      setNewCat({ name: "", group: "Wants" });
+      await createCategoryDefinition({
+        name: newCat.name.trim(),
+        group: newCat.group,
+        parent_name: newCat.parent_name || null,
+      });
+      setNewCat({ name: "", group: "Wants", parent_name: "" });
       loadCategories();
       refresh();
     } catch (err) {
@@ -58,10 +63,24 @@ export default function Settings() {
   const handleSaveCat = async (id) => {
     setCatError("");
     try {
-      await updateCategoryDefinition(id, { name: editingCat.name, group: editingCat.group });
+      await updateCategoryDefinition(id, {
+        name: editingCat.name,
+        group: editingCat.group,
+        parent_name: editingCat.parent_name || null,
+      });
       setEditingCat(null);
       loadCategories();
       refresh();
+    } catch (err) {
+      setCatError(err.message);
+    }
+  };
+
+  const handleToggleHide = async (cat) => {
+    setCatError("");
+    try {
+      await updateCategoryDefinition(cat.id, { is_hidden: !cat.is_hidden });
+      loadCategories();
     } catch (err) {
       setCatError(err.message);
     }
@@ -81,6 +100,11 @@ export default function Settings() {
 
   const canonical = categories.filter((c) => !c.is_legacy);
   const legacy = categories.filter((c) => c.is_legacy);
+  const visibleCanonical = showHidden ? canonical : canonical.filter((c) => !c.is_hidden);
+  const hiddenCount = canonical.filter((c) => c.is_hidden).length;
+
+  // Only top-level (non-child) canonical categories can be parents
+  const parentOptions = canonical.filter((c) => !c.parent_name && !c.is_hidden);
 
   return (
     <div className="space-y-8 max-w-2xl">
@@ -121,7 +145,15 @@ export default function Settings() {
 
       {/* Categories */}
       <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 space-y-5">
-        <h2 className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Categories</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Categories</h2>
+          {hiddenCount > 0 && (
+            <button onClick={() => setShowHidden((v) => !v)}
+              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+              {showHidden ? "Hide hidden" : `Show ${hiddenCount} hidden`}
+            </button>
+          )}
+        </div>
 
         {catError && (
           <div className="bg-red-900/20 border border-red-700/50 rounded p-3 text-sm text-red-400">{catError}</div>
@@ -133,7 +165,7 @@ export default function Settings() {
             <label className="text-xs text-zinc-500 block mb-1">New Category</label>
             <input className={`${inputCls} w-full`} value={newCat.name}
               onChange={(e) => setNewCat({ ...newCat, name: e.target.value })}
-              placeholder="e.g. Hobbies" />
+              placeholder="e.g. Claude AI" />
           </div>
           <div>
             <label className="text-xs text-zinc-500 block mb-1">Group</label>
@@ -142,6 +174,14 @@ export default function Settings() {
               <option value="Needs">Needs</option>
               <option value="Wants">Wants</option>
               <option value="Other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-zinc-500 block mb-1">Sub-category of</label>
+            <select className={inputCls} value={newCat.parent_name}
+              onChange={(e) => setNewCat({ ...newCat, parent_name: e.target.value })}>
+              <option value="">— none —</option>
+              {parentOptions.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
             </select>
           </div>
           <button type="submit" className="bg-yellow-400 text-black px-4 py-1.5 rounded text-sm font-medium hover:bg-yellow-300">
@@ -154,15 +194,18 @@ export default function Settings() {
           <p className="text-sm text-zinc-500">Loading…</p>
         ) : (
           <div className="space-y-4">
-            {[["Needs", canonical.filter(c => c.group === "Needs")],
-              ["Wants", canonical.filter(c => c.group === "Wants")],
-              ["Other", canonical.filter(c => c.group === "Other")]].map(([group, rows]) =>
+            {[["Needs", visibleCanonical.filter(c => c.group === "Needs")],
+              ["Wants", visibleCanonical.filter(c => c.group === "Wants")],
+              ["Other", visibleCanonical.filter(c => c.group === "Other")]].map(([group, rows]) =>
               rows.length === 0 ? null : (
                 <div key={group}>
                   <p className="text-xs font-bold text-yellow-400 uppercase tracking-widest mb-2">{group}</p>
                   <div className="space-y-1">
                     {rows.map((cat) => (
-                      <div key={cat.id} className="flex items-center gap-3 py-1.5 px-2 rounded hover:bg-zinc-800">
+                      <div key={cat.id}
+                        className={`flex items-center gap-2 py-1.5 px-2 rounded hover:bg-zinc-800 ${cat.is_hidden ? "opacity-40" : ""}`}>
+                        {/* indent sub-categories */}
+                        {cat.parent_name && <span className="text-zinc-700 text-xs ml-3">└</span>}
                         {editingCat?.id === cat.id ? (
                           <>
                             <input className={`${inputCls} flex-1`}
@@ -174,16 +217,31 @@ export default function Settings() {
                               <option value="Wants">Wants</option>
                               <option value="Other">Other</option>
                             </select>
-                            <button onClick={() => handleSaveCat(cat.id)} className="text-yellow-400 text-xs hover:text-yellow-300">Save</button>
-                            <button onClick={() => setEditingCat(null)} className="text-zinc-500 text-xs hover:text-zinc-300">Cancel</button>
+                            <select className={inputCls} value={editingCat.parent_name || ""}
+                              onChange={(e) => setEditingCat({ ...editingCat, parent_name: e.target.value })}>
+                              <option value="">— none —</option>
+                              {parentOptions.filter(p => p.id !== cat.id).map((c) =>
+                                <option key={c.id} value={c.name}>{c.name}</option>)}
+                            </select>
+                            <button onClick={() => handleSaveCat(cat.id)} className="text-yellow-400 text-xs hover:text-yellow-300 shrink-0">Save</button>
+                            <button onClick={() => setEditingCat(null)} className="text-zinc-500 text-xs hover:text-zinc-300 shrink-0">Cancel</button>
                           </>
                         ) : (
                           <>
-                            <span className="flex-1 text-sm text-zinc-200">{cat.name}</span>
-                            <button onClick={() => setEditingCat({ id: cat.id, name: cat.name, group: cat.group })}
-                              className="text-xs text-zinc-500 hover:text-zinc-300">Edit</button>
+                            <span className="flex-1 text-sm text-zinc-200">
+                              {cat.name}
+                              {cat.parent_name && <span className="text-xs text-zinc-600 ml-1.5">({cat.parent_name})</span>}
+                            </span>
+                            <button
+                              onClick={() => handleToggleHide(cat)}
+                              className={`text-xs shrink-0 ${cat.is_hidden ? "text-zinc-400 hover:text-zinc-200" : "text-zinc-600 hover:text-zinc-400"}`}
+                              title={cat.is_hidden ? "Show in budget" : "Hide from budget"}>
+                              {cat.is_hidden ? "Show" : "Hide"}
+                            </button>
+                            <button onClick={() => setEditingCat({ id: cat.id, name: cat.name, group: cat.group, parent_name: cat.parent_name || "" })}
+                              className="text-xs text-zinc-500 hover:text-zinc-300 shrink-0">Edit</button>
                             <button onClick={() => handleDeleteCat(cat.id, cat.name)}
-                              className="text-xs text-red-500 hover:text-red-400">Delete</button>
+                              className="text-xs text-red-500 hover:text-red-400 shrink-0">Delete</button>
                           </>
                         )}
                       </div>
@@ -195,13 +253,18 @@ export default function Settings() {
             {legacy.length > 0 && (
               <details className="mt-2">
                 <summary className="text-xs text-zinc-600 cursor-pointer hover:text-zinc-400">
-                  {legacy.length} legacy / backward-compat categories (read-only)
+                  {legacy.length} legacy / backward-compat categories
                 </summary>
                 <div className="mt-2 space-y-1 pl-2 border-l border-zinc-800">
                   {legacy.map((cat) => (
                     <div key={cat.id} className="flex items-center gap-3 py-1">
                       <span className="flex-1 text-xs text-zinc-600">{cat.name}</span>
                       <span className="text-xs text-zinc-700">{cat.group}</span>
+                      <button
+                        onClick={() => handleToggleHide(cat)}
+                        className={`text-xs shrink-0 ${cat.is_hidden ? "text-zinc-400 hover:text-zinc-200" : "text-zinc-700 hover:text-zinc-500"}`}>
+                        {cat.is_hidden ? "Show" : "Hide"}
+                      </button>
                     </div>
                   ))}
                 </div>

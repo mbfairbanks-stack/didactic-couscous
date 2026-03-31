@@ -80,6 +80,13 @@ def run_migrations():
                     "INSERT INTO categories (name, group_name, is_legacy) VALUES (:n, :g, :l)"
                 ), {"n": name, "g": group, "l": is_legacy})
 
+        # Add is_hidden and parent_name to categories if missing
+        cat_cols = [c['name'] for c in inspector.get_columns('categories')]
+        if 'is_hidden' not in cat_cols:
+            conn.execute(sa.text("ALTER TABLE categories ADD COLUMN is_hidden INTEGER NOT NULL DEFAULT 0"))
+        if 'parent_name' not in cat_cols:
+            conn.execute(sa.text("ALTER TABLE categories ADD COLUMN parent_name TEXT"))
+
         conn.commit()
 
     # Seed demo data on first run in demo mode

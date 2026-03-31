@@ -60,6 +60,8 @@ class Category(Base):
     name = Column(String, nullable=False, unique=True)
     group_name = Column(String, nullable=False)   # "Needs", "Wants", or "Other"
     is_legacy = Column(Boolean, default=False)
+    is_hidden = Column(Boolean, default=False)
+    parent_name = Column(String, nullable=True)
 
 
 class Debt(Base):
