@@ -9,7 +9,7 @@ import { useSettings } from "../contexts/SettingsContext";
 const inputCls = "bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400/50 w-full";
 const selectCls = "bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:outline-none";
 
-const emptyPayday = { date: "", p1_base: "", p1_commission: "", p2_base: "" };
+const emptyPayday = { label: "", date: "", p1_base: "", p1_commission: "", p2_base: "" };
 
 // ── CPI data (Canada, 2020 = 100 base) ──────────────────────────────────────
 const CPI_INDEX = { 2019: 96.5, 2020: 100, 2021: 103.4, 2022: 110.4, 2023: 114.7, 2024: 117.7, 2025: 120.4, 2026: 122.8 };
@@ -36,8 +36,8 @@ export default function Income() {
   const [month, setMonth] = useState(currentMonth);
   const [years, setYears] = useState([currentYear]);
   const [records, setRecords] = useState([]);
-  const [payday1, setPayday1] = useState({ ...emptyPayday });
-  const [payday2, setPayday2] = useState({ ...emptyPayday });
+  const [payday1, setPayday1] = useState({ ...emptyPayday, label: "Payday 1" });
+  const [payday2, setPayday2] = useState({ ...emptyPayday, label: "Payday 2" });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
@@ -154,12 +154,18 @@ export default function Income() {
           </h2>
 
           {[
-            { label: "Payday 1", state: payday1, setState: setPayday1 },
-            { label: "Payday 2", state: payday2, setState: setPayday2 },
-          ].map(({ label, state, setState }) => (
-            <div key={label} className="border border-zinc-800 rounded-lg p-4 space-y-3">
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-bold text-yellow-400 uppercase tracking-widest">{label}</span>
+            { fallback: "Payday 1", state: payday1, setState: setPayday1 },
+            { fallback: "Payday 2", state: payday2, setState: setPayday2 },
+          ].map(({ fallback, state, setState }) => (
+            <div key={fallback} className="border border-zinc-800 rounded-lg p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  className="bg-transparent border-b border-zinc-700 focus:border-yellow-400 text-xs font-bold text-yellow-400 uppercase tracking-widest w-28 focus:outline-none pb-0.5 transition-colors"
+                  value={state.label}
+                  placeholder={fallback}
+                  onChange={(e) => setState({ ...state, label: e.target.value })}
+                />
                 <input type="date" className={`${inputCls} w-auto flex-1`}
                   value={state.date}
                   onChange={(e) => setState({ ...state, date: e.target.value })} />
