@@ -17,13 +17,9 @@ export function SettingsProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   const refresh = () => {
-    return Promise.all([getSettings(), getCategoryDefinitions()])
-      .then(([s, cats]) => {
-        setSettings(s);
-        updateCategoryGroups(cats);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    const s = getSettings().then(setSettings).catch(() => {});
+    const c = getCategoryDefinitions().then(updateCategoryGroups).catch(() => {});
+    return Promise.all([s, c]).finally(() => setLoading(false));
   };
 
   useEffect(() => { refresh(); }, []);
