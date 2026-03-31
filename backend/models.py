@@ -58,7 +58,7 @@ class Category(Base):
     __tablename__ = "categories"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False, unique=True)
-    group_name = Column(String, nullable=False)   # "Needs", "Wants", or "Other"
+    group_name = Column("group", String, nullable=False)   # DB column is "group"
     is_legacy = Column(Boolean, default=False)
     is_hidden = Column(Boolean, default=False)
     parent_name = Column(String, nullable=True)
