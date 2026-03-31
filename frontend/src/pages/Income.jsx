@@ -221,7 +221,9 @@ export default function Income() {
                 </div>
                 {entries.map((r) => (
                   <div key={r.id} className="px-4 py-2 flex items-center justify-between hover:bg-zinc-800">
-                    <span className="text-sm text-zinc-300">{r.person}</span>
+                    <span className="text-sm text-zinc-300">
+                      {r.person === "Person 1" ? p1 : r.person === "Person 2" ? p2 : r.person}
+                    </span>
                     <span className="text-xs text-zinc-500 capitalize">{r.income_type}</span>
                     <span className="text-sm font-medium text-zinc-100">{fmt(r.amount)}</span>
                     <button onClick={() => handleDelete(r.id)} className="text-xs text-red-500 hover:text-red-400 ml-4">Delete</button>
