@@ -17,10 +17,10 @@ export function SettingsProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   const refresh = () => {
-    Promise.all([getSettings(), getCategoryDefinitions()])
+    return Promise.all([getSettings(), getCategoryDefinitions()])
       .then(([s, cats]) => {
         setSettings(s);
-        updateConstantGroups(cats);
+        updateCategoryGroups(cats);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
