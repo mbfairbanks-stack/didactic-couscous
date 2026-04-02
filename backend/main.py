@@ -228,9 +228,20 @@ def auto_categorize_transactions(db: Session = Depends(get_db)):
     return {"updated": updated, "skipped": skipped}
 
 
+def _sync_year_month(data: dict) -> dict:
+    """If a date is present, always derive year/month from it."""
+    if "date" in data and data["date"]:
+        parts = str(data["date"]).split("-")
+        if len(parts) >= 2:
+            data["year"] = int(parts[0])
+            data["month"] = int(parts[1])
+    return data
+
+
 @app.post("/transactions", response_model=TransactionOut, status_code=201)
 def create_transaction(body: TransactionCreate, db: Session = Depends(get_db)):
-    txn = models.Transaction(**body.model_dump())
+    data = _sync_year_month(body.model_dump())
+    txn = models.Transaction(**data)
     db.add(txn)
     db.commit()
     db.refresh(txn)
@@ -242,7 +253,8 @@ def update_transaction(txn_id: int, body: TransactionUpdate, db: Session = Depen
     txn = db.get(models.Transaction, txn_id)
     if not txn:
         raise HTTPException(404, "Transaction not found")
-    for field, val in body.model_dump(exclude_none=True).items():
+    data = _sync_year_month(body.model_dump(exclude_none=True))
+    for field, val in data.items():
         setattr(txn, field, val)
     db.commit()
     db.refresh(txn)
