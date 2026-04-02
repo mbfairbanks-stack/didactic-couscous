@@ -670,6 +670,29 @@ def delete_category_definition(cat_id: int, db: Session = Depends(get_db)):
     db.commit()
 
 
+class CategoryMerge(BaseModel):
+    source_names: list[str]
+    target_name: str
+
+
+@app.post("/category-definitions/merge")
+def merge_categories(body: CategoryMerge, db: Session = Depends(get_db)):
+    """Reassign all transactions from source categories to target, then hide sources."""
+    updated = 0
+    for name in body.source_names:
+        result = db.execute(
+            text("UPDATE transactions SET category = :target WHERE category = :source"),
+            {"target": body.target_name, "source": name},
+        )
+        updated += result.rowcount
+        # Hide the source category
+        src = db.execute(select(models.Category).where(models.Category.name == name)).scalar_one_or_none()
+        if src:
+            src.is_hidden = True
+    db.commit()
+    return {"merged_transactions": updated, "hidden": body.source_names}
+
+
 @app.get("/onboarding-status")
 def onboarding_status(db: Session = Depends(get_db)):
     setting = db.get(models.AppSettings, "onboarding_complete")

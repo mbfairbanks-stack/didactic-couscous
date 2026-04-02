@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { updateSettings, getCategoryDefinitions, createCategoryDefinition, updateCategoryDefinition, deleteCategoryDefinition } from "../api";
+import { updateSettings, getCategoryDefinitions, createCategoryDefinition, updateCategoryDefinition, deleteCategoryDefinition, mergeCategories } from "../api";
 import { useSettings } from "../contexts/SettingsContext";
 
 const inputCls = "bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400/50";
@@ -97,6 +97,27 @@ export default function Settings() {
       setCatError(err.message);
     }
   };
+
+  const [mergeTarget, setMergeTarget] = useState("");
+  const [mergeSources, setMergeSources] = useState([]);
+  const [mergeResult, setMergeResult] = useState(null);
+  const [merging, setMerging] = useState(false);
+
+  const handleMerge = async () => {
+    if (!mergeTarget || mergeSources.length === 0) return;
+    if (!confirm(`Move all transactions from ${mergeSources.join(", ")} into "${mergeTarget}" and hide those categories?`)) return;
+    setMerging(true); setMergeResult(null);
+    try {
+      const res = await mergeCategories(mergeSources, mergeTarget);
+      setMergeResult(`Merged ${res.merged_transactions} transaction(s) into ${mergeTarget}.`);
+      setMergeSources([]);
+      loadCategories(); refresh();
+    } catch (err) { setCatError(err.message); }
+    finally { setMerging(false); }
+  };
+
+  const toggleMergeSource = (name) =>
+    setMergeSources((prev) => prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]);
 
   const canonical = categories.filter((c) => !c.is_legacy);
   const legacy = categories.filter((c) => c.is_legacy);
@@ -272,6 +293,50 @@ export default function Settings() {
             )}
           </div>
         )}
+      </div>
+      {/* Merge categories */}
+      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Merge Categories</h2>
+          <p className="text-xs text-zinc-500 mt-1">Reassign all transactions from selected categories into a target, then hide the sources.</p>
+        </div>
+        <div className="flex flex-wrap gap-3 items-end">
+          <div>
+            <label className="text-xs text-zinc-500 block mb-1">Merge into</label>
+            <select className={inputCls} value={mergeTarget} onChange={(e) => setMergeTarget(e.target.value)}>
+              <option value="">— select target —</option>
+              {canonical.filter((c) => !c.is_hidden).map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
+          </div>
+          <button
+            onClick={handleMerge}
+            disabled={merging || !mergeTarget || mergeSources.length === 0}
+            className="bg-yellow-400 text-black px-4 py-1.5 rounded text-sm font-medium hover:bg-yellow-300 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {merging ? "Merging…" : `Merge ${mergeSources.length > 0 ? `(${mergeSources.length})` : ""}`}
+          </button>
+        </div>
+        {mergeTarget && (
+          <div className="space-y-1">
+            <p className="text-xs text-zinc-500 mb-2">Select categories to merge into <strong className="text-zinc-300">{mergeTarget}</strong>:</p>
+            <div className="flex flex-wrap gap-2">
+              {canonical.filter((c) => c.name !== mergeTarget).map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => toggleMergeSource(c.name)}
+                  className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${
+                    mergeSources.includes(c.name)
+                      ? "bg-yellow-400 text-black border-yellow-400"
+                      : "bg-zinc-800 text-zinc-400 border-zinc-700 hover:border-zinc-500"
+                  }`}
+                >
+                  {c.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {mergeResult && <p className="text-sm text-green-400">{mergeResult}</p>}
       </div>
     </div>
   );

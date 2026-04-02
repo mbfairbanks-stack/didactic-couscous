@@ -225,3 +225,6 @@ export const saveInsightsLog = (year, month, content) =>
 export const getInsightsLog = () => req("/insights/log");
 
 export const deleteInsightsLog = (id) => req(`/insights/log/${id}`, { method: "DELETE" });
+
+export const mergeCategories = (source_names, target_name) =>
+  req("/category-definitions/merge", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source_names, target_name }) });
