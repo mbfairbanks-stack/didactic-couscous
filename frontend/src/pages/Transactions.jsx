@@ -232,11 +232,12 @@ export default function Transactions() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    const [y, m] = form.date.split("-").map(Number);
     const body = {
       ...form,
       amount: parseFloat(form.amount),
-      year: parseInt(form.year),
-      month: parseInt(form.month),
+      year: y,
+      month: m,
     };
     try {
       if (editId) {
@@ -641,22 +642,6 @@ export default function Transactions() {
                   )}
                   {allCategories.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-zinc-500">Year</label>
-                  <input type="number" required className={`w-full mt-0.5 ${inputCls}`}
-                    value={form.year} onChange={(e) => setForm({ ...form, year: e.target.value })} />
-                </div>
-                <div>
-                  <label className="text-xs text-zinc-500">Month</label>
-                  <select className={`w-full mt-0.5 ${inputCls}`}
-                    value={form.month} onChange={(e) => setForm({ ...form, month: Number(e.target.value) })}>
-                    {MONTH_LABELS.slice(1).map((m, i) => (
-                      <option key={i + 1} value={i + 1}>{m}</option>
-                    ))}
-                  </select>
-                </div>
               </div>
               <div>
                 <label className="text-xs text-zinc-500">Notes (optional)</label>
