@@ -60,7 +60,7 @@ export default function App() {
                 <OnboardingGuard>
                   <div className="min-h-screen flex flex-col">
                     <Nav />
-                    <main className="flex-1 p-6 max-w-7xl mx-auto w-full">
+                    <main className="flex-1 p-3 sm:p-6 max-w-7xl mx-auto w-full">
                       <Routes>
                         <Route path="/" element={<Navigate to="/dashboard" replace />} />
                         <Route path="/dashboard" element={<Dashboard />} />

@@ -380,7 +380,7 @@ export default function Dashboard() {
           {/* Year-end projection bar */}
           <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5">
             <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-4">Year-End Projection</h3>
-            <div className="grid grid-cols-3 gap-4 text-center">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
               <div>
                 <p className="text-xs text-zinc-500 mb-1">Projected Income</p>
                 <p className="text-lg font-bold text-green-400">{fmt(projections.projected_year_income)}</p>

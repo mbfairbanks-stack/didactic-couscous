@@ -327,8 +327,8 @@ export default function Transactions() {
       </div>
 
       {/* Filters */}
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-4 space-y-3">
-        <div className="flex flex-wrap gap-3">
+      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-3 space-y-2">
+        <div className="flex flex-wrap gap-2">
           <select className={inputCls} value={year} onChange={(e) => setYear(Number(e.target.value))}>
             {years.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
@@ -447,11 +447,11 @@ export default function Transactions() {
                     onClick={() => { if (sortField === "amount") setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortField("amount"); setSortDir("desc"); } }}>
                     Amount{sortField === "amount" ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
                   </th>
-                  <th className="px-4 py-2 font-medium cursor-pointer hover:text-zinc-300 select-none"
+                  <th className="hidden sm:table-cell px-4 py-2 font-medium cursor-pointer hover:text-zinc-300 select-none"
                     onClick={() => { if (sortField === "source") setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortField("source"); setSortDir("asc"); } }}>
                     Source{sortField === "source" ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
                   </th>
-                  <th className="px-4 py-2 font-medium text-center" title="Recurring">↻</th>
+                  <th className="hidden sm:table-cell px-4 py-2 font-medium text-center" title="Recurring">↻</th>
                   <th className="px-4 py-2 font-medium"></th>
                 </tr>
                 <tr className="border-b border-zinc-700 bg-zinc-800/60">
@@ -469,7 +469,7 @@ export default function Transactions() {
                     </td>
                   ))}
                   <td className="px-2 py-1"></td>
-                  <td className="px-2 py-1">
+                  <td className="hidden sm:table-cell px-2 py-1">
                     <input
                       type="text"
                       placeholder="Filter..."
@@ -479,7 +479,7 @@ export default function Transactions() {
                     />
                   </td>
                   {/* Empty cell for recurring column */}
-                  <td className="px-2 py-1"></td>
+                  <td className="hidden sm:table-cell px-2 py-1"></td>
                   <td className="px-2 py-1 text-right">
                     {Object.values(colFilter).some(Boolean) && (
                       <button onClick={() => { setColFilter({ date: "", merchant: "", category: "", source: "" }); setPage(0); }}
@@ -526,8 +526,8 @@ export default function Transactions() {
                       <span className="font-medium text-zinc-100">{fmt(txn.amount)}</span>,
                       "text-right"
                     )}
-                    <td className="px-4 py-2 text-zinc-600 text-xs uppercase">{txn.source || "—"}</td>
-                    <td className="px-3 py-2 text-center">
+                    <td className="hidden sm:table-cell px-4 py-2 text-zinc-600 text-xs uppercase">{txn.source || "—"}</td>
+                    <td className="hidden sm:table-cell px-3 py-2 text-center">
                       <button
                         onClick={() => toggleRecurring(txn)}
                         title={txn.is_recurring ? "Mark as non-recurring" : "Mark as recurring"}

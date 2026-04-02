@@ -399,13 +399,13 @@ export default function BudgetPlanner() {
                     )}
                   </span>
                 </td>
-                <td className={`px-4 py-2.5 text-right font-medium ${diff < 0 ? "text-red-400" : "text-green-400"}`}>
+                <td className={`hidden sm:table-cell px-4 py-2.5 text-right font-medium ${diff < 0 ? "text-red-400" : "text-green-400"}`}>
                   {budget ? (diff < 0 ? `-${fmt(Math.abs(diff))}` : `+${fmt(diff)}`) : "—"}
                 </td>
-                <td className="px-4 py-2.5 text-right text-zinc-600 text-xs">
+                <td className="hidden lg:table-cell px-4 py-2.5 text-right text-zinc-600 text-xs">
                   {yoyMap[row.category] != null ? fmt(yoyMap[row.category]) : "—"}
                 </td>
-                <td className="px-4 py-2.5"><ProgressBar actual={row.total} budget={budget} /></td>
+                <td className="hidden sm:table-cell px-4 py-2.5"><ProgressBar actual={row.total} budget={budget} /></td>
                 <td className="px-4 py-2.5 text-right text-xs">
                   {isEditing && (
                     <button onClick={() => saveTarget(row.category, editing[row.category])}
@@ -427,15 +427,16 @@ export default function BudgetPlanner() {
                   {fmt(groupActual)}{groupBudget > 0 ? ` / ${fmt(groupBudget)}` : ""}
                 </span>
               </div>
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-zinc-800 text-left text-zinc-600">
                     <th className="px-4 py-2 font-medium">Category</th>
                     <th className="px-4 py-2 font-medium text-right">Budget</th>
                     <th className="px-4 py-2 font-medium text-right">Actual</th>
-                    <th className="px-4 py-2 font-medium text-right">Diff</th>
-                    <th className="px-4 py-2 font-medium text-right text-zinc-600">{year - 1}</th>
-                    <th className="px-4 py-2 font-medium w-28">Progress</th>
+                    <th className="hidden sm:table-cell px-4 py-2 font-medium text-right">Diff</th>
+                    <th className="hidden lg:table-cell px-4 py-2 font-medium text-right text-zinc-600">{year - 1}</th>
+                    <th className="hidden sm:table-cell px-4 py-2 font-medium w-28">Progress</th>
                     <th className="px-4 py-2"></th>
                   </tr>
                 </thead>
@@ -469,11 +470,11 @@ export default function BudgetPlanner() {
                             : rollupBudget > 0 && rollupActual >= rollupBudget * 0.8 ? "text-yellow-300"
                             : "text-zinc-300"
                           }`}>{fmt(rollupActual)}</td>
-                          <td className={`px-4 py-2.5 text-right font-medium ${rollupBudget - rollupActual < 0 ? "text-red-400" : "text-green-400"}`}>
+                          <td className={`hidden sm:table-cell px-4 py-2.5 text-right font-medium ${rollupBudget - rollupActual < 0 ? "text-red-400" : "text-green-400"}`}>
                             {rollupBudget ? (rollupBudget - rollupActual < 0 ? `-${fmt(Math.abs(rollupBudget - rollupActual))}` : `+${fmt(rollupBudget - rollupActual)}`) : "—"}
                           </td>
-                          <td className="px-4 py-2.5 text-right text-zinc-600 text-xs">—</td>
-                          <td className="px-4 py-2.5"><ProgressBar actual={rollupActual} budget={rollupBudget} /></td>
+                          <td className="hidden lg:table-cell px-4 py-2.5 text-right text-zinc-600 text-xs">—</td>
+                          <td className="hidden sm:table-cell px-4 py-2.5"><ProgressBar actual={rollupActual} budget={rollupBudget} /></td>
                           <td></td>
                         </tr>
                         {isExpanded && kids.map((kid) => renderRow(kid, true))}
@@ -482,6 +483,7 @@ export default function BudgetPlanner() {
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
           );
         })
