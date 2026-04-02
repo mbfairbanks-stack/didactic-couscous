@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Date, Boolean, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Float, Date, Boolean, UniqueConstraint, DateTime
 from database import Base
 
 
@@ -62,6 +62,15 @@ class Category(Base):
     is_legacy = Column(Boolean, default=False)
     is_hidden = Column(Boolean, default=False)
     parent_name = Column(String, nullable=True)
+
+
+class InsightsLog(Base):
+    __tablename__ = "insights_log"
+    id = Column(Integer, primary_key=True, index=True)
+    year = Column(Integer, nullable=False)
+    month = Column(Integer, nullable=False)
+    generated_at = Column(DateTime, nullable=False)
+    content = Column(String, nullable=False)
 
 
 class Debt(Base):

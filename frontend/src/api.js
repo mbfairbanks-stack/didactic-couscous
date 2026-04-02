@@ -217,3 +217,11 @@ export const streamInsights = async (year, month, onChunk, onDone, onError) => {
   }
   onDone();
 };
+
+
+export const saveInsightsLog = (year, month, content) =>
+  req("/insights/log", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ year, month, content }) });
+
+export const getInsightsLog = () => req("/insights/log");
+
+export const deleteInsightsLog = (id) => req(`/insights/log/${id}`, { method: "DELETE" });

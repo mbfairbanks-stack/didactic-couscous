@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { streamInsights, getYears } from "../api";
+import { streamInsights, getYears, saveInsightsLog, getInsightsLog, deleteInsightsLog } from "../api";
 import { MONTH_LABELS, currentYear, currentMonth } from "../utils";
 
 function inlineFormat(text) {
@@ -67,10 +67,13 @@ export default function Insights() {
   const [text, setText] = useState("");
   const [cached, setCached] = useState(false);
   const [error, setError] = useState("");
+  const [log, setLog] = useState([]);
+  const [expandedLog, setExpandedLog] = useState(null);
   const bottomRef = useRef(null);
 
   useEffect(() => {
     getYears().then((y) => setYears(y.length ? y : [currentYear]));
+    getInsightsLog().then(setLog).catch(() => {});
   }, []);
 
   // Load cache when month/year changes
@@ -95,7 +98,15 @@ export default function Insights() {
         year,
         month,
         (chunk) => { full += chunk; setText((prev) => prev + chunk); },
-        () => { setLoading(false); if (full) localStorage.setItem(cacheKey(year, month), full); },
+        () => {
+          setLoading(false);
+          if (full) {
+            localStorage.setItem(cacheKey(year, month), full);
+            saveInsightsLog(year, month, full)
+              .then(() => getInsightsLog().then(setLog))
+              .catch(() => {});
+          }
+        },
         (err) => { setError(err); setLoading(false); }
       );
     } catch (e) {
@@ -185,6 +196,44 @@ export default function Insights() {
       {!text && !loading && !error && (
         <div className="bg-zinc-900 border border-dashed border-zinc-700 rounded-xl p-10 text-center text-zinc-600 text-sm">
           Select a month and click Generate Insights to get AI-powered analysis of your spending.
+        </div>
+      )}
+
+      {/* History log */}
+      {log.length > 0 && (
+        <div className="space-y-2">
+          <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wide">History</h2>
+          {log.map((entry) => {
+            const dt = new Date(entry.generated_at);
+            const label = `${MONTH_LABELS[entry.month]} ${entry.year} — ${dt.toLocaleDateString()} ${dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+            const isExpanded = expandedLog === entry.id;
+            return (
+              <div key={entry.id} className="bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3">
+                  <button
+                    onClick={() => setExpandedLog(isExpanded ? null : entry.id)}
+                    className="text-sm text-zinc-300 hover:text-zinc-100 text-left flex-1"
+                  >
+                    {isExpanded ? "▾" : "▸"} {label}
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!confirm("Delete this log entry?")) return;
+                      deleteInsightsLog(entry.id).then(() => setLog((l) => l.filter((e) => e.id !== entry.id)));
+                    }}
+                    className="text-xs text-red-600 hover:text-red-400 ml-4"
+                  >
+                    Delete
+                  </button>
+                </div>
+                {isExpanded && (
+                  <div className="px-6 pb-6 border-t border-zinc-800 pt-4 space-y-0.5">
+                    {renderMarkdown(entry.content)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

@@ -1473,3 +1473,49 @@ async def get_insights(year: int, month: int, db: Session = Depends(get_db)):
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(stream_insights(), media_type="text/event-stream")
+
+
+class InsightsLogCreate(BaseModel):
+    year: int
+    month: int
+    content: str
+
+
+@app.post("/insights/log", status_code=201)
+def save_insights_log(body: InsightsLogCreate, db: Session = Depends(get_db)):
+    entry = models.InsightsLog(
+        year=body.year,
+        month=body.month,
+        generated_at=datetime.datetime.now(),
+        content=body.content,
+    )
+    db.add(entry)
+    db.commit()
+    db.refresh(entry)
+    return {"id": entry.id, "generated_at": entry.generated_at.isoformat()}
+
+
+@app.get("/insights/log")
+def list_insights_log(db: Session = Depends(get_db)):
+    rows = db.execute(
+        select(models.InsightsLog).order_by(models.InsightsLog.generated_at.desc())
+    ).scalars().all()
+    return [
+        {
+            "id": r.id,
+            "year": r.year,
+            "month": r.month,
+            "generated_at": r.generated_at.isoformat(),
+            "content": r.content,
+        }
+        for r in rows
+    ]
+
+
+@app.delete("/insights/log/{entry_id}", status_code=204)
+def delete_insights_log(entry_id: int, db: Session = Depends(get_db)):
+    entry = db.get(models.InsightsLog, entry_id)
+    if not entry:
+        raise HTTPException(404, "Not found")
+    db.delete(entry)
+    db.commit()
