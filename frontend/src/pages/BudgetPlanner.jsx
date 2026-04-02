@@ -172,7 +172,7 @@ export default function BudgetPlanner() {
   const overBudgetCount = alertRows.filter((row) => row.total > targetMap[row.category].amount).length;
   const approachingCount = alertRows.filter((row) => {
     const budget = targetMap[row.category].amount;
-    return row.total >= budget * 0.8 && row.total <= budget;
+    return row.total >= budget * 0.8 && row.total <= budget && (budget - row.total) > 5;
   }).length;
 
   return (
@@ -386,7 +386,7 @@ export default function BudgetPlanner() {
                 </td>
                 <td className={`px-4 py-2.5 text-right font-medium ${
                   budget > 0 && row.total > budget ? "bg-red-900/30 text-red-400"
-                  : budget > 0 && row.total >= budget * 0.8 ? "bg-yellow-900/20 text-yellow-300"
+                  : budget > 0 && row.total >= budget * 0.8 && (budget - row.total) > 5 ? "bg-yellow-900/20 text-yellow-300"
                   : "text-zinc-300"
                 }`}>
                   <span className="flex items-center justify-end gap-1.5">
@@ -394,7 +394,7 @@ export default function BudgetPlanner() {
                     {budget > 0 && row.total > budget && (
                       <span className="bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">Over!</span>
                     )}
-                    {budget > 0 && row.total >= budget * 0.8 && row.total <= budget && (
+                    {budget > 0 && row.total >= budget * 0.8 && row.total <= budget && (budget - row.total) > 5 && (
                       <span title="Approaching limit">⚠</span>
                     )}
                   </span>
