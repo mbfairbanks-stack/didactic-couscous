@@ -85,9 +85,6 @@ export default function BudgetPlanner() {
     ...targets
       .filter((t) => !actuals.find((a) => a.category === t.category))
       .map((t) => ({ category: t.category, total: 0, count: 0 })),
-    ...catDefs
-      .filter((c) => !seenCategories.has(c.name))
-      .map((c) => ({ category: c.name, total: 0, count: 0 })),
   ];
 
   // Top-level = not hidden, not a child of another category
