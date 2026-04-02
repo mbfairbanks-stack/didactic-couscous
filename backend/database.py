@@ -106,6 +106,15 @@ def run_migrations():
                     'INSERT INTO categories (name, "group", is_legacy) VALUES (:n, :g, :l)'
                 ), {"n": name, "g": group, "l": is_legacy})
 
+        # Fix any transactions where year/month doesn't match the stored date
+        conn.execute(sa.text("""
+            UPDATE transactions
+            SET year  = CAST(strftime('%Y', date) AS INTEGER),
+                month = CAST(strftime('%m', date) AS INTEGER)
+            WHERE year  != CAST(strftime('%Y', date) AS INTEGER)
+               OR month != CAST(strftime('%m', date) AS INTEGER)
+        """))
+
         conn.commit()
 
     # Seed demo data on first run in demo mode
