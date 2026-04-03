@@ -1034,7 +1034,7 @@ def delete_savings_contribution(contrib_id: int, db: Session = Depends(get_db)):
 
 @app.get("/savings-contributions/summary")
 def savings_summary(year: int, db: Session = Depends(get_db)):
-    """YTD RRSP + ESPP totals sourced from income records, plus cap progress."""
+    """YTD RRSP + ESPP totals sourced from income records, plus cap progress with carryover."""
     rows = db.execute(
         select(models.Income).where(models.Income.year == year)
     ).scalars().all()
@@ -1046,6 +1046,24 @@ def savings_summary(year: int, db: Session = Depends(get_db)):
 
     # Count distinct pay dates that have any savings activity
     pay_dates_with_savings = len({r.pay_date for r in rows if (r.rrsp_employee or 0) > 0 or (r.espp_deduction or 0) > 0})
+
+    # RRSP carryover: unused contribution room from prior years accumulates
+    prior_year_totals = db.execute(
+        select(models.Income.year, func.sum(models.Income.rrsp_employee).label("total"))
+        .where(models.Income.year < year)
+        .group_by(models.Income.year)
+    ).all()
+    carryover_room = sum(max(RRSP_ANNUAL_MAX - (row.total or 0), 0) for row in prior_year_totals)
+    effective_rrsp_cap = RRSP_ANNUAL_MAX + carryover_room
+
+    # ESPP: all-time deductions vs total used in purchases (to show pending balance)
+    all_espp_deducted = db.execute(
+        select(func.sum(models.Income.espp_deduction))
+    ).scalar() or 0
+    all_espp_purchased = db.execute(
+        select(func.sum(models.EsppPurchase.total_deducted))
+    ).scalar() or 0
+    espp_pending = max(all_espp_deducted - all_espp_purchased, 0)
 
     # ESPP purchases this year
     purchases = db.execute(
@@ -1064,9 +1082,12 @@ def savings_summary(year: int, db: Session = Depends(get_db)):
         "rrsp_employer_ytd": round(ytd_rrsp_employer, 2),
         "rrsp_total_ytd": round(ytd_rrsp_total, 2),
         "rrsp_annual_max": RRSP_ANNUAL_MAX,
-        "rrsp_remaining": round(max(RRSP_ANNUAL_MAX - ytd_rrsp_employee, 0), 2),
-        "rrsp_pct": round(min(ytd_rrsp_employee / RRSP_ANNUAL_MAX * 100, 100), 1),
+        "rrsp_carryover": round(carryover_room, 2),
+        "rrsp_effective_cap": round(effective_rrsp_cap, 2),
+        "rrsp_remaining": round(max(effective_rrsp_cap - ytd_rrsp_employee, 0), 2),
+        "rrsp_pct": round(min(ytd_rrsp_employee / effective_rrsp_cap * 100, 100) if effective_rrsp_cap > 0 else 0, 1),
         "espp_deducted_ytd": round(ytd_espp, 2),
+        "espp_pending_all_time": round(espp_pending, 2),
         "espp_current_value": round(espp_current_value, 2),
         "espp_discount_rate": ESPP_DISCOUNT_RATE,
         "rrsp_match_rate": RRSP_MATCH_RATE,

@@ -157,9 +157,16 @@ export default function Savings() {
         <>
           {/* RRSP Summary */}
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <h2 className="text-xs font-bold uppercase tracking-widest text-blue-400">RRSP</h2>
-              <span className="text-xs text-zinc-500">{year} contributions</span>
+              <div className="flex items-center gap-2">
+                {summary.rrsp_carryover > 0 && (
+                  <span className="text-xs bg-blue-900/40 border border-blue-700/40 text-blue-300 px-2 py-0.5 rounded-full">
+                    +{fmt(summary.rrsp_carryover)} carried over
+                  </span>
+                )}
+                <span className="text-xs text-zinc-500">{year} contributions</span>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -176,8 +183,8 @@ export default function Savings() {
                 <p className="text-xl font-bold text-yellow-400">{fmt(summary.rrsp_total_ytd)}</p>
               </div>
               <div>
-                <p className="text-xs text-zinc-500 mb-0.5">Remaining Cap</p>
-                <p className={`text-xl font-bold ${summary.rrsp_remaining === 0 ? "text-red-400" : "text-zinc-100"}`}>
+                <p className="text-xs text-zinc-500 mb-0.5">Remaining Room</p>
+                <p className={`text-xl font-bold ${summary.rrsp_remaining === 0 ? "text-green-400" : "text-zinc-100"}`}>
                   {fmt(summary.rrsp_remaining)}
                 </p>
               </div>
@@ -185,18 +192,26 @@ export default function Savings() {
 
             <div className="space-y-1">
               <div className="flex justify-between text-xs text-zinc-500">
-                <span>Progress to ${RRSP_MAX.toLocaleString()} annual cap</span>
+                <span>
+                  Progress to {fmt(summary.rrsp_effective_cap)} cap
+                  {summary.rrsp_carryover > 0 && (
+                    <span className="text-zinc-600 ml-1">
+                      ({fmt(RRSP_MAX)}/yr + {fmt(summary.rrsp_carryover)} carryover)
+                    </span>
+                  )}
+                </span>
                 <span className="font-medium text-zinc-300">{summary.rrsp_pct}%</span>
               </div>
               <ProgressBar pct={summary.rrsp_pct} color={summary.rrsp_pct >= 100 ? "bg-green-500" : "bg-blue-500"} />
               <div className="flex justify-between text-xs text-zinc-600">
-                <span>{fmt(summary.rrsp_employee_ytd)} contributed</span>
-                <span>{fmt(RRSP_MAX)} max</span>
+                <span>{fmt(summary.rrsp_employee_ytd)} contributed this year</span>
+                <span>{fmt(summary.rrsp_effective_cap)} effective cap</span>
               </div>
             </div>
 
             {summary.rrsp_remaining > 0 && summary.contributions > 0 && (() => {
               const avgPerContrib = summary.rrsp_employee_ytd / summary.contributions;
+              if (avgPerContrib <= 0) return null;
               const contribsNeeded = Math.ceil(summary.rrsp_remaining / avgPerContrib);
               return (
                 <p className="text-xs text-zinc-600">
@@ -218,11 +233,16 @@ export default function Savings() {
               </button>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div>
                 <p className="text-xs text-zinc-500 mb-0.5">Deducted YTD ({year})</p>
                 <p className="text-xl font-bold text-zinc-100">{fmt(summary.espp_deducted_ytd)}</p>
-                <p className="text-xs text-zinc-600 mt-0.5">10% of gross income</p>
+                <p className="text-xs text-zinc-600 mt-0.5">10% of gross</p>
+              </div>
+              <div>
+                <p className="text-xs text-zinc-500 mb-0.5">Pending Balance</p>
+                <p className="text-xl font-bold text-yellow-400">{fmt(summary.espp_pending_all_time)}</p>
+                <p className="text-xs text-zinc-600 mt-0.5">not yet converted to shares</p>
               </div>
               <div>
                 <p className="text-xs text-zinc-500 mb-0.5">Stock Holdings Value</p>
