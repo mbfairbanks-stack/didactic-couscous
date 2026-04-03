@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { getTransactions, createTransaction, updateTransaction, deleteTransaction, getCategories, getYears, exportTransactionsCsv } from "../api";
+import { getTransactions, createTransaction, updateTransaction, deleteTransaction, getCategories, getYears, exportTransactionsCsv, getAnomalies, splitTransaction, getRecurringSuggestions } from "../api";
 import { MONTH_LABELS, currentYear, currentMonth, fmtCents as fmt } from "../utils";
 
 const emptyForm = {
@@ -51,9 +51,55 @@ export default function Transactions() {
   const [selected, setSelected] = useState(new Set());
   const [bulkCategory, setBulkCategory] = useState("");
 
+  // Anomaly detection
+  const [anomalyIds, setAnomalyIds] = useState(new Set());
+
+  // Split transaction
+  const [splitTxn, setSplitTxn] = useState(null);
+  const [splitA, setSplitA] = useState({ amount: "", category: "" });
+  const [splitB, setSplitB] = useState({ amount: "", category: "" });
+
+  // Recurring detection
+  const [recurringSuggestions, setRecurringSuggestions] = useState([]);
+  const [showRecurring, setShowRecurring] = useState(false);
+  const [markingRecurring, setMarkingRecurring] = useState(false);
+
+  // Search ref for keyboard shortcut
+  const searchRef = useRef(null);
+
   useEffect(() => {
     getYears().then((y) => setYears(y.length ? y : [currentYear]));
     getCategories().then(setAllCategories);
+    getRecurringSuggestions()
+      .then((rows) => setRecurringSuggestions(rows.filter((r) => r.is_consistent)))
+      .catch(() => {});
+  }, []);
+
+  // Load anomalies whenever year/month changes
+  useEffect(() => {
+    if (!month) { setAnomalyIds(new Set()); return; }
+    getAnomalies(year, month)
+      .then((rows) => setAnomalyIds(new Set(rows.map((r) => r.id))))
+      .catch(() => setAnomalyIds(new Set()));
+  }, [year, month]);
+
+  // Keyboard shortcuts: '/' focuses search, 'n' opens new transaction form
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
+      if (e.key === "/" && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+      if (e.key === "n" && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        setShowForm(true);
+        setEditId(null);
+        setForm(emptyForm);
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
   }, []);
 
   const load = useCallback(() => {
@@ -289,6 +335,20 @@ export default function Transactions() {
     }
   };
 
+  // ── Mark all from a merchant as recurring ────────────────────────────────────
+
+  const markMerchantRecurring = async (merchant) => {
+    setMarkingRecurring(true);
+    const matches = transactions.filter((t) => t.merchant === merchant && !t.is_recurring);
+    for (const txn of matches) {
+      try { await updateTransaction(txn.id, { ...txn, is_recurring: true }); }
+      catch {}
+    }
+    setMarkingRecurring(false);
+    setRecurringSuggestions((prev) => prev.filter((s) => s.merchant !== merchant));
+    load();
+  };
+
   // ── CSV Export ───────────────────────────────────────────────────────────────
 
   const handleExportCsv = async () => {
@@ -328,6 +388,43 @@ export default function Transactions() {
         </div>
       </div>
 
+      {/* Recurring detection panel */}
+      {recurringSuggestions.length > 0 && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+          <button
+            onClick={() => setShowRecurring((v) => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 text-sm hover:bg-zinc-800 transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              <span className="text-yellow-400 font-semibold">↻ Recurring Detected</span>
+              <span className="bg-yellow-400/20 text-yellow-400 text-xs font-bold px-1.5 py-0.5 rounded-full">{recurringSuggestions.length}</span>
+              <span className="text-zinc-500 text-xs">merchants appear monthly — mark as recurring?</span>
+            </span>
+            <span className="text-zinc-600 text-xs">{showRecurring ? "▲" : "▼"}</span>
+          </button>
+          {showRecurring && (
+            <div className="border-t border-zinc-800 divide-y divide-zinc-800/60">
+              {recurringSuggestions.map((s) => (
+                <div key={s.merchant} className="flex items-center justify-between px-4 py-2.5 text-sm">
+                  <div>
+                    <span className="text-zinc-200 font-medium">{s.merchant}</span>
+                    <span className="text-zinc-600 text-xs ml-2">{s.category}</span>
+                    <span className="text-zinc-600 text-xs ml-2">~{fmt(s.avg_amount)}/mo × {s.month_count} months</span>
+                  </div>
+                  <button
+                    onClick={() => markMerchantRecurring(s.merchant)}
+                    disabled={markingRecurring}
+                    className="text-xs text-yellow-400 hover:text-yellow-300 border border-yellow-400/30 px-2 py-1 rounded hover:bg-yellow-400/10 disabled:opacity-40"
+                  >
+                    Mark Recurring
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Filters */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 space-y-2">
         {/* Primary filters */}
@@ -346,8 +443,9 @@ export default function Transactions() {
             {allCategories.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
           <input
+            ref={searchRef}
             className={`${inputCls} flex-1 min-w-[140px]`}
-            placeholder="Search..."
+            placeholder="Search... ( / )"
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(0); }}
           />
@@ -430,9 +528,25 @@ export default function Transactions() {
           <span className="text-sm font-semibold text-yellow-400">Total: {fmt(total)}</span>
         </div>
         {loading ? (
-          <p className="text-center text-zinc-600 py-12">Loading...</p>
+          <div className="py-12 space-y-3 px-4">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="flex gap-4 items-center animate-pulse">
+                <div className="w-5 h-5 bg-zinc-800 rounded" />
+                <div className="w-20 h-4 bg-zinc-800 rounded" />
+                <div className="flex-1 h-4 bg-zinc-800 rounded" />
+                <div className="w-24 h-4 bg-zinc-800 rounded" />
+                <div className="w-16 h-4 bg-zinc-800 rounded" />
+              </div>
+            ))}
+          </div>
         ) : filtered.length === 0 ? (
-          <p className="text-center text-zinc-600 py-12">No transactions found</p>
+          <div className="py-16 text-center">
+            <div className="text-4xl mb-3">🔍</div>
+            <p className="text-zinc-400 font-medium">No transactions found</p>
+            <p className="text-zinc-600 text-sm mt-1">
+              {search || filterCategory ? "Try adjusting your filters" : "Add your first transaction with the button above"}
+            </p>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -541,8 +655,14 @@ export default function Transactions() {
                         ↻
                       </button>
                     </td>
-                    <td className="px-4 py-2 text-right">
-                      <button onClick={() => handleEdit(txn)} className="text-yellow-400 hover:text-yellow-300 mr-3 text-xs">Edit</button>
+                    <td className="px-4 py-2 text-right whitespace-nowrap">
+                      {anomalyIds.has(txn.id) && (
+                        <span className="inline-flex items-center mr-2 px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-900/40 text-orange-400 border border-orange-700/50" title="Unusually high for this category">
+                          ⚠ High
+                        </span>
+                      )}
+                      <button onClick={() => handleEdit(txn)} className="text-yellow-400 hover:text-yellow-300 mr-2 text-xs">Edit</button>
+                      <button onClick={() => { setSplitTxn(txn); setSplitA({ amount: "", category: txn.category }); setSplitB({ amount: "", category: txn.category }); }} className="text-zinc-500 hover:text-zinc-300 mr-2 text-xs">Split</button>
                       <button onClick={() => handleDelete(txn.id)} className="text-red-500 hover:text-red-400 text-xs">Delete</button>
                     </td>
                   </tr>
@@ -611,6 +731,68 @@ export default function Transactions() {
           >
             Clear
           </button>
+        </div>
+      )}
+
+      {/* Split transaction modal */}
+      {splitTxn && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-6 w-full max-w-md">
+            <h2 className="text-lg font-semibold mb-1 text-zinc-100">Split Transaction</h2>
+            <p className="text-zinc-500 text-xs mb-4">
+              {splitTxn.merchant} — {fmt(splitTxn.amount)} total
+            </p>
+            {error && <p className="text-red-400 text-sm mb-3">{error}</p>}
+            <div className="space-y-4">
+              {[{ label: "Part A", state: splitA, setState: setSplitA }, { label: "Part B", state: splitB, setState: setSplitB }].map(({ label, state, setState }) => (
+                <div key={label} className="bg-zinc-800/60 rounded-lg p-3 space-y-2">
+                  <p className="text-xs font-semibold text-zinc-400">{label}</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-xs text-zinc-500">Amount ($)</label>
+                      <input type="number" step="0.01" min="0" className={`w-full mt-0.5 ${inputCls}`}
+                        value={state.amount}
+                        onChange={(e) => setState({ ...state, amount: e.target.value })}
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-zinc-500">Category</label>
+                      <select className={`w-full mt-0.5 ${inputCls}`} value={state.category} onChange={(e) => setState({ ...state, category: e.target.value })}>
+                        {allCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {splitA.amount && splitB.amount && (
+                <p className={`text-xs text-center ${Math.abs(parseFloat(splitA.amount) + parseFloat(splitB.amount) - splitTxn.amount) < 0.02 ? "text-green-400" : "text-red-400"}`}>
+                  Total: {fmt(parseFloat(splitA.amount || 0) + parseFloat(splitB.amount || 0))} / {fmt(splitTxn.amount)}
+                </p>
+              )}
+              <div className="flex gap-3">
+                <button
+                  onClick={async () => {
+                    setError("");
+                    const amtA = parseFloat(splitA.amount);
+                    const amtB = parseFloat(splitB.amount);
+                    if (!amtA || !amtB) { setError("Both amounts required"); return; }
+                    try {
+                      await splitTransaction(splitTxn.id, { amount_a: amtA, category_a: splitA.category, amount_b: amtB, category_b: splitB.category });
+                      setSplitTxn(null);
+                      load();
+                    } catch (e) { setError(e.message); }
+                  }}
+                  className="flex-1 bg-yellow-400 text-black py-2 rounded-lg text-sm font-medium hover:bg-yellow-300"
+                >
+                  Split
+                </button>
+                <button onClick={() => { setSplitTxn(null); setError(""); }} className="flex-1 border border-zinc-700 py-2 rounded-lg text-sm font-medium text-zinc-300 hover:bg-zinc-800">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

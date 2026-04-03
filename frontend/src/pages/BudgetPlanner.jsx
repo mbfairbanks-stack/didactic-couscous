@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { getCategorySummary, getBudgetTargets, createBudgetTarget, updateBudgetTarget, deleteBudgetTarget, getYears, autoPopulateBudget, copyBudgetFromMonth, getCategoryDefinitions } from "../api";
+import { getCategorySummary, getBudgetTargets, createBudgetTarget, updateBudgetTarget, deleteBudgetTarget, getYears, autoPopulateBudget, copyBudgetFromMonth, getCategoryDefinitions, rolloverBudget, getBudgetTemplates, saveBudgetTemplate, applyBudgetTemplate, deleteBudgetTemplate } from "../api";
 import { getCategoryGroup } from "../constants";
 import { MONTH_LABELS, currentYear, currentMonth, fmt } from "../utils";
 
@@ -42,9 +42,20 @@ export default function BudgetPlanner() {
   const [yoyActuals, setYoyActuals] = useState([]);
   const [priorMonthsActuals, setPriorMonthsActuals] = useState([]); // 3 prior months for committed avg
 
+  // Budget rollover
+  const [rollingOver, setRollingOver] = useState(false);
+  const [rolloverResult, setRolloverResult] = useState(null);
+
+  // Budget templates
+  const [templates, setTemplates] = useState([]);
+  const [templateName, setTemplateName] = useState("");
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [templateMsg, setTemplateMsg] = useState("");
+
   useEffect(() => {
     getYears().then((y) => setYears(y.length ? y : [currentYear])).catch(() => {});
     getCategoryDefinitions().then(setCatDefs).catch(() => {});
+    getBudgetTemplates().then(setTemplates).catch(() => {});
   }, []);
 
   const load = useCallback(() => {
@@ -167,6 +178,58 @@ export default function BudgetPlanner() {
       setError(e.message);
     } finally {
       setCopying(false);
+    }
+  };
+
+  const handleRollover = async () => {
+    setRollingOver(true);
+    setRolloverResult(null);
+    setError("");
+    try {
+      const res = await rolloverBudget({ year, month, carry_remainder: true });
+      setRolloverResult(res);
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setRollingOver(false);
+    }
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!templateName.trim()) return;
+    setSavingTemplate(true);
+    setTemplateMsg("");
+    try {
+      await saveBudgetTemplate({ name: templateName.trim(), year, month });
+      setTemplateMsg(`Saved as "${templateName.trim()}"`);
+      setTemplateName("");
+      getBudgetTemplates().then(setTemplates).catch(() => {});
+    } catch (e) {
+      setTemplateMsg("Error: " + e.message);
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
+
+  const handleApplyTemplate = async (name) => {
+    setError("");
+    try {
+      const res = await applyBudgetTemplate({ name, year, month, overwrite: false });
+      setTemplateMsg(`Applied "${name}": ${res.applied} targets set`);
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const handleDeleteTemplate = async (name) => {
+    if (!confirm(`Delete template "${name}"?`)) return;
+    try {
+      await deleteBudgetTemplate(name);
+      setTemplates((prev) => prev.filter((t) => t.name !== name));
+    } catch (e) {
+      setError(e.message);
     }
   };
 
@@ -313,6 +376,11 @@ export default function BudgetPlanner() {
                   className="bg-zinc-700 text-zinc-100 px-4 py-1.5 rounded text-sm font-medium hover:bg-zinc-600 disabled:opacity-40">
                   {copying ? "Copying..." : `Copy from ${MONTH_LABELS[prevMonth]}`}
                 </button>
+                <button onClick={handleRollover} disabled={rollingOver}
+                  className="bg-zinc-700 text-zinc-100 px-4 py-1.5 rounded text-sm font-medium hover:bg-zinc-600 disabled:opacity-40"
+                  title="Copies last month's budgets and adds any unspent amounts as a bonus">
+                  {rollingOver ? "Rolling over..." : "Rollover from Last Month"}
+                </button>
               </div>
               {autoPopResult && (
                 <p className="text-sm text-green-400">Set {autoPopResult.set} targets from {autoPopResult.months_analyzed} month{autoPopResult.months_analyzed !== 1 ? "s" : ""} of history.</p>
@@ -320,6 +388,41 @@ export default function BudgetPlanner() {
               {copyResult && (
                 <p className="text-sm text-green-400">Copied {copyResult.copied} target{copyResult.copied !== 1 ? "s" : ""}.</p>
               )}
+              {rolloverResult && (
+                <p className="text-sm text-green-400">Rolled over {rolloverResult.copied} target{rolloverResult.copied !== 1 ? "s" : ""} from last month.</p>
+              )}
+            </div>
+
+            {/* Budget templates */}
+            <div className="border-t border-zinc-800 pt-4 space-y-3">
+              <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Budget Templates</p>
+              <div className="flex gap-2 items-center flex-wrap">
+                <input
+                  type="text"
+                  placeholder="Template name..."
+                  className={`${inputCls} flex-1 min-w-[140px]`}
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSaveTemplate()}
+                />
+                <button onClick={handleSaveTemplate} disabled={savingTemplate || !templateName.trim()}
+                  className="bg-zinc-700 text-zinc-100 px-4 py-1.5 rounded text-sm font-medium hover:bg-zinc-600 disabled:opacity-40">
+                  {savingTemplate ? "Saving..." : "Save Current as Template"}
+                </button>
+              </div>
+              {templates.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {templates.map((t) => (
+                    <div key={t.name} className="flex items-center gap-1 bg-zinc-800 rounded px-2 py-1 text-xs">
+                      <span className="text-zinc-300 font-medium">{t.name}</span>
+                      <span className="text-zinc-600">({t.count})</span>
+                      <button onClick={() => handleApplyTemplate(t.name)} className="text-yellow-400 hover:text-yellow-300 ml-1">Apply</button>
+                      <button onClick={() => handleDeleteTemplate(t.name)} className="text-zinc-600 hover:text-red-400 ml-1">✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {templateMsg && <p className="text-sm text-green-400">{templateMsg}</p>}
             </div>
           </div>
         )}

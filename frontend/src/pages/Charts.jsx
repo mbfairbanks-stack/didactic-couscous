@@ -3,7 +3,7 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
-import { getMonthlySummary, getCategorySummary, getCategoryTrend, getCategories, getYears } from "../api";
+import { getMonthlySummary, getCategorySummary, getCategoryTrend, getCategories, getYears, getMultiCategoryTrend } from "../api";
 import { MONTH_LABELS, currentYear, fmt } from "../utils";
 
 const COLORS = [
@@ -26,6 +26,82 @@ function DarkTooltip({ active, payload, label }) {
 
 const axisProps = { tick: { fontSize: 11, fill: "#71717a" }, axisLine: false, tickLine: false };
 const gridProps = { strokeDasharray: "3 3", vertical: false, stroke: "#27272a" };
+
+// ── Multi-category spending trend chart ──────────────────────────────────────
+function MultiCategoryTrend({ categories }) {
+  const [selected, setSelected] = useState([]);
+  const [trendData, setTrendData] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const TREND_COLORS = ["#fbbf24", "#22c55e", "#a78bfa", "#06b6d4", "#ec4899", "#f97316"];
+
+  const toggleCategory = (cat) => {
+    setSelected((prev) =>
+      prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]
+    );
+  };
+
+  useEffect(() => {
+    if (!selected.length) { setTrendData([]); return; }
+    setLoading(true);
+    getMultiCategoryTrend(selected)
+      .then((rows) => {
+        // Build month labels and pivot by category
+        const months = [...new Set(rows.map((r) => `${r.year}-${String(r.month).padStart(2, "0")}`))].sort();
+        const data = months.map((key) => {
+          const [y, m] = key.split("-");
+          const obj = { name: `${MONTH_LABELS[parseInt(m)]} ${y}` };
+          for (const cat of selected) {
+            const row = rows.find((r) => r.category === cat && r.year === parseInt(y) && r.month === parseInt(m));
+            obj[cat] = row ? row.total : 0;
+          }
+          return obj;
+        });
+        setTrendData(data);
+      })
+      .finally(() => setLoading(false));
+  }, [selected]);
+
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+      <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">Spending Trends — Multi-Category</h2>
+      <div className="flex flex-wrap gap-1.5 mb-4">
+        {categories.slice(0, 20).map((cat, i) => (
+          <button
+            key={cat}
+            onClick={() => toggleCategory(cat)}
+            className={`px-2 py-1 rounded text-xs font-medium transition-colors border ${
+              selected.includes(cat)
+                ? "border-transparent text-black"
+                : "border-zinc-700 text-zinc-500 hover:text-zinc-300"
+            }`}
+            style={selected.includes(cat) ? { backgroundColor: TREND_COLORS[selected.indexOf(cat) % TREND_COLORS.length] } : {}}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
+      {selected.length === 0 ? (
+        <p className="text-zinc-600 text-sm text-center py-10">Select categories above to compare trends</p>
+      ) : loading ? (
+        <p className="text-zinc-600 text-sm text-center py-10">Loading...</p>
+      ) : (
+        <ResponsiveContainer width="100%" height={280}>
+          <LineChart data={trendData}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
+            <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#71717a" }} axisLine={false} tickLine={false} angle={-30} textAnchor="end" height={50} />
+            <YAxis tick={{ fontSize: 11, fill: "#71717a" }} tickFormatter={(v) => `$${(v / 1000).toFixed(1)}k`} axisLine={false} tickLine={false} />
+            <Tooltip content={<DarkTooltip />} />
+            <Legend wrapperStyle={{ fontSize: 11, color: "#a1a1aa" }} />
+            {selected.map((cat, i) => (
+              <Line key={cat} type="monotone" dataKey={cat} stroke={TREND_COLORS[i % TREND_COLORS.length]} strokeWidth={2} dot={{ r: 3 }} />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      )}
+    </div>
+  );
+}
 
 export default function Charts() {
   const [year, setYear] = useState(currentYear);
@@ -286,6 +362,9 @@ export default function Charts() {
           </ResponsiveContainer>
         </div>
       )}
+
+      {/* Row 4: Multi-category spending trends */}
+      <MultiCategoryTrend categories={categories} />
     </div>
   );
 }

@@ -217,6 +217,13 @@ export default function Dashboard() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-zinc-100">Dashboard</h1>
         <div className="flex gap-3 items-center">
+          <button
+            onClick={() => window.print()}
+            className="no-print border border-zinc-700 text-zinc-400 px-3 py-1.5 rounded-lg text-sm hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
+            title="Print or save as PDF"
+          >
+            Print / PDF
+          </button>
           <select
             className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm text-zinc-100"
             value={year}

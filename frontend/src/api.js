@@ -228,3 +228,31 @@ export const deleteInsightsLog = (id) => req(`/insights/log/${id}`, { method: "D
 
 export const mergeCategories = (source_names, target_name) =>
   req("/category-definitions/merge", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source_names, target_name }) });
+
+// Anomaly detection
+export const getAnomalies = (year, month) =>
+  req(`/transactions/anomalies?year=${year}&month=${month}`);
+
+// Split transaction
+export const splitTransaction = (id, body) =>
+  req(`/transactions/${id}/split`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+// Recurring suggestions
+export const getRecurringSuggestions = () => req("/transactions/recurring-suggestions");
+
+// Budget rollover
+export const rolloverBudget = (body) =>
+  req("/budget-targets/rollover", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+// Multi-category trend
+export const getMultiCategoryTrend = (categories) =>
+  req(`/summary/multi-category-trend?categories=${encodeURIComponent(categories.join(","))}`);
+
+// Budget templates
+export const getBudgetTemplates = () => req("/budget-templates");
+export const saveBudgetTemplate = (body) =>
+  req("/budget-templates/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const applyBudgetTemplate = (body) =>
+  req("/budget-templates/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteBudgetTemplate = (name) =>
+  req(`/budget-templates/${encodeURIComponent(name)}`, { method: "DELETE" });

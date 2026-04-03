@@ -1258,6 +1258,279 @@ def copy_budget_from_month(body: CopyBudgetRequest, db: Session = Depends(get_db
     return {"copied": copied, "skipped": skipped}
 
 
+class RolloverRequest(BaseModel):
+    year: int
+    month: int
+    carry_remainder: bool = True
+
+
+@app.post("/budget-targets/rollover")
+def rollover_budget(body: RolloverRequest, db: Session = Depends(get_db)):
+    """Copy prior month's budget targets to current month. Optionally add unspent amount."""
+    prior_month = body.month - 1 if body.month > 1 else 12
+    prior_year = body.year if body.month > 1 else body.year - 1
+
+    prior_targets = db.execute(
+        select(models.BudgetTarget).where(
+            models.BudgetTarget.year == prior_year,
+            models.BudgetTarget.month == prior_month,
+        )
+    ).scalars().all()
+
+    # Prior month actuals per category
+    prior_actuals = {}
+    if body.carry_remainder:
+        rows = db.execute(
+            select(models.Transaction.category, func.sum(models.Transaction.amount).label("total"))
+            .where(models.Transaction.year == prior_year, models.Transaction.month == prior_month)
+            .group_by(models.Transaction.category)
+        ).all()
+        prior_actuals = {r.category: r.total for r in rows}
+
+    existing_cats = {t.category for t in db.execute(
+        select(models.BudgetTarget).where(
+            models.BudgetTarget.year == body.year,
+            models.BudgetTarget.month == body.month,
+        )
+    ).scalars().all()}
+
+    copied = 0
+    for t in prior_targets:
+        if t.category in existing_cats:
+            continue
+        rollover_amount = t.amount
+        if body.carry_remainder:
+            actual = prior_actuals.get(t.category, 0)
+            unspent = t.amount - actual
+            if unspent > 0:
+                rollover_amount = t.amount + unspent
+        db.add(models.BudgetTarget(category=t.category, year=body.year, month=body.month, amount=round(rollover_amount, 2)))
+        copied += 1
+
+    db.commit()
+    return {"copied": copied}
+
+
+@app.get("/transactions/anomalies")
+def transaction_anomalies(year: int, month: int, threshold: float = 2.0, db: Session = Depends(get_db)):
+    """Return transactions with amount > threshold × their category's per-transaction average."""
+    # Compute per-category average transaction amount from prior 3 months
+    target = year * 12 + month
+    prior_avgs: dict[str, list[float]] = defaultdict(list)
+    for i in range(1, 4):
+        val = target - i
+        py = (val - 1) // 12 + 1 if val % 12 == 0 else val // 12
+        pm = 12 if val % 12 == 0 else val % 12
+        rows = db.execute(
+            select(models.Transaction.category, func.avg(models.Transaction.amount).label("avg"))
+            .where(models.Transaction.year == py, models.Transaction.month == pm)
+            .group_by(models.Transaction.category)
+        ).all()
+        for r in rows:
+            prior_avgs[r.category].append(r.avg)
+
+    avg_per_cat = {cat: sum(v) / len(v) for cat, v in prior_avgs.items() if v}
+
+    txns = db.execute(
+        select(models.Transaction).where(
+            models.Transaction.year == year,
+            models.Transaction.month == month,
+        )
+    ).scalars().all()
+
+    anomalies = []
+    for txn in txns:
+        avg = avg_per_cat.get(txn.category)
+        if avg and avg > 5 and txn.amount > avg * threshold:
+            anomalies.append({
+                "id": txn.id,
+                "category": txn.category,
+                "amount": txn.amount,
+                "avg": round(avg, 2),
+                "ratio": round(txn.amount / avg, 1),
+            })
+    return anomalies
+
+
+class SplitRequest(BaseModel):
+    amount_a: float
+    category_a: str
+    amount_b: float
+    category_b: str
+
+
+@app.post("/transactions/{txn_id}/split")
+def split_transaction(txn_id: int, body: SplitRequest, db: Session = Depends(get_db)):
+    """Split a transaction into two separate transactions."""
+    txn = db.get(models.Transaction, txn_id)
+    if not txn:
+        raise HTTPException(404, "Transaction not found")
+    if abs(body.amount_a + body.amount_b - txn.amount) > 0.02:
+        raise HTTPException(400, f"Split amounts ({body.amount_a} + {body.amount_b}) must equal original ({txn.amount})")
+    t1 = models.Transaction(
+        date=txn.date, merchant=txn.merchant, amount=round(body.amount_a, 2),
+        category=body.category_a, year=txn.year, month=txn.month,
+        is_fixed=txn.is_fixed, is_recurring=txn.is_recurring, notes=txn.notes, source=txn.source
+    )
+    t2 = models.Transaction(
+        date=txn.date, merchant=txn.merchant, amount=round(body.amount_b, 2),
+        category=body.category_b, year=txn.year, month=txn.month,
+        is_fixed=txn.is_fixed, is_recurring=txn.is_recurring, notes=txn.notes, source=txn.source
+    )
+    db.add(t1)
+    db.add(t2)
+    db.delete(txn)
+    db.commit()
+    return {"ok": True}
+
+
+@app.get("/transactions/recurring-suggestions")
+def recurring_suggestions(min_months: int = 3, db: Session = Depends(get_db)):
+    """Find merchants appearing in 3+ different months at a consistent amount — likely recurring."""
+    rows = db.execute(
+        select(
+            models.Transaction.merchant,
+            models.Transaction.category,
+            func.count(func.distinct(
+                func.cast(models.Transaction.year * 100 + models.Transaction.month, models.Transaction.id.type)
+            )).label("month_count"),
+            func.avg(models.Transaction.amount).label("avg_amount"),
+            func.min(models.Transaction.amount).label("min_amount"),
+            func.max(models.Transaction.amount).label("max_amount"),
+        )
+        .group_by(models.Transaction.merchant, models.Transaction.category)
+    ).all()
+
+    suggestions = []
+    for r in rows:
+        month_count = r.month_count
+        if month_count < min_months:
+            continue
+        # Consistent = max within 20% of min
+        if r.min_amount > 0 and r.max_amount <= r.min_amount * 1.2:
+            suggestions.append({
+                "merchant": r.merchant,
+                "category": r.category,
+                "month_count": month_count,
+                "avg_amount": round(r.avg_amount, 2),
+                "is_consistent": True,
+            })
+
+    return sorted(suggestions, key=lambda x: -x["month_count"])
+
+
+@app.get("/summary/multi-category-trend")
+def multi_category_trend(categories: str, db: Session = Depends(get_db)):
+    """Monthly spending for multiple categories. categories = comma-separated."""
+    cat_list = [c.strip() for c in categories.split(",") if c.strip()]
+    if not cat_list:
+        return []
+
+    rows = db.execute(
+        select(
+            models.Transaction.category,
+            models.Transaction.year,
+            models.Transaction.month,
+            func.sum(models.Transaction.amount).label("total"),
+        )
+        .where(models.Transaction.category.in_(cat_list))
+        .group_by(models.Transaction.category, models.Transaction.year, models.Transaction.month)
+        .order_by(models.Transaction.year, models.Transaction.month)
+    ).all()
+
+    return [{"category": r.category, "year": r.year, "month": r.month, "total": round(r.total, 2)} for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Budget templates
+# ---------------------------------------------------------------------------
+
+class SaveTemplateRequest(BaseModel):
+    name: str
+    year: int
+    month: int
+
+
+class ApplyTemplateRequest(BaseModel):
+    name: str
+    year: int
+    month: int
+    overwrite: bool = False
+
+
+@app.get("/budget-templates")
+def list_budget_templates(db: Session = Depends(get_db)):
+    rows = db.execute(
+        select(models.AppSettings).where(
+            models.AppSettings.key.like("budget_template:%")
+        )
+    ).scalars().all()
+    templates = []
+    for r in rows:
+        name = r.key[len("budget_template:"):]
+        try:
+            items = json.loads(r.value)
+        except Exception:
+            items = []
+        templates.append({"name": name, "count": len(items)})
+    return templates
+
+
+@app.post("/budget-templates/save")
+def save_budget_template(body: SaveTemplateRequest, db: Session = Depends(get_db)):
+    targets = db.execute(
+        select(models.BudgetTarget).where(
+            models.BudgetTarget.year == body.year,
+            models.BudgetTarget.month == body.month,
+        )
+    ).scalars().all()
+    items = [{"category": t.category, "amount": t.amount} for t in targets]
+    key = f"budget_template:{body.name}"
+    existing = db.get(models.AppSettings, key)
+    if existing:
+        existing.value = json.dumps(items)
+    else:
+        db.add(models.AppSettings(key=key, value=json.dumps(items)))
+    db.commit()
+    return {"name": body.name, "count": len(items)}
+
+
+@app.post("/budget-templates/apply")
+def apply_budget_template(body: ApplyTemplateRequest, db: Session = Depends(get_db)):
+    key = f"budget_template:{body.name}"
+    setting = db.get(models.AppSettings, key)
+    if not setting:
+        raise HTTPException(404, "Template not found")
+    items = json.loads(setting.value)
+    existing = {t.category: t for t in db.execute(
+        select(models.BudgetTarget).where(
+            models.BudgetTarget.year == body.year,
+            models.BudgetTarget.month == body.month,
+        )
+    ).scalars().all()}
+    applied = 0
+    for item in items:
+        if item["category"] in existing:
+            if body.overwrite:
+                existing[item["category"]].amount = item["amount"]
+                applied += 1
+        else:
+            db.add(models.BudgetTarget(category=item["category"], year=body.year, month=body.month, amount=item["amount"]))
+            applied += 1
+    db.commit()
+    return {"applied": applied}
+
+
+@app.delete("/budget-templates/{name}", status_code=204)
+def delete_budget_template(name: str, db: Session = Depends(get_db)):
+    key = f"budget_template:{name}"
+    setting = db.get(models.AppSettings, key)
+    if not setting:
+        raise HTTPException(404, "Template not found")
+    db.delete(setting)
+    db.commit()
+
+
 # ---------------------------------------------------------------------------
 # Import
 # ---------------------------------------------------------------------------
