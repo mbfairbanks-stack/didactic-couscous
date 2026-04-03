@@ -1,5 +1,5 @@
-import { NavLink, useLocation } from "react-router-dom";
-import { useState, useEffect, useRef } from "react";
+import { NavLink } from "react-router-dom";
+import { useState } from "react";
 import { useSettings } from "../contexts/SettingsContext";
 import { useAuth } from "../contexts/AuthContext";
 
@@ -16,32 +16,27 @@ const mainLinks = [
 ];
 
 const toolLinks = [
-  { to: "/import", label: "Import Data" },
-  { to: "/category-audit", label: "Category Audit" },
+  { to: "/import", label: "Import" },
+  { to: "/category-audit", label: "Audit" },
 ];
+
+const allLinks = [...mainLinks, ...toolLinks];
 
 const linkCls = ({ isActive }) =>
   `px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${
     isActive ? "bg-yellow-400 text-black" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
   }`;
 
+const toolLinkCls = ({ isActive }) =>
+  `px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${
+    isActive ? "bg-yellow-400 text-black" : "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800"
+  }`;
+
 export default function Nav() {
   const { settings } = useSettings();
   const { logout, demo } = useAuth();
-  const location = useLocation();
   const householdName = settings.household_name || "BudgetBot";
   const [menuOpen, setMenuOpen] = useState(false);
-  const [toolsOpen, setToolsOpen] = useState(false);
-  const toolsRef = useRef(null);
-
-  // Close tools dropdown on outside click
-  useEffect(() => {
-    const handler = (e) => { if (toolsRef.current && !toolsRef.current.contains(e.target)) setToolsOpen(false); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  const isToolActive = toolLinks.some((l) => location.pathname === l.to);
 
   return (
     <header className="bg-zinc-950 border-b border-zinc-800">
@@ -59,28 +54,10 @@ export default function Nav() {
           {mainLinks.map((l) => (
             <NavLink key={l.to} to={l.to} className={linkCls}>{l.label}</NavLink>
           ))}
-
-          {/* Tools dropdown */}
-          <div className="relative" ref={toolsRef}>
-            <button
-              onClick={() => setToolsOpen((o) => !o)}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors flex items-center gap-1 ${
-                isToolActive ? "bg-yellow-400 text-black" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
-              }`}
-            >
-              Tools <span className="text-[10px]">▾</span>
-            </button>
-            {toolsOpen && (
-              <div className="absolute top-full left-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl py-1 z-50 min-w-[140px]">
-                {toolLinks.map((l) => (
-                  <NavLink key={l.to} to={l.to} onClick={() => setToolsOpen(false)}
-                    className={({ isActive }) => `block px-4 py-2 text-sm transition-colors ${isActive ? "text-yellow-400" : "text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800"}`}>
-                    {l.label}
-                  </NavLink>
-                ))}
-              </div>
-            )}
-          </div>
+          <div className="w-px h-4 bg-zinc-800 mx-1 shrink-0" />
+          {toolLinks.map((l) => (
+            <NavLink key={l.to} to={l.to} className={toolLinkCls}>{l.label}</NavLink>
+          ))}
         </nav>
 
         <div className="flex-1 md:hidden" />
@@ -100,7 +77,7 @@ export default function Nav() {
       {/* Mobile drawer */}
       {menuOpen && (
         <div className="md:hidden border-t border-zinc-800 bg-zinc-950 px-4 py-3 grid grid-cols-2 gap-1">
-          {[...mainLinks, ...toolLinks].map((l) => (
+          {allLinks.map((l) => (
             <NavLink key={l.to} to={l.to} onClick={() => setMenuOpen(false)}
               className={({ isActive }) =>
                 `px-3 py-2.5 rounded-md text-sm font-medium transition-colors ${isActive ? "bg-yellow-400 text-black" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"}`
