@@ -232,6 +232,33 @@ export const deleteInsightsLog = (id) => req(`/insights/log/${id}`, { method: "D
 export const mergeCategories = (source_names, target_name) =>
   req("/category-definitions/merge", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source_names, target_name }) });
 
+// Assets (DB-backed net worth)
+export const getAssets = () => req("/assets");
+export const createAsset = (body) =>
+  req("/assets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const updateAsset = (id, body) =>
+  req(`/assets/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteAsset = (id) => req(`/assets/${id}`, { method: "DELETE" });
+
+// Savings contributions (RRSP + ESPP)
+export const getSavingsContributions = (year) =>
+  req(`/savings-contributions${year ? `?year=${year}` : ""}`);
+export const createSavingsContribution = (body) =>
+  req("/savings-contributions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const updateSavingsContribution = (id, body) =>
+  req(`/savings-contributions/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteSavingsContribution = (id) =>
+  req(`/savings-contributions/${id}`, { method: "DELETE" });
+export const getSavingsSummary = (year) => req(`/savings-contributions/summary?year=${year}`);
+
+// ESPP purchases
+export const getEsppPurchases = () => req("/espp-purchases");
+export const createEsppPurchase = (body) =>
+  req("/espp-purchases", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const updateEsppPurchase = (id, body) =>
+  req(`/espp-purchases/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteEsppPurchase = (id) => req(`/espp-purchases/${id}`, { method: "DELETE" });
+
 // Anomaly detection
 export const getAnomalies = (year, month) =>
   req(`/transactions/anomalies?year=${year}&month=${month}`);

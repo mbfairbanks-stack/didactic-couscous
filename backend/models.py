@@ -86,3 +86,46 @@ class Debt(Base):
     savings = Column(Float, default=0.0)            # amount already set aside
     due_date = Column(String, nullable=True)        # "Feb 2027" free-form
     notes = Column(String, nullable=True)
+
+
+class Asset(Base):
+    """DB-backed net worth assets (replaces localStorage approach)."""
+    __tablename__ = "assets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    asset_type = Column(String, default="other")  # "rrsp", "espp", "tfsa", "cash", "property", "other"
+    balance = Column(Float, default=0.0)
+    notes = Column(String, nullable=True)
+    sort_order = Column(Integer, default=0)
+
+
+class SavingsContribution(Base):
+    """Tracks payroll deductions for RRSP and ESPP per pay period."""
+    __tablename__ = "savings_contributions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    pay_date = Column(String, nullable=False)       # "2025-01-15"
+    year = Column(Integer, nullable=False)
+    month = Column(Integer, nullable=False)
+    gross_income = Column(Float, default=0.0)       # gross pay for this period
+    rrsp_employee = Column(Float, default=0.0)      # employee RRSP contribution
+    rrsp_employer = Column(Float, default=0.0)      # employer 50% match
+    espp_deduction = Column(Float, default=0.0)     # 10% of gross deducted for ESPP
+    notes = Column(String, nullable=True)
+
+
+class EsppPurchase(Base):
+    """ESPP purchase events — when accumulated deductions buy stock at a discount."""
+    __tablename__ = "espp_purchases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    purchase_date = Column(String, nullable=False)
+    period_start = Column(String, nullable=True)    # start of accumulation period
+    period_end = Column(String, nullable=True)      # end of accumulation period
+    total_deducted = Column(Float, default=0.0)     # total $ deducted during period
+    shares_purchased = Column(Float, default=0.0)
+    purchase_price = Column(Float, default=0.0)     # price paid (after 15% discount)
+    market_price = Column(Float, default=0.0)       # fair market value at purchase
+    current_price = Column(Float, default=0.0)      # current stock price (manual update)
+    notes = Column(String, nullable=True)

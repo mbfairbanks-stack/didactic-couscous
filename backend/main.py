@@ -870,6 +870,241 @@ def delete_debt(debt_id: int, db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
+# Assets (DB-backed net worth assets)
+# ---------------------------------------------------------------------------
+
+class AssetCreate(BaseModel):
+    name: str
+    asset_type: str = "other"
+    balance: float = 0.0
+    notes: Optional[str] = None
+    sort_order: int = 0
+
+
+class AssetOut(AssetCreate):
+    id: int
+    model_config = {"from_attributes": True}
+
+
+ASSET_DEFAULTS = [
+    {"name": "Checking", "asset_type": "cash", "sort_order": 1},
+    {"name": "Savings", "asset_type": "cash", "sort_order": 2},
+    {"name": "RRSP", "asset_type": "rrsp", "sort_order": 3},
+    {"name": "TFSA", "asset_type": "tfsa", "sort_order": 4},
+    {"name": "ESPP (Block)", "asset_type": "espp", "sort_order": 5},
+]
+
+
+@app.get("/assets", response_model=list[AssetOut])
+def list_assets(db: Session = Depends(get_db)):
+    rows = db.execute(select(models.Asset).order_by(models.Asset.sort_order, models.Asset.name)).scalars().all()
+    if not rows:
+        # Seed defaults on first call
+        for i, d in enumerate(ASSET_DEFAULTS):
+            db.add(models.Asset(**d, balance=0.0))
+        db.commit()
+        rows = db.execute(select(models.Asset).order_by(models.Asset.sort_order, models.Asset.name)).scalars().all()
+    return rows
+
+
+@app.post("/assets", response_model=AssetOut, status_code=201)
+def create_asset(body: AssetCreate, db: Session = Depends(get_db)):
+    asset = models.Asset(**body.model_dump())
+    db.add(asset)
+    db.commit()
+    db.refresh(asset)
+    return asset
+
+
+@app.put("/assets/{asset_id}", response_model=AssetOut)
+def update_asset(asset_id: int, body: AssetCreate, db: Session = Depends(get_db)):
+    asset = db.get(models.Asset, asset_id)
+    if not asset:
+        raise HTTPException(404, "Asset not found")
+    for field, val in body.model_dump().items():
+        setattr(asset, field, val)
+    db.commit()
+    db.refresh(asset)
+    return asset
+
+
+@app.delete("/assets/{asset_id}", status_code=204)
+def delete_asset(asset_id: int, db: Session = Depends(get_db)):
+    asset = db.get(models.Asset, asset_id)
+    if not asset:
+        raise HTTPException(404, "Asset not found")
+    db.delete(asset)
+    db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Savings contributions (RRSP + ESPP per paycheck)
+# ---------------------------------------------------------------------------
+
+RRSP_ANNUAL_MAX = 12500.0
+RRSP_MATCH_RATE = 0.50
+ESPP_DEDUCTION_RATE = 0.10
+ESPP_DISCOUNT_RATE = 0.15
+
+
+class SavingsContributionCreate(BaseModel):
+    pay_date: str
+    year: int
+    month: int
+    gross_income: float
+    rrsp_employee: float = 0.0
+    rrsp_employer: Optional[float] = None  # auto-calculated if None
+    espp_deduction: Optional[float] = None  # auto-calculated if None
+    notes: Optional[str] = None
+
+
+class SavingsContributionOut(SavingsContributionCreate):
+    id: int
+    model_config = {"from_attributes": True}
+
+
+class EsppPurchaseCreate(BaseModel):
+    purchase_date: str
+    period_start: Optional[str] = None
+    period_end: Optional[str] = None
+    total_deducted: float = 0.0
+    shares_purchased: float = 0.0
+    purchase_price: float = 0.0
+    market_price: float = 0.0
+    current_price: float = 0.0
+    notes: Optional[str] = None
+
+
+class EsppPurchaseOut(EsppPurchaseCreate):
+    id: int
+    model_config = {"from_attributes": True}
+
+
+@app.get("/savings-contributions", response_model=list[SavingsContributionOut])
+def list_savings_contributions(year: Optional[int] = None, db: Session = Depends(get_db)):
+    q = select(models.SavingsContribution).order_by(models.SavingsContribution.pay_date.desc())
+    if year:
+        q = q.where(models.SavingsContribution.year == year)
+    return db.execute(q).scalars().all()
+
+
+@app.post("/savings-contributions", response_model=SavingsContributionOut, status_code=201)
+def create_savings_contribution(body: SavingsContributionCreate, db: Session = Depends(get_db)):
+    data = body.model_dump()
+    # Auto-calculate employer match and ESPP if not provided
+    if data["rrsp_employer"] is None:
+        data["rrsp_employer"] = round(data["rrsp_employee"] * RRSP_MATCH_RATE, 2)
+    if data["espp_deduction"] is None:
+        data["espp_deduction"] = round(data["gross_income"] * ESPP_DEDUCTION_RATE, 2)
+    contrib = models.SavingsContribution(**data)
+    db.add(contrib)
+    db.commit()
+    db.refresh(contrib)
+    return contrib
+
+
+@app.put("/savings-contributions/{contrib_id}", response_model=SavingsContributionOut)
+def update_savings_contribution(contrib_id: int, body: SavingsContributionCreate, db: Session = Depends(get_db)):
+    contrib = db.get(models.SavingsContribution, contrib_id)
+    if not contrib:
+        raise HTTPException(404, "Contribution not found")
+    data = body.model_dump()
+    if data["rrsp_employer"] is None:
+        data["rrsp_employer"] = round(data["rrsp_employee"] * RRSP_MATCH_RATE, 2)
+    if data["espp_deduction"] is None:
+        data["espp_deduction"] = round(data["gross_income"] * ESPP_DEDUCTION_RATE, 2)
+    for field, val in data.items():
+        setattr(contrib, field, val)
+    db.commit()
+    db.refresh(contrib)
+    return contrib
+
+
+@app.delete("/savings-contributions/{contrib_id}", status_code=204)
+def delete_savings_contribution(contrib_id: int, db: Session = Depends(get_db)):
+    contrib = db.get(models.SavingsContribution, contrib_id)
+    if not contrib:
+        raise HTTPException(404, "Contribution not found")
+    db.delete(contrib)
+    db.commit()
+
+
+@app.get("/savings-contributions/summary")
+def savings_summary(year: int, db: Session = Depends(get_db)):
+    """YTD RRSP + ESPP totals, cap progress, and auto-synced asset balances."""
+    rows = db.execute(
+        select(models.SavingsContribution).where(models.SavingsContribution.year == year)
+    ).scalars().all()
+
+    ytd_rrsp_employee = sum(r.rrsp_employee for r in rows)
+    ytd_rrsp_employer = sum(r.rrsp_employer for r in rows)
+    ytd_rrsp_total = ytd_rrsp_employee + ytd_rrsp_employer
+    ytd_espp = sum(r.espp_deduction for r in rows)
+
+    # ESPP purchases this year
+    purchases = db.execute(
+        select(models.EsppPurchase).where(
+            models.EsppPurchase.purchase_date.like(f"{year}%")
+        )
+    ).scalars().all()
+    espp_current_value = sum(
+        p.shares_purchased * (p.current_price or p.market_price)
+        for p in purchases
+    )
+
+    return {
+        "year": year,
+        "rrsp_employee_ytd": round(ytd_rrsp_employee, 2),
+        "rrsp_employer_ytd": round(ytd_rrsp_employer, 2),
+        "rrsp_total_ytd": round(ytd_rrsp_total, 2),
+        "rrsp_annual_max": RRSP_ANNUAL_MAX,
+        "rrsp_remaining": round(max(RRSP_ANNUAL_MAX - ytd_rrsp_employee, 0), 2),
+        "rrsp_pct": round(min(ytd_rrsp_employee / RRSP_ANNUAL_MAX * 100, 100), 1),
+        "espp_deducted_ytd": round(ytd_espp, 2),
+        "espp_current_value": round(espp_current_value, 2),
+        "espp_discount_rate": ESPP_DISCOUNT_RATE,
+        "rrsp_match_rate": RRSP_MATCH_RATE,
+        "contributions": len(rows),
+    }
+
+
+# ESPP Purchases
+@app.get("/espp-purchases", response_model=list[EsppPurchaseOut])
+def list_espp_purchases(db: Session = Depends(get_db)):
+    return db.execute(select(models.EsppPurchase).order_by(models.EsppPurchase.purchase_date.desc())).scalars().all()
+
+
+@app.post("/espp-purchases", response_model=EsppPurchaseOut, status_code=201)
+def create_espp_purchase(body: EsppPurchaseCreate, db: Session = Depends(get_db)):
+    purchase = models.EsppPurchase(**body.model_dump())
+    db.add(purchase)
+    db.commit()
+    db.refresh(purchase)
+    return purchase
+
+
+@app.put("/espp-purchases/{purchase_id}", response_model=EsppPurchaseOut)
+def update_espp_purchase(purchase_id: int, body: EsppPurchaseCreate, db: Session = Depends(get_db)):
+    purchase = db.get(models.EsppPurchase, purchase_id)
+    if not purchase:
+        raise HTTPException(404, "Purchase not found")
+    for field, val in body.model_dump().items():
+        setattr(purchase, field, val)
+    db.commit()
+    db.refresh(purchase)
+    return purchase
+
+
+@app.delete("/espp-purchases/{purchase_id}", status_code=204)
+def delete_espp_purchase(purchase_id: int, db: Session = Depends(get_db)):
+    purchase = db.get(models.EsppPurchase, purchase_id)
+    if not purchase:
+        raise HTTPException(404, "Purchase not found")
+    db.delete(purchase)
+    db.commit()
+
+
+# ---------------------------------------------------------------------------
 # Category Audit
 # ---------------------------------------------------------------------------
 

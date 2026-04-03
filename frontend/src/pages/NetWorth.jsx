@@ -1,152 +1,184 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import { getDebts } from "../api";
+import { getAssets, createAsset, updateAsset, deleteAsset, getDebts, getSavingsSummary } from "../api";
 import { fmt } from "../utils";
-
-const STORAGE_KEY = "networth_assets";
-
-const DEFAULT_ASSETS = [
-  { id: 1, name: "Checking", balance: 0 },
-  { id: 2, name: "Savings", balance: 0 },
-  { id: 3, name: "RRSP", balance: 0 },
-  { id: 4, name: "TFSA", balance: 0 },
-];
-
-function loadAssets() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return DEFAULT_ASSETS.map((a) => ({ ...a }));
-}
-
-function saveAssets(assets) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(assets));
-}
-
-let nextId = Date.now();
+import { currentYear } from "../utils";
 
 export default function NetWorth() {
-  const [assets, setAssets] = useState(loadAssets);
+  const [assets, setAssets] = useState([]);
   const [debts, setDebts] = useState([]);
-  const [debtsLoading, setDebtsLoading] = useState(true);
-  const [debtsError, setDebtsError] = useState("");
+  const [savingsSummary, setSavingsSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editDraft, setEditDraft] = useState({});
+  const [adding, setAdding] = useState(false);
+  const [newAsset, setNewAsset] = useState({ name: "", asset_type: "other", balance: "" });
 
-  useEffect(() => {
-    getDebts()
-      .then(setDebts)
-      .catch((e) => setDebtsError(e.message))
-      .finally(() => setDebtsLoading(false));
+  const load = useCallback(() => {
+    setLoading(true);
+    Promise.all([
+      getAssets().then(setAssets),
+      getDebts().then(setDebts),
+      getSavingsSummary(currentYear).then(setSavingsSummary).catch(() => {}),
+    ])
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
   }, []);
 
-  // Persist assets to localStorage whenever they change
-  useEffect(() => {
-    saveAssets(assets);
-  }, [assets]);
+  useEffect(() => { load(); }, [load]);
 
-  const updateAsset = (id, field, value) => {
-    setAssets((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, [field]: field === "balance" ? value : value } : a))
-    );
+  const startEdit = (asset) => {
+    setEditingId(asset.id);
+    setEditDraft({ name: asset.name, balance: String(asset.balance), asset_type: asset.asset_type });
   };
 
-  const addAsset = () => {
-    setAssets((prev) => [...prev, { id: ++nextId, name: "", balance: 0 }]);
+  const commitEdit = async (id) => {
+    try {
+      const asset = assets.find((a) => a.id === id);
+      await updateAsset(id, { ...asset, name: editDraft.name, balance: parseFloat(editDraft.balance) || 0, asset_type: editDraft.asset_type });
+      setEditingId(null);
+      load();
+    } catch (e) { setError(e.message); }
   };
 
-  const removeAsset = (id) => {
-    setAssets((prev) => prev.filter((a) => a.id !== id));
+  const handleAdd = async (e) => {
+    e.preventDefault();
+    try {
+      await createAsset({ name: newAsset.name, asset_type: newAsset.asset_type, balance: parseFloat(newAsset.balance) || 0 });
+      setNewAsset({ name: "", asset_type: "other", balance: "" });
+      setAdding(false);
+      load();
+    } catch (e) { setError(e.message); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm("Remove this asset?")) return;
+    try {
+      await deleteAsset(id);
+      load();
+    } catch (e) { setError(e.message); }
   };
 
   const totalAssets = assets.reduce((s, a) => s + (parseFloat(a.balance) || 0), 0);
   const totalLiabilities = debts.reduce((s, d) => s + (parseFloat(d.current_balance) || 0), 0);
   const netWorth = totalAssets - totalLiabilities;
 
-  const chartData = [
-    { name: "Assets", value: totalAssets },
-    { name: "Liabilities", value: totalLiabilities },
-  ];
+  const TYPE_COLORS = {
+    rrsp: "text-blue-400", espp: "text-purple-400", tfsa: "text-green-400",
+    cash: "text-yellow-400", property: "text-orange-400", other: "text-zinc-400",
+  };
+  const TYPE_LABELS = {
+    rrsp: "RRSP", espp: "ESPP", tfsa: "TFSA", cash: "Cash", property: "Property", other: "Other",
+  };
+
+  const inputCls = "bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400/50";
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-zinc-100">Net Worth</h1>
 
-      {/* Net Worth Headline */}
+      {error && <p className="text-red-400 text-sm">{error}</p>}
+
+      {/* Headline */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 flex flex-col items-center gap-2">
         <p className="text-xs text-zinc-500 uppercase tracking-widest">Net Worth</p>
         <p className={`text-5xl font-bold ${netWorth >= 0 ? "text-green-400" : "text-red-400"}`}>
           {fmt(netWorth, 2)}
         </p>
         <div className="flex gap-8 mt-3 text-sm">
-          <span className="text-zinc-400">
-            Assets: <span className="text-green-400 font-semibold">{fmt(totalAssets, 2)}</span>
-          </span>
-          <span className="text-zinc-400">
-            Liabilities: <span className="text-red-400 font-semibold">{fmt(totalLiabilities, 2)}</span>
-          </span>
+          <span className="text-zinc-400">Assets: <span className="text-green-400 font-semibold">{fmt(totalAssets, 2)}</span></span>
+          <span className="text-zinc-400">Liabilities: <span className="text-red-400 font-semibold">{fmt(totalLiabilities, 2)}</span></span>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Assets Section */}
+        {/* Assets */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
           <div className="px-4 py-3 bg-zinc-800 border-b border-zinc-700 flex justify-between items-center">
             <span className="text-sm font-bold text-green-400 uppercase tracking-widest">Assets</span>
-            <span className="text-sm font-semibold text-zinc-300">{fmt(totalAssets, 2)}</span>
+            <div className="flex gap-2 items-center">
+              <span className="text-sm font-semibold text-zinc-300">{fmt(totalAssets, 2)}</span>
+              <button onClick={() => setAdding(true)} className="text-xs text-yellow-400 hover:text-yellow-300 border border-yellow-400/30 px-2 py-1 rounded hover:bg-yellow-400/10">
+                + Add
+              </button>
+            </div>
           </div>
-          <div className="p-4 space-y-2">
-            {assets.map((asset) => (
-              <div key={asset.id} className="flex items-center gap-2">
-                <input
-                  type="text"
-                  placeholder="Account name"
-                  value={asset.name}
-                  onChange={(e) => updateAsset(asset.id, "name", e.target.value)}
-                  className="flex-1 bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-yellow-400/50"
-                />
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="0.00"
-                  value={asset.balance}
-                  onChange={(e) => updateAsset(asset.id, "balance", e.target.value)}
-                  className="w-36 bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 text-right placeholder-zinc-600 focus:outline-none focus:border-yellow-400/50"
-                />
-                <button
-                  onClick={() => removeAsset(asset.id)}
-                  className="text-zinc-600 hover:text-red-400 text-sm px-1"
-                  title="Remove"
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-            <button
-              onClick={addAsset}
-              className="mt-2 w-full border border-dashed border-zinc-700 rounded px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-300 hover:border-zinc-500 transition-colors"
-            >
-              + Add account
-            </button>
-          </div>
+
+          {loading ? (
+            <div className="py-8 space-y-2 px-4">
+              {[1,2,3,4].map(i => <div key={i} className="h-8 bg-zinc-800 rounded animate-pulse" />)}
+            </div>
+          ) : (
+            <div className="divide-y divide-zinc-800/60">
+              {assets.map((asset) => {
+                const isEditing = editingId === asset.id;
+                const colorCls = TYPE_COLORS[asset.asset_type] || "text-zinc-400";
+                return (
+                  <div key={asset.id} className="flex items-center gap-2 px-4 py-2.5 hover:bg-zinc-800/40">
+                    {isEditing ? (
+                      <>
+                        <input className={`${inputCls} flex-1`} value={editDraft.name}
+                          onChange={(e) => setEditDraft({ ...editDraft, name: e.target.value })} />
+                        <select className={`${inputCls} w-24`} value={editDraft.asset_type}
+                          onChange={(e) => setEditDraft({ ...editDraft, asset_type: e.target.value })}>
+                          {Object.entries(TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                        </select>
+                        <input type="number" step="0.01" className={`${inputCls} w-28 text-right`}
+                          value={editDraft.balance}
+                          onChange={(e) => setEditDraft({ ...editDraft, balance: e.target.value })}
+                          onKeyDown={(e) => { if (e.key === "Enter") commitEdit(asset.id); if (e.key === "Escape") setEditingId(null); }} />
+                        <button onClick={() => commitEdit(asset.id)} className="text-yellow-400 text-xs hover:text-yellow-300">Save</button>
+                        <button onClick={() => setEditingId(null)} className="text-zinc-600 text-xs hover:text-zinc-400">✕</button>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-zinc-200 text-sm">{asset.name}</span>
+                          <span className={`text-xs ml-2 ${colorCls}`}>{TYPE_LABELS[asset.asset_type]}</span>
+                        </div>
+                        <span className="text-sm font-semibold text-zinc-100 tabular-nums">{fmt(asset.balance, 2)}</span>
+                        <button onClick={() => startEdit(asset)} className="text-zinc-600 hover:text-zinc-300 text-xs px-1">Edit</button>
+                        <button onClick={() => handleDelete(asset.id)} className="text-zinc-700 hover:text-red-400 text-xs px-1">✕</button>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+
+              {adding && (
+                <form onSubmit={handleAdd} className="flex items-center gap-2 px-4 py-2.5 bg-zinc-800/30">
+                  <input autoFocus required placeholder="Account name" className={`${inputCls} flex-1`}
+                    value={newAsset.name} onChange={(e) => setNewAsset({ ...newAsset, name: e.target.value })} />
+                  <select className={`${inputCls} w-24`} value={newAsset.asset_type}
+                    onChange={(e) => setNewAsset({ ...newAsset, asset_type: e.target.value })}>
+                    {Object.entries(TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                  <input type="number" step="0.01" placeholder="0.00" className={`${inputCls} w-28 text-right`}
+                    value={newAsset.balance} onChange={(e) => setNewAsset({ ...newAsset, balance: e.target.value })} />
+                  <button type="submit" className="text-yellow-400 text-xs hover:text-yellow-300">Add</button>
+                  <button type="button" onClick={() => setAdding(false)} className="text-zinc-600 text-xs hover:text-zinc-400">✕</button>
+                </form>
+              )}
+            </div>
+          )}
+
           <div className="px-4 py-3 bg-zinc-800/50 border-t border-zinc-700 flex justify-between text-sm">
             <span className="text-zinc-500">Total Assets</span>
             <span className="font-semibold text-green-400">{fmt(totalAssets, 2)}</span>
           </div>
         </div>
 
-        {/* Liabilities Section */}
+        {/* Liabilities */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
           <div className="px-4 py-3 bg-zinc-800 border-b border-zinc-700 flex justify-between items-center">
             <span className="text-sm font-bold text-red-400 uppercase tracking-widest">Liabilities</span>
             <span className="text-sm font-semibold text-zinc-300">{fmt(totalLiabilities, 2)}</span>
           </div>
-          {debtsLoading ? (
-            <p className="text-center text-zinc-600 py-10 text-sm">Loading debts...</p>
-          ) : debtsError ? (
-            <p className="text-center text-red-400 py-10 text-sm">{debtsError}</p>
+          {loading ? (
+            <p className="text-center text-zinc-600 py-10 text-sm">Loading...</p>
           ) : debts.length === 0 ? (
-            <p className="text-center text-zinc-600 py-10 text-sm">No debts found</p>
+            <p className="text-center text-zinc-600 py-10 text-sm">No debts — add them on the Debts page</p>
           ) : (
             <table className="w-full text-sm">
               <thead>
@@ -159,9 +191,7 @@ export default function NetWorth() {
                 {debts.map((debt) => (
                   <tr key={debt.id} className="border-b border-zinc-800 last:border-0 hover:bg-zinc-800">
                     <td className="px-4 py-2.5 text-zinc-200">{debt.name}</td>
-                    <td className="px-4 py-2.5 text-right text-red-400 font-medium">
-                      {fmt(debt.current_balance, 2)}
-                    </td>
+                    <td className="px-4 py-2.5 text-right text-red-400 font-medium">{fmt(debt.current_balance, 2)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -174,11 +204,36 @@ export default function NetWorth() {
         </div>
       </div>
 
-      {/* Bar Chart */}
+      {/* Savings snapshot from Savings page */}
+      {savingsSummary && (savingsSummary.rrsp_total_ytd > 0 || savingsSummary.espp_deducted_ytd > 0) && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+          <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">Payroll Savings — {currentYear} YTD</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+            <div>
+              <p className="text-xs text-zinc-500">RRSP (You + Match)</p>
+              <p className="text-lg font-bold text-blue-400">{fmt(savingsSummary.rrsp_total_ytd)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-zinc-500">RRSP Cap Progress</p>
+              <p className="text-lg font-bold text-zinc-100">{savingsSummary.rrsp_pct}%</p>
+            </div>
+            <div>
+              <p className="text-xs text-zinc-500">ESPP Deducted</p>
+              <p className="text-lg font-bold text-purple-400">{fmt(savingsSummary.espp_deducted_ytd)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-zinc-500">ESPP Stock Value</p>
+              <p className="text-lg font-bold text-purple-400">{fmt(savingsSummary.espp_current_value)}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bar chart */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
         <p className="text-xs text-zinc-500 uppercase tracking-widest mb-4">Assets vs Liabilities</p>
         <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={chartData} barCategoryGap="40%">
+          <BarChart data={[{ name: "Assets", value: totalAssets }, { name: "Liabilities", value: totalLiabilities }]} barCategoryGap="40%">
             <XAxis dataKey="name" tick={{ fill: "#a1a1aa", fontSize: 12 }} axisLine={false} tickLine={false} />
             <YAxis tick={{ fill: "#71717a", fontSize: 11 }} axisLine={false} tickLine={false}
               tickFormatter={(v) => "$" + (v >= 1000 ? (v / 1000).toFixed(0) + "k" : v)} />
