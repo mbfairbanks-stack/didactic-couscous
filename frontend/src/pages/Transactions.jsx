@@ -30,6 +30,8 @@ export default function Transactions() {
   const [sortField, setSortField] = useState("date");
   const [sortDir, setSortDir] = useState("desc");
   const [colFilter, setColFilter] = useState({ date: "", merchant: "", category: "", source: "" });
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
+  const [showColFilters, setShowColFilters] = useState(false);
   const [years, setYears] = useState([currentYear]);
   const [allCategories, setAllCategories] = useState([]);
   const [transactions, setTransactions] = useState([]);
@@ -328,7 +330,8 @@ export default function Transactions() {
 
       {/* Filters */}
       <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-3 space-y-2">
-        <div className="flex flex-wrap gap-2">
+        {/* Primary filters */}
+        <div className="flex flex-wrap gap-2 items-center">
           <select className={inputCls} value={year} onChange={(e) => setYear(Number(e.target.value))}>
             {years.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
@@ -342,69 +345,77 @@ export default function Transactions() {
             <option value="">All categories</option>
             {allCategories.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
-          <select className={inputCls} value={filterSource} onChange={(e) => { setFilterSource(e.target.value); setPage(0); }}>
-            <option value="">All sources</option>
-            {allSources.map((s) => <option key={s} value={s}>{s.toUpperCase()}</option>)}
-          </select>
           <input
-            className={`${inputCls} flex-1 min-w-[160px]`}
-            placeholder="Search merchant or category..."
+            className={`${inputCls} flex-1 min-w-[140px]`}
+            placeholder="Search..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(0); }}
           />
-        </div>
-        <div className="flex flex-wrap gap-3 items-center">
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-zinc-500">Amount:</span>
-            <input
-              type="number" min="0" step="0.01" placeholder="Min"
-              className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm text-zinc-100 w-24 focus:outline-none focus:border-yellow-400/50"
-              value={amountMin}
-              onChange={(e) => { setAmountMin(e.target.value); setPage(0); }}
-            />
-            <span className="text-zinc-600 text-xs">–</span>
-            <input
-              type="number" min="0" step="0.01" placeholder="Max"
-              className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm text-zinc-100 w-24 focus:outline-none focus:border-yellow-400/50"
-              value={amountMax}
-              onChange={(e) => { setAmountMax(e.target.value); setPage(0); }}
-            />
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-zinc-500">Sort:</span>
-            <select className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400/50"
-              value={sortField} onChange={(e) => setSortField(e.target.value)}>
-              <option value="date">Date</option>
-              <option value="amount">Amount</option>
-              <option value="merchant">Merchant</option>
-              <option value="category">Category</option>
-            </select>
-            <button
-              onClick={() => setSortDir((d) => d === "asc" ? "desc" : "asc")}
-              className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm text-zinc-300 hover:bg-zinc-700 w-10"
-            >
-              {sortDir === "asc" ? "↑" : "↓"}
-            </button>
-          </div>
-          <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
-            <input type="checkbox" className="accent-yellow-400" checked={fixedOnly}
-              onChange={(e) => { setFixedOnly(e.target.checked); setPage(0); }} />
-            Fixed only
-          </label>
-          <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
-            <input type="checkbox" className="accent-yellow-400" checked={recurringOnly}
-              onChange={(e) => { setRecurringOnly(e.target.checked); setPage(0); }} />
-            Recurring only
-          </label>
+          <button
+            onClick={() => setShowMoreFilters((v) => !v)}
+            className={`text-xs px-3 py-1.5 rounded border transition-colors ${showMoreFilters ? "bg-zinc-700 border-zinc-600 text-zinc-200" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
+          >
+            Filters {(amountMin || amountMax || fixedOnly || recurringOnly || filterSource) ? "●" : ""}
+          </button>
+          <button
+            onClick={() => setShowColFilters((v) => !v)}
+            className={`text-xs px-3 py-1.5 rounded border transition-colors ${showColFilters ? "bg-zinc-700 border-zinc-600 text-zinc-200" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
+          >
+            Columns {Object.values(colFilter).some(Boolean) ? "●" : ""}
+          </button>
           {(search || filterCategory || filterSource || amountMin || amountMax || fixedOnly || recurringOnly || Object.values(colFilter).some(Boolean)) && (
             <button
               onClick={() => { setSearch(""); setFilterCategory(""); setFilterSource(""); setAmountMin(""); setAmountMax(""); setFixedOnly(false); setRecurringOnly(false); setColFilter({ date: "", merchant: "", category: "", source: "" }); setPage(0); }}
-              className="text-xs text-zinc-500 hover:text-zinc-300 underline ml-auto"
+              className="text-xs text-zinc-500 hover:text-zinc-300 underline"
             >
-              Clear all filters
+              Clear
             </button>
           )}
         </div>
+
+        {/* Secondary filters — hidden by default */}
+        {showMoreFilters && (
+          <div className="flex flex-wrap gap-3 items-center pt-1 border-t border-zinc-800">
+            <select className={inputCls} value={filterSource} onChange={(e) => { setFilterSource(e.target.value); setPage(0); }}>
+              <option value="">All sources</option>
+              {allSources.map((s) => <option key={s} value={s}>{s.toUpperCase()}</option>)}
+            </select>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-zinc-500">Amount:</span>
+              <input type="number" min="0" step="0.01" placeholder="Min"
+                className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm text-zinc-100 w-20 focus:outline-none focus:border-yellow-400/50"
+                value={amountMin} onChange={(e) => { setAmountMin(e.target.value); setPage(0); }} />
+              <span className="text-zinc-600 text-xs">–</span>
+              <input type="number" min="0" step="0.01" placeholder="Max"
+                className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm text-zinc-100 w-20 focus:outline-none focus:border-yellow-400/50"
+                value={amountMax} onChange={(e) => { setAmountMax(e.target.value); setPage(0); }} />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-zinc-500">Sort:</span>
+              <select className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400/50"
+                value={sortField} onChange={(e) => setSortField(e.target.value)}>
+                <option value="date">Date</option>
+                <option value="amount">Amount</option>
+                <option value="merchant">Merchant</option>
+                <option value="category">Category</option>
+              </select>
+              <button onClick={() => setSortDir((d) => d === "asc" ? "desc" : "asc")}
+                className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm text-zinc-300 hover:bg-zinc-700 w-8">
+                {sortDir === "asc" ? "↑" : "↓"}
+              </button>
+            </div>
+            <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
+              <input type="checkbox" className="accent-yellow-400" checked={fixedOnly}
+                onChange={(e) => { setFixedOnly(e.target.checked); setPage(0); }} />
+              Fixed only
+            </label>
+            <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
+              <input type="checkbox" className="accent-yellow-400" checked={recurringOnly}
+                onChange={(e) => { setRecurringOnly(e.target.checked); setPage(0); }} />
+              Recurring only
+            </label>
+          </div>
+        )}
       </div>
 
       {error && <p className="text-red-400 text-sm">{error}</p>}
@@ -454,39 +465,33 @@ export default function Transactions() {
                   <th className="hidden sm:table-cell px-4 py-2 font-medium text-center" title="Recurring">↻</th>
                   <th className="px-4 py-2 font-medium"></th>
                 </tr>
-                <tr className="border-b border-zinc-700 bg-zinc-800/60">
-                  {/* Empty cell for checkbox column */}
-                  <td className="px-3 py-1"></td>
-                  {["date","merchant","category"].map((f) => (
-                    <td key={f} className="px-2 py-1">
-                      <input
-                        type="text"
-                        placeholder="Filter..."
+                {showColFilters && (
+                  <tr className="border-b border-zinc-700 bg-zinc-800/60">
+                    <td className="px-3 py-1"></td>
+                    {["date","merchant","category"].map((f) => (
+                      <td key={f} className="px-2 py-1">
+                        <input type="text" placeholder="Filter..."
+                          className="w-full bg-zinc-700/60 border border-zinc-600/50 rounded px-2 py-0.5 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-yellow-400/50"
+                          value={colFilter[f]}
+                          onChange={(e) => { setColFilter(cf => ({ ...cf, [f]: e.target.value })); setPage(0); }} />
+                      </td>
+                    ))}
+                    <td className="px-2 py-1"></td>
+                    <td className="hidden sm:table-cell px-2 py-1">
+                      <input type="text" placeholder="Filter..."
                         className="w-full bg-zinc-700/60 border border-zinc-600/50 rounded px-2 py-0.5 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-yellow-400/50"
-                        value={colFilter[f]}
-                        onChange={(e) => { setColFilter(cf => ({ ...cf, [f]: e.target.value })); setPage(0); }}
-                      />
+                        value={colFilter.source}
+                        onChange={(e) => { setColFilter(cf => ({ ...cf, source: e.target.value })); setPage(0); }} />
                     </td>
-                  ))}
-                  <td className="px-2 py-1"></td>
-                  <td className="hidden sm:table-cell px-2 py-1">
-                    <input
-                      type="text"
-                      placeholder="Filter..."
-                      className="w-full bg-zinc-700/60 border border-zinc-600/50 rounded px-2 py-0.5 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-yellow-400/50"
-                      value={colFilter.source}
-                      onChange={(e) => { setColFilter(cf => ({ ...cf, source: e.target.value })); setPage(0); }}
-                    />
-                  </td>
-                  {/* Empty cell for recurring column */}
-                  <td className="hidden sm:table-cell px-2 py-1"></td>
-                  <td className="px-2 py-1 text-right">
-                    {Object.values(colFilter).some(Boolean) && (
-                      <button onClick={() => { setColFilter({ date: "", merchant: "", category: "", source: "" }); setPage(0); }}
-                        className="text-xs text-zinc-600 hover:text-zinc-400">✕</button>
-                    )}
-                  </td>
-                </tr>
+                    <td className="hidden sm:table-cell px-2 py-1"></td>
+                    <td className="px-2 py-1 text-right">
+                      {Object.values(colFilter).some(Boolean) && (
+                        <button onClick={() => { setColFilter({ date: "", merchant: "", category: "", source: "" }); setPage(0); }}
+                          className="text-xs text-zinc-600 hover:text-zinc-400">✕</button>
+                      )}
+                    </td>
+                  </tr>
+                )}
               </thead>
               <tbody>
                 {paginated.map((txn) => (

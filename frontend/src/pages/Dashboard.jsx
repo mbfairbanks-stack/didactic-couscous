@@ -355,14 +355,14 @@ export default function Dashboard() {
               color={projections.projected_year_balance >= 0 ? "purple" : "red"} />
           </div>
 
-          {/* Fixed expense breakdown */}
+          {/* Fixed expense breakdown — collapsed by default */}
           {projections.fixed_categories?.length > 0 && (
-            <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Fixed Monthly Expenses</h3>
-                <span className="text-xs text-zinc-600">avg per month · from budget summary</span>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-8 gap-y-2">
+            <details className="bg-zinc-900 border border-zinc-700 rounded-xl p-5">
+              <summary className="text-xs font-semibold text-zinc-500 uppercase tracking-wide cursor-pointer hover:text-zinc-300 flex items-center justify-between">
+                <span>Fixed Monthly Expenses</span>
+                <span className="text-yellow-400 font-bold normal-case text-sm">{fmt(projections.fixed_monthly_total)}</span>
+              </summary>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-8 gap-y-2 mt-4">
                 {projections.fixed_categories.map((c) => (
                   <div key={c.category} className="flex justify-between text-sm">
                     <span className="text-zinc-400 truncate mr-2">{c.category}</span>
@@ -370,11 +370,7 @@ export default function Dashboard() {
                   </div>
                 ))}
               </div>
-              <div className="border-t border-zinc-800 mt-3 pt-3 flex justify-between text-sm font-semibold">
-                <span className="text-zinc-300">Total Fixed</span>
-                <span className="text-yellow-400">{fmt(projections.fixed_monthly_total)}</span>
-              </div>
-            </div>
+            </details>
           )}
 
           {/* Year-end projection bar */}

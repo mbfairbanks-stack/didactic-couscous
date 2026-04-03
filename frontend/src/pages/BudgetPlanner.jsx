@@ -38,6 +38,7 @@ export default function BudgetPlanner() {
   const [overwrite, setOverwrite] = useState(false);
   const [copying, setCopying] = useState(false);
   const [copyResult, setCopyResult] = useState(null);
+  const [showSetBudgets, setShowSetBudgets] = useState(false);
   const [yoyActuals, setYoyActuals] = useState([]);
 
   useEffect(() => {
@@ -247,92 +248,61 @@ export default function BudgetPlanner() {
         )}
       </div>
 
-      {/* Auto-populate from history */}
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-4 space-y-3">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <p className="text-sm font-semibold text-zinc-200">Auto-populate from history</p>
-            <p className="text-xs text-zinc-500 mt-0.5">Set budget targets based on your spending averages from recent months.</p>
-          </div>
-          <div className="flex gap-3 items-end flex-wrap">
-            <div>
-              <label className="text-xs text-zinc-500 block mb-1">Look back</label>
-              <select className={inputCls} value={lookback} onChange={(e) => setLookback(Number(e.target.value))}>
-                {[1, 2, 3, 6, 12].map((n) => <option key={n} value={n}>{n} month{n !== 1 ? "s" : ""}</option>)}
-              </select>
+      {/* Set Budgets — collapsed by default */}
+      <div className="bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden">
+        <button
+          onClick={() => setShowSetBudgets((v) => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+        >
+          <span className="font-medium">Set Budgets</span>
+          <span className="text-zinc-600 text-xs">{showSetBudgets ? "▲ collapse" : "▼ expand"}</span>
+        </button>
+        {showSetBudgets && (
+          <div className="border-t border-zinc-800 p-4 space-y-4">
+            {/* Add single */}
+            <form onSubmit={addNew} className="flex gap-3 flex-wrap items-end">
+              <div>
+                <label className="text-xs text-zinc-500 block mb-1">Category</label>
+                <input type="text" placeholder="e.g. Groceries" className={`${inputCls} w-40`}
+                  value={newCategory} onChange={(e) => setNewCategory(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs text-zinc-500 block mb-1">Monthly Budget ($)</label>
+                <input type="number" step="0.01" min="0" placeholder="0.00" className={`${inputCls} w-28`}
+                  value={newAmount} onChange={(e) => setNewAmount(e.target.value)} />
+              </div>
+              <button type="submit" className="bg-yellow-400 text-black px-4 py-1.5 rounded text-sm font-medium hover:bg-yellow-300">Set</button>
+            </form>
+            {/* Auto-populate */}
+            <div className="border-t border-zinc-800 pt-4 space-y-3">
+              <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Auto-populate from history</p>
+              <div className="flex gap-3 items-center flex-wrap">
+                <select className={inputCls} value={lookback} onChange={(e) => setLookback(Number(e.target.value))}>
+                  {[1, 2, 3, 6, 12].map((n) => <option key={n} value={n}>{n} month{n !== 1 ? "s" : ""}</option>)}
+                </select>
+                <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
+                  <input type="checkbox" className="accent-yellow-400" checked={overwrite} onChange={(e) => setOverwrite(e.target.checked)} />
+                  Overwrite existing
+                </label>
+                <button onClick={handleAutoPopulate} disabled={autoPopulating}
+                  className="bg-zinc-700 text-zinc-100 px-4 py-1.5 rounded text-sm font-medium hover:bg-zinc-600 disabled:opacity-40">
+                  {autoPopulating ? "Calculating..." : "Auto-populate"}
+                </button>
+                <button onClick={handleCopyFromLastMonth} disabled={copying}
+                  className="bg-zinc-700 text-zinc-100 px-4 py-1.5 rounded text-sm font-medium hover:bg-zinc-600 disabled:opacity-40">
+                  {copying ? "Copying..." : `Copy from ${MONTH_LABELS[prevMonth]}`}
+                </button>
+              </div>
+              {autoPopResult && (
+                <p className="text-sm text-green-400">Set {autoPopResult.set} targets from {autoPopResult.months_analyzed} month{autoPopResult.months_analyzed !== 1 ? "s" : ""} of history.</p>
+              )}
+              {copyResult && (
+                <p className="text-sm text-green-400">Copied {copyResult.copied} target{copyResult.copied !== 1 ? "s" : ""}.</p>
+              )}
             </div>
-            <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer pb-1.5">
-              <input
-                type="checkbox"
-                className="accent-yellow-400"
-                checked={overwrite}
-                onChange={(e) => setOverwrite(e.target.checked)}
-              />
-              Overwrite existing
-            </label>
-            <button
-              onClick={handleAutoPopulate}
-              disabled={autoPopulating}
-              className="bg-zinc-700 text-zinc-100 px-4 py-1.5 rounded text-sm font-medium hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {autoPopulating ? "Calculating..." : "Auto-populate"}
-            </button>
-          </div>
-        </div>
-        {autoPopResult && (
-          <div className="bg-green-900/20 border border-green-700/50 rounded-lg p-3 text-sm text-green-400">
-            Set <strong>{autoPopResult.set}</strong> targets from {autoPopResult.months_analyzed} month{autoPopResult.months_analyzed !== 1 ? "s" : ""} of history.
-            {autoPopResult.skipped > 0 && <span className="text-zinc-500"> ({autoPopResult.skipped} skipped)</span>}
           </div>
         )}
-        <div className="border-t border-zinc-800 pt-3 flex items-center gap-3 flex-wrap">
-          <div>
-            <p className="text-xs text-zinc-500 mb-1">Or copy from {MONTH_LABELS[prevMonth]} {prevMonthYear}</p>
-            <button
-              onClick={handleCopyFromLastMonth}
-              disabled={copying}
-              className="bg-zinc-700 text-zinc-100 px-4 py-1.5 rounded text-sm font-medium hover:bg-zinc-600 disabled:opacity-40"
-            >
-              {copying ? "Copying..." : `Copy from ${MONTH_LABELS[prevMonth]}`}
-            </button>
-          </div>
-          {copyResult && (
-            <span className="text-xs text-green-400">
-              Copied {copyResult.copied} target{copyResult.copied !== 1 ? "s" : ""}.
-              {copyResult.skipped > 0 && ` (${copyResult.skipped} already set, skipped)`}
-            </span>
-          )}
-        </div>
       </div>
-
-      {/* Add new category budget */}
-      <form onSubmit={addNew} className="bg-zinc-900 border border-zinc-700 rounded-xl p-4 flex gap-3 flex-wrap items-end">
-        <div>
-          <label className="text-xs text-zinc-500 block mb-1">Category</label>
-          <input
-            type="text"
-            placeholder="e.g. Groceries"
-            className={`${inputCls} w-44`}
-            value={newCategory}
-            onChange={(e) => setNewCategory(e.target.value)}
-          />
-        </div>
-        <div>
-          <label className="text-xs text-zinc-500 block mb-1">Monthly Budget ($)</label>
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            placeholder="0.00"
-            className={`${inputCls} w-32`}
-            value={newAmount}
-            onChange={(e) => setNewAmount(e.target.value)}
-          />
-        </div>
-        <button type="submit" className="bg-yellow-400 text-black px-4 py-1.5 rounded text-sm font-medium hover:bg-yellow-300">
-          Set Budget
-        </button>
-      </form>
 
       {/* Table grouped by Needs / Wants */}
       {visibleCategories.length === 0 ? (
