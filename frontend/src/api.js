@@ -185,9 +185,11 @@ export const exportUrl = (year, month) => {
 };
 
 // AI Insights (streaming SSE)
+// month=null means annual mode
 export const streamInsights = async (year, month, onChunk, onDone, onError) => {
   const token = getToken();
-  const res = await fetch(`${BASE}/insights?year=${year}&month=${month}`, {
+  const qs = month ? `year=${year}&month=${month}` : `year=${year}`;
+  const res = await fetch(`${BASE}/insights?${qs}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!res.ok) {
@@ -219,8 +221,9 @@ export const streamInsights = async (year, month, onChunk, onDone, onError) => {
 };
 
 
+// month=0 means annual
 export const saveInsightsLog = (year, month, content) =>
-  req("/insights/log", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ year, month, content }) });
+  req("/insights/log", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ year, month: month ?? 0, content }) });
 
 export const getInsightsLog = () => req("/insights/log");
 

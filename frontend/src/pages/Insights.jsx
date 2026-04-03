@@ -57,11 +57,12 @@ function renderMarkdown(text) {
   return elements;
 }
 
-const cacheKey = (year, month) => `insights_${year}_${month}`;
+const cacheKey = (year, month) => month ? `insights_${year}_${month}` : `insights_${year}_annual`;
 
 export default function Insights() {
   const [year, setYear] = useState(currentYear);
   const [month, setMonth] = useState(currentMonth);
+  const [mode, setMode] = useState("annual"); // "monthly" | "annual"
   const [years, setYears] = useState([currentYear]);
   const [loading, setLoading] = useState(false);
   const [text, setText] = useState("");
@@ -71,23 +72,25 @@ export default function Insights() {
   const [expandedLog, setExpandedLog] = useState(null);
   const bottomRef = useRef(null);
 
+  const effectiveMonth = mode === "annual" ? null : month;
+
   useEffect(() => {
     getYears().then((y) => setYears(y.length ? y : [currentYear]));
     getInsightsLog().then(setLog).catch(() => {});
   }, []);
 
-  // Load cache when month/year changes
+  // Load cache when period changes
   useEffect(() => {
-    const saved = localStorage.getItem(cacheKey(year, month));
+    const saved = localStorage.getItem(cacheKey(year, effectiveMonth));
     if (saved) { setText(saved); setCached(true); }
     else { setText(""); setCached(false); }
-  }, [year, month]);
+  }, [year, effectiveMonth]);
 
   useEffect(() => {
     if (loading) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [text, loading]);
 
-  const handleGenerate = async (forceRefresh = false) => {
+  const handleGenerate = async () => {
     setText("");
     setCached(false);
     setError("");
@@ -96,13 +99,13 @@ export default function Insights() {
       let full = "";
       await streamInsights(
         year,
-        month,
+        effectiveMonth,
         (chunk) => { full += chunk; setText((prev) => prev + chunk); },
         () => {
           setLoading(false);
           if (full) {
-            localStorage.setItem(cacheKey(year, month), full);
-            saveInsightsLog(year, month, full)
+            localStorage.setItem(cacheKey(year, effectiveMonth), full);
+            saveInsightsLog(year, effectiveMonth, full)
               .then(() => getInsightsLog().then(setLog))
               .catch(() => {});
           }
@@ -116,43 +119,69 @@ export default function Insights() {
   };
 
   const selectCls = "bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400/50";
+  const periodLabel = mode === "annual" ? `Full Year ${year}` : `${MONTH_LABELS[month]} ${year}`;
 
   return (
     <div className="space-y-6 max-w-3xl">
       <h1 className="text-2xl font-bold text-zinc-100">AI Insights</h1>
 
       {/* Controls */}
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5 flex flex-wrap gap-4 items-end">
-        <div>
-          <label className="text-xs text-zinc-500 block mb-1">Year</label>
-          <select className={selectCls} value={year} onChange={(e) => setYear(Number(e.target.value))}>
-            {years.map((y) => <option key={y} value={y}>{y}</option>)}
-          </select>
+      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5 space-y-4">
+        {/* Mode toggle */}
+        <div className="flex gap-1 bg-zinc-800 p-1 rounded-lg w-fit">
+          {[["annual", "Full Year"], ["monthly", "Single Month"]].map(([val, label]) => (
+            <button
+              key={val}
+              onClick={() => setMode(val)}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                mode === val
+                  ? "bg-yellow-400 text-black"
+                  : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
-        <div>
-          <label className="text-xs text-zinc-500 block mb-1">Month</label>
-          <select className={selectCls} value={month} onChange={(e) => setMonth(Number(e.target.value))}>
-            {MONTH_LABELS.slice(1).map((m, i) => (
-              <option key={i + 1} value={i + 1}>{m}</option>
-            ))}
-          </select>
+
+        <div className="flex flex-wrap gap-4 items-end">
+          <div>
+            <label className="text-xs text-zinc-500 block mb-1">Year</label>
+            <select className={selectCls} value={year} onChange={(e) => setYear(Number(e.target.value))}>
+              {years.map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+          {mode === "monthly" && (
+            <div>
+              <label className="text-xs text-zinc-500 block mb-1">Month</label>
+              <select className={selectCls} value={month} onChange={(e) => setMonth(Number(e.target.value))}>
+                {MONTH_LABELS.slice(1).map((m, i) => (
+                  <option key={i + 1} value={i + 1}>{m}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <button
+            onClick={handleGenerate}
+            disabled={loading}
+            className="bg-yellow-400 text-black px-5 py-2 rounded-lg text-sm font-medium hover:bg-yellow-300 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {loading ? (
+              <>
+                <span className="inline-block w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                Analyzing...
+              </>
+            ) : cached ? "Regenerate" : "Generate Insights"}
+          </button>
+          {cached && !loading && (
+            <span className="text-xs text-zinc-500 self-center bg-zinc-800 px-2 py-1 rounded">Cached</span>
+          )}
+          {!cached && (
+            <p className="text-xs text-zinc-600 self-center">
+              {mode === "annual" ? "Analyzes all 12 months of data" : "Analyzes a single month"} — powered by Claude
+            </p>
+          )}
         </div>
-        <button
-          onClick={() => handleGenerate()}
-          disabled={loading}
-          className="bg-yellow-400 text-black px-5 py-2 rounded-lg text-sm font-medium hover:bg-yellow-300 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
-        >
-          {loading ? (
-            <>
-              <span className="inline-block w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
-              Analyzing...
-            </>
-          ) : cached ? "Regenerate" : "Generate Insights"}
-        </button>
-        {cached && !loading && (
-          <span className="text-xs text-zinc-500 self-center bg-zinc-800 px-2 py-1 rounded">Cached</span>
-        )}
-        {!cached && <p className="text-xs text-zinc-600 self-center">Powered by Claude — takes 10–20 seconds</p>}
       </div>
 
       {error && (
@@ -172,7 +201,7 @@ export default function Insights() {
         <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">
-              {MONTH_LABELS[month]} {year} — Financial Analysis
+              {periodLabel} — Financial Analysis
             </h2>
             {!loading && (
               <button
@@ -194,8 +223,15 @@ export default function Insights() {
       )}
 
       {!text && !loading && !error && (
-        <div className="bg-zinc-900 border border-dashed border-zinc-700 rounded-xl p-10 text-center text-zinc-600 text-sm">
-          Select a month and click Generate Insights to get AI-powered analysis of your spending.
+        <div className="bg-zinc-900 border border-dashed border-zinc-700 rounded-xl p-10 text-center">
+          <p className="text-zinc-500 font-medium mb-1">
+            {mode === "annual" ? `Analyze all of ${year}` : `Analyze ${MONTH_LABELS[month]} ${year}`}
+          </p>
+          <p className="text-zinc-600 text-sm">
+            {mode === "annual"
+              ? "Get a comprehensive annual review: YoY trends, budget adherence, seasonal patterns, and goals for next year."
+              : "Get monthly spending insights, budget alerts, and specific savings recommendations."}
+          </p>
         </div>
       )}
 
@@ -205,16 +241,23 @@ export default function Insights() {
           <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wide">History</h2>
           {log.map((entry) => {
             const dt = new Date(entry.generated_at);
-            const label = `${MONTH_LABELS[entry.month]} ${entry.year} — ${dt.toLocaleDateString()} ${dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+            const isAnnual = entry.month === 0;
+            const entryLabel = isAnnual
+              ? `Full Year ${entry.year}`
+              : `${MONTH_LABELS[entry.month]} ${entry.year}`;
+            const timeLabel = `${dt.toLocaleDateString()} ${dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
             const isExpanded = expandedLog === entry.id;
             return (
               <div key={entry.id} className="bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3">
                   <button
                     onClick={() => setExpandedLog(isExpanded ? null : entry.id)}
-                    className="text-sm text-zinc-300 hover:text-zinc-100 text-left flex-1"
+                    className="text-sm text-zinc-300 hover:text-zinc-100 text-left flex-1 flex items-center gap-2"
                   >
-                    {isExpanded ? "▾" : "▸"} {label}
+                    {isExpanded ? "▾" : "▸"}
+                    <span>{entryLabel}</span>
+                    {isAnnual && <span className="text-xs bg-yellow-400/15 text-yellow-400 px-1.5 py-0.5 rounded">Annual</span>}
+                    <span className="text-zinc-600 text-xs">— {timeLabel}</span>
                   </button>
                   <button
                     onClick={() => {

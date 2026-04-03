@@ -1637,8 +1637,16 @@ MONTH_NAMES = ["", "January", "February", "March", "April", "May", "June",
                "July", "August", "September", "October", "November", "December"]
 
 
-def _build_insights_context(year: int, month: int, db: Session) -> str:
-    # Current month spending by category
+def _build_insights_context(year: int, month: Optional[int], db: Session) -> str:
+    """Build the AI prompt context. month=None means full-year annual analysis."""
+
+    if month:
+        return _build_monthly_context(year, month, db)
+    return _build_annual_context(year, db)
+
+
+def _build_monthly_context(year: int, month: int, db: Session) -> str:
+    """Single-month analysis context."""
     cat_rows = db.execute(
         select(models.Transaction.category, func.sum(models.Transaction.amount).label("total"))
         .where(models.Transaction.year == year, models.Transaction.month == month)
@@ -1646,7 +1654,6 @@ def _build_insights_context(year: int, month: int, db: Session) -> str:
         .order_by(func.sum(models.Transaction.amount).desc())
     ).all()
 
-    # Current month income
     income_rows = db.execute(
         select(models.Income.person, models.Income.income_type, models.Income.amount)
         .where(models.Income.year == year, models.Income.month == month)
@@ -1654,52 +1661,39 @@ def _build_insights_context(year: int, month: int, db: Session) -> str:
     ).all()
     total_income = sum(r.amount for r in income_rows)
 
-    # Budget targets for this year (month=None = annual default)
     target_rows = db.execute(
         select(models.BudgetTarget.category, models.BudgetTarget.amount)
-        .where(models.BudgetTarget.year == year, models.BudgetTarget.month == None)
+        .where(models.BudgetTarget.year == year, models.BudgetTarget.month == month)
     ).all()
     targets = {r.category: r.amount for r in target_rows}
 
-    # Historical category averages (all data excluding current month)
-    # Historical category averages (excluding current month)
+    # Historical averages excluding current month
     hist_totals = defaultdict(list)
-    raw_hist = db.execute(
-        select(
-            models.Transaction.year,
-            models.Transaction.month,
-            models.Transaction.category,
-            func.sum(models.Transaction.amount).label("total"),
-        )
-        .where(
-            ~((models.Transaction.year == year) & (models.Transaction.month == month))
-        )
+    for r in db.execute(
+        select(models.Transaction.year, models.Transaction.month, models.Transaction.category,
+               func.sum(models.Transaction.amount).label("total"))
+        .where(~((models.Transaction.year == year) & (models.Transaction.month == month)))
         .group_by(models.Transaction.year, models.Transaction.month, models.Transaction.category)
-    ).all()
-    for r in raw_hist:
+    ).all():
         hist_totals[r.category].append(r.total)
-    hist_avg = {cat: sum(vals) / len(vals) for cat, vals in hist_totals.items()}
+    hist_avg = {cat: sum(v) / len(v) for cat, v in hist_totals.items()}
 
-    # YTD totals
-    ytd_exp = db.execute(
-        select(func.sum(models.Transaction.amount))
-        .where(models.Transaction.year == year, models.Transaction.month <= month)
-    ).scalar() or 0
-    ytd_inc = db.execute(
-        select(func.sum(models.Income.amount))
-        .where(models.Income.year == year, models.Income.month <= month)
-    ).scalar() or 0
+    ytd_exp = db.execute(select(func.sum(models.Transaction.amount))
+        .where(models.Transaction.year == year, models.Transaction.month <= month)).scalar() or 0
+    ytd_inc = db.execute(select(func.sum(models.Income.amount))
+        .where(models.Income.year == year, models.Income.month <= month)).scalar() or 0
 
-    # Build prompt
-    month_label = MONTH_NAMES[month] if 1 <= month <= 12 else str(month)
     total_expenses = sum(r.total for r in cat_rows)
+    savings = total_income - total_expenses
+    savings_rate = (savings / total_income * 100) if total_income else 0
+    month_label = MONTH_NAMES[month]
 
     lines = [
-        f"You are a personal finance advisor analyzing a Canadian household budget.",
-        f"",
+        "You are a personal finance advisor analyzing a Canadian household budget.",
+        "",
         f"## Period: {month_label} {year}",
-        f"",
-        f"### Income",
+        "",
+        "### Income",
     ]
     if income_rows:
         for r in income_rows:
@@ -1707,24 +1701,22 @@ def _build_insights_context(year: int, month: int, db: Session) -> str:
     else:
         lines.append("- No income recorded for this month")
     lines.append(f"- **Total household income: ${total_income:,.0f}**")
-    lines.append("")
-    lines.append(f"### Spending by Category (total: ${total_expenses:,.0f})")
-    lines.append("| Category | This Month | Budget Target | Hist. Avg | vs Budget | vs Avg |")
-    lines.append("|---|---|---|---|---|---|")
+    lines += [
+        "",
+        f"### Spending by Category (total: ${total_expenses:,.0f})",
+        "| Category | This Month | Budget | Hist. Avg | vs Budget | vs Avg |",
+        "|---|---|---|---|---|---|",
+    ]
     for r in cat_rows:
         budget = targets.get(r.category)
         avg = hist_avg.get(r.category)
         vs_budget = f"+${r.total - budget:,.0f} over" if budget and r.total > budget else (f"${budget - r.total:,.0f} under" if budget else "N/A")
-        vs_avg = f"+${r.total - avg:,.0f} ({((r.total/avg)-1)*100:.0f}%)" if avg else "N/A"
-        lines.append(
-            f"| {r.category} | ${r.total:,.0f} | {'$'+f'{budget:,.0f}' if budget else 'N/A'} | {'$'+f'{avg:,.0f}' if avg else 'N/A'} | {vs_budget} | {vs_avg} |"
-        )
+        vs_avg = f"+${r.total - avg:,.0f} ({((r.total / avg) - 1) * 100:.0f}%)" if avg else "N/A"
+        lines.append(f"| {r.category} | ${r.total:,.0f} | {'$' + f'{budget:,.0f}' if budget else 'N/A'} | {'$' + f'{avg:,.0f}' if avg else 'N/A'} | {vs_budget} | {vs_avg} |")
 
-    savings = total_income - total_expenses
-    savings_rate = (savings / total_income * 100) if total_income else 0
     lines += [
         "",
-        f"### Month Summary",
+        "### Month Summary",
         f"- Net savings: ${savings:,.0f} ({savings_rate:.1f}% savings rate)",
         f"- YTD income: ${ytd_inc:,.0f} | YTD expenses: ${ytd_exp:,.0f} | YTD balance: ${ytd_inc - ytd_exp:,.0f}",
         "",
@@ -1739,12 +1731,159 @@ def _build_insights_context(year: int, month: int, db: Session) -> str:
         "",
         "Keep the tone practical and encouraging. Use Canadian dollar amounts. Be specific with numbers.",
     ]
+    return "\n".join(lines)
 
+
+def _build_annual_context(year: int, db: Session) -> str:
+    """Full-year analysis context."""
+    # All transactions this year by category
+    cat_rows = db.execute(
+        select(models.Transaction.category, func.sum(models.Transaction.amount).label("total"))
+        .where(models.Transaction.year == year)
+        .group_by(models.Transaction.category)
+        .order_by(func.sum(models.Transaction.amount).desc())
+    ).all()
+
+    # Month-by-month breakdown
+    monthly_exp = db.execute(
+        select(models.Transaction.month, func.sum(models.Transaction.amount).label("total"))
+        .where(models.Transaction.year == year)
+        .group_by(models.Transaction.month)
+        .order_by(models.Transaction.month)
+    ).all()
+    monthly_inc = db.execute(
+        select(models.Income.month, func.sum(models.Income.amount).label("total"))
+        .where(models.Income.year == year)
+        .group_by(models.Income.month)
+        .order_by(models.Income.month)
+    ).all()
+    inc_by_month = {r.month: r.total for r in monthly_inc}
+    exp_by_month = {r.month: r.total for r in monthly_exp}
+
+    # Annual totals
+    total_expenses = sum(r.total for r in cat_rows)
+    total_income = db.execute(
+        select(func.sum(models.Income.amount)).where(models.Income.year == year)
+    ).scalar() or 0
+
+    # Prior year for comparison
+    prior_cat = db.execute(
+        select(models.Transaction.category, func.sum(models.Transaction.amount).label("total"))
+        .where(models.Transaction.year == year - 1)
+        .group_by(models.Transaction.category)
+    ).all()
+    prior_totals = {r.category: r.total for r in prior_cat}
+    prior_income = db.execute(
+        select(func.sum(models.Income.amount)).where(models.Income.year == year - 1)
+    ).scalar() or 0
+    prior_expenses = sum(r.total for r in prior_cat)
+
+    # Budget targets for the year (use any month's targets as reference — average them)
+    target_rows = db.execute(
+        select(models.BudgetTarget.category, func.avg(models.BudgetTarget.amount).label("avg_amount"))
+        .where(models.BudgetTarget.year == year)
+        .group_by(models.BudgetTarget.category)
+    ).all()
+    targets = {r.category: r.avg_amount * 12 for r in target_rows}  # annualise monthly budgets
+
+    # Peak spending month per top category
+    peak_rows = db.execute(
+        select(models.Transaction.category, models.Transaction.month,
+               func.sum(models.Transaction.amount).label("total"))
+        .where(models.Transaction.year == year)
+        .group_by(models.Transaction.category, models.Transaction.month)
+    ).all()
+    cat_monthly = defaultdict(dict)
+    for r in peak_rows:
+        cat_monthly[r.category][r.month] = r.total
+
+    # Savings by month
+    savings_by_month = {m: inc_by_month.get(m, 0) - exp_by_month.get(m, 0) for m in range(1, 13)}
+    best_month = max(savings_by_month, key=savings_by_month.get)
+    worst_month = min(savings_by_month, key=savings_by_month.get)
+
+    total_savings = total_income - total_expenses
+    savings_rate = (total_savings / total_income * 100) if total_income else 0
+
+    months_with_data = [m for m in range(1, 13) if exp_by_month.get(m, 0) > 0]
+    last_month_label = MONTH_NAMES[max(months_with_data)] if months_with_data else "N/A"
+
+    lines = [
+        "You are a personal finance advisor analyzing a Canadian household budget.",
+        "",
+        f"## Period: Full Year {year} (through {last_month_label})",
+        "",
+        f"### Annual Totals",
+        f"- Total household income: ${total_income:,.0f}",
+        f"- Total expenses: ${total_expenses:,.0f}",
+        f"- Net savings: **${total_savings:,.0f}** ({savings_rate:.1f}% savings rate)",
+    ]
+
+    if prior_income or prior_expenses:
+        prior_savings = prior_income - prior_expenses
+        inc_chg = ((total_income - prior_income) / prior_income * 100) if prior_income else 0
+        exp_chg = ((total_expenses - prior_expenses) / prior_expenses * 100) if prior_expenses else 0
+        lines += [
+            "",
+            f"### Year-over-Year vs {year - 1}",
+            f"- Income: ${total_income:,.0f} vs ${prior_income:,.0f} ({inc_chg:+.1f}%)",
+            f"- Expenses: ${total_expenses:,.0f} vs ${prior_expenses:,.0f} ({exp_chg:+.1f}%)",
+            f"- Savings: ${total_savings:,.0f} vs ${prior_savings:,.0f}",
+        ]
+
+    lines += [
+        "",
+        "### Month-by-Month Summary",
+        "| Month | Income | Expenses | Savings | Rate |",
+        "|---|---|---|---|---|",
+    ]
+    for m in range(1, 13):
+        inc = inc_by_month.get(m, 0)
+        exp = exp_by_month.get(m, 0)
+        if inc == 0 and exp == 0:
+            continue
+        sav = inc - exp
+        rate = f"{sav / inc * 100:.0f}%" if inc else "—"
+        lines.append(f"| {MONTH_NAMES[m][:3]} | ${inc:,.0f} | ${exp:,.0f} | ${sav:,.0f} | {rate} |")
+
+    lines += [
+        "",
+        f"### Spending by Category (annual total: ${total_expenses:,.0f})",
+        "| Category | Annual Total | Annual Budget | vs {yr_prior} | Peak Month |".format(yr_prior=year - 1),
+        "|---|---|---|---|---|",
+    ]
+    for r in cat_rows:
+        budget = targets.get(r.category)
+        prior = prior_totals.get(r.category)
+        vs_prior = f"+${r.total - prior:,.0f} ({((r.total / prior) - 1) * 100:.0f}%)" if prior else "N/A"
+        peak_m = max(cat_monthly.get(r.category, {1: 0}), key=cat_monthly.get(r.category, {1: 0}).get)
+        peak_label = MONTH_NAMES[peak_m][:3] if cat_monthly.get(r.category) else "—"
+        vs_budget = f"${budget - r.total:,.0f} under" if budget and r.total <= budget else (f"+${r.total - budget:,.0f} over" if budget else "N/A")
+        lines.append(f"| {r.category} | ${r.total:,.0f} | {'$' + f'{budget:,.0f}' if budget else 'N/A'} ({vs_budget}) | {vs_prior} | {peak_label} |")
+
+    lines += [
+        "",
+        f"### Savings Patterns",
+        f"- Best month: {MONTH_NAMES[best_month]} (saved ${savings_by_month[best_month]:,.0f})",
+        f"- Worst month: {MONTH_NAMES[worst_month]} (saved ${savings_by_month[worst_month]:,.0f})",
+        "",
+        "---",
+        "",
+        "Please provide a comprehensive annual financial review for this household. Include:",
+        "1. **Annual performance summary** — overall savings rate, income vs expenses trend vs prior year",
+        "2. **Top spending categories** — which categories drove the most spending and how they compare to prior year",
+        "3. **Budget adherence** — where they stayed within budget and where they overspent",
+        "4. **Seasonal patterns** — months with unusually high/low spending and why that might be",
+        "5. **Savings rate analysis** — is the rate healthy? What would move it meaningfully?",
+        "6. **Top 3 priorities for next year** — specific, actionable goals based on this year's data",
+        "",
+        "Keep the tone practical and encouraging. Use Canadian dollar amounts. Be specific with numbers.",
+    ]
     return "\n".join(lines)
 
 
 @app.get("/insights")
-async def get_insights(year: int, month: int, db: Session = Depends(get_db)):
+async def get_insights(year: int, month: Optional[int] = None, db: Session = Depends(get_db)):
     import anthropic as anthropic_sdk
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
@@ -1773,7 +1912,7 @@ async def get_insights(year: int, month: int, db: Session = Depends(get_db)):
 
 class InsightsLogCreate(BaseModel):
     year: int
-    month: int
+    month: int  # 0 = annual
     content: str
 
 
