@@ -192,6 +192,7 @@ export default function Settings() {
             <label className="text-xs text-zinc-500 block mb-1">Group</label>
             <select className={inputCls} value={newCat.group}
               onChange={(e) => setNewCat({ ...newCat, group: e.target.value })}>
+              <option value="Committed">Committed</option>
               <option value="Needs">Needs</option>
               <option value="Wants">Wants</option>
               <option value="Other">Other</option>

@@ -30,16 +30,19 @@ export const WANTS = new Set([
   "Canva Sub", "Ipsy Sub",
 ]);
 
+let _committed = new Set();
 let _needs = NEEDS;
 let _wants = WANTS;
 
 /** Called by SettingsContext once category definitions load from the API. */
 export const updateCategoryGroups = (categories) => {
+  _committed = new Set(categories.filter((c) => c.group === "Committed").map((c) => c.name));
   _needs = new Set(categories.filter((c) => c.group === "Needs").map((c) => c.name));
   _wants = new Set(categories.filter((c) => c.group === "Wants").map((c) => c.name));
 };
 
 export const getCategoryGroup = (category) => {
+  if (_committed.has(category)) return "Committed";
   if (_needs.has(category)) return "Needs";
   if (_wants.has(category)) return "Wants";
   return "Other";

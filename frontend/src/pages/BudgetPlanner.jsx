@@ -40,6 +40,7 @@ export default function BudgetPlanner() {
   const [copyResult, setCopyResult] = useState(null);
   const [showSetBudgets, setShowSetBudgets] = useState(false);
   const [yoyActuals, setYoyActuals] = useState([]);
+  const [priorMonthsActuals, setPriorMonthsActuals] = useState([]); // 3 prior months for committed avg
 
   useEffect(() => {
     getYears().then((y) => setYears(y.length ? y : [currentYear])).catch(() => {});
@@ -48,10 +49,17 @@ export default function BudgetPlanner() {
 
   const load = useCallback(() => {
     setError("");
+    // Compute 3 prior months
+    const priorMonths = [];
+    for (let i = 1; i <= 3; i++) {
+      const m = month - i;
+      priorMonths.push(m <= 0 ? { y: year - 1, m: m + 12 } : { y: year, m });
+    }
     Promise.all([
       getCategorySummary(year, month).then(setActuals),
       getBudgetTargets({ year, month }).then(setTargets),
       getCategorySummary(year - 1, month).then(setYoyActuals).catch(() => setYoyActuals([])),
+      Promise.all(priorMonths.map(({ y, m }) => getCategorySummary(y, m).catch(() => []))).then(setPriorMonthsActuals),
     ]).catch((e) => setError(e.message));
   }, [year, month]);
 
@@ -163,6 +171,19 @@ export default function BudgetPlanner() {
   };
 
   const yoyMap = Object.fromEntries(yoyActuals.map((r) => [r.category, r.total]));
+
+  // 3-month rolling average per category for committed group
+  const committedAvgMap = (() => {
+    const totals = {};
+    const counts = {};
+    for (const monthData of priorMonthsActuals) {
+      for (const row of monthData) {
+        totals[row.category] = (totals[row.category] || 0) + row.total;
+        counts[row.category] = (counts[row.category] || 0) + 1;
+      }
+    }
+    return Object.fromEntries(Object.keys(totals).map((k) => [k, totals[k] / counts[k]]));
+  })();
 
   // Budget alert computations (across all non-hidden categories including children)
   const alertRows = allCategories.filter((row) => {
@@ -304,13 +325,13 @@ export default function BudgetPlanner() {
         )}
       </div>
 
-      {/* Table grouped by Needs / Wants */}
+      {/* Table grouped by Committed / Needs / Wants / Other */}
       {visibleCategories.length === 0 ? (
         <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-10 text-center text-zinc-600 text-sm">
           No data. Import a spreadsheet or add transactions.
         </div>
       ) : (
-        ["Needs", "Wants", "Other"].map((group) => {
+        ["Committed", "Needs", "Wants", "Other"].map((group) => {
           const rows = visibleCategories.filter((r) => getCategoryGroup(r.category) === group);
           if (!rows.length) return null;
           const groupActual = rows.reduce((s, r) => {
@@ -329,7 +350,9 @@ export default function BudgetPlanner() {
           const renderRow = (row, indent = false) => {
             const target = targetMap[row.category];
             const budget = target?.amount ?? 0;
-            const diff = budget - row.total;
+            const avg3 = committedAvgMap[row.category]; // 3-month rolling avg for committed
+            const ref = budget || (group === "Committed" ? avg3 : 0); // use avg as reference if no budget
+            const diff = ref - row.total;
             const isEditing = editing[row.category] !== undefined;
             return (
               <tr key={row.category} className={`border-b border-zinc-800 last:border-0 hover:bg-zinc-800 ${indent ? "bg-zinc-900/60" : ""}`}>
@@ -348,34 +371,32 @@ export default function BudgetPlanner() {
                         if (e.key === "Escape") setEditing((ed) => { const n = { ...ed }; delete n[row.category]; return n; });
                       }} />
                   ) : (
-                    <button onClick={() => setEditing({ ...editing, [row.category]: String(budget) })}
+                    <button onClick={() => setEditing({ ...editing, [row.category]: String(budget || Math.round(avg3 || 0)) })}
                       className="text-right hover:text-yellow-400 w-full text-zinc-300">
-                      {budget ? fmt(budget) : <span className="text-zinc-700">Set</span>}
+                      {budget ? fmt(budget) : group === "Committed" && avg3
+                        ? <span className="text-zinc-500 text-xs">~{fmt(avg3)} avg</span>
+                        : <span className="text-zinc-700">Set</span>}
                     </button>
                   )}
                 </td>
                 <td className={`px-4 py-2.5 text-right font-medium ${
-                  budget > 0 && row.total > budget ? "bg-red-900/30 text-red-400"
-                  : budget > 0 && row.total >= budget * 0.8 && (budget - row.total) > 5 ? "bg-yellow-900/20 text-yellow-300"
+                  ref > 0 && row.total > ref * 1.1 ? "bg-red-900/30 text-red-400"
                   : "text-zinc-300"
                 }`}>
                   <span className="flex items-center justify-end gap-1.5">
                     {fmt(row.total)}
-                    {budget > 0 && row.total > budget && (
-                      <span className="bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">Over!</span>
-                    )}
-                    {budget > 0 && row.total >= budget * 0.8 && row.total <= budget && (budget - row.total) > 5 && (
-                      <span title="Approaching limit">⚠</span>
+                    {ref > 0 && row.total > ref * 1.1 && (
+                      <span className="bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">High</span>
                     )}
                   </span>
                 </td>
-                <td className={`hidden sm:table-cell px-4 py-2.5 text-right font-medium ${diff < 0 ? "text-red-400" : "text-green-400"}`}>
-                  {budget ? (diff < 0 ? `-${fmt(Math.abs(diff))}` : `+${fmt(diff)}`) : "—"}
+                <td className={`hidden sm:table-cell px-4 py-2.5 text-right font-medium ${ref > 0 ? (diff < 0 ? "text-red-400" : "text-green-400") : "text-zinc-600"}`}>
+                  {ref > 0 ? (diff < 0 ? `-${fmt(Math.abs(diff))}` : `+${fmt(diff)}`) : "—"}
                 </td>
                 <td className="hidden lg:table-cell px-4 py-2.5 text-right text-zinc-600 text-xs">
                   {yoyMap[row.category] != null ? fmt(yoyMap[row.category]) : "—"}
                 </td>
-                <td className="hidden sm:table-cell px-4 py-2.5"><ProgressBar actual={row.total} budget={budget} /></td>
+                <td className="hidden sm:table-cell px-4 py-2.5"><ProgressBar actual={row.total} budget={ref} /></td>
                 <td className="px-4 py-2.5 text-right text-xs">
                   {isEditing && (
                     <button onClick={() => saveTarget(row.category, editing[row.category])}
@@ -391,8 +412,11 @@ export default function BudgetPlanner() {
 
           return (
             <div key={group} className="bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden">
-              <div className="px-4 py-2.5 bg-zinc-800 border-b border-zinc-700 flex justify-between items-center">
-                <span className="text-xs font-bold text-yellow-400 uppercase tracking-widest">{group}</span>
+              <div className={`px-4 py-2.5 border-b border-zinc-700 flex justify-between items-center ${group === "Committed" ? "bg-zinc-800/80" : "bg-zinc-800"}`}>
+                <span className={`text-xs font-bold uppercase tracking-widest ${group === "Committed" ? "text-blue-400" : "text-yellow-400"}`}>
+                  {group}
+                  {group === "Committed" && <span className="text-zinc-600 font-normal normal-case tracking-normal ml-2">recurring fixed costs</span>}
+                </span>
                 <span className="text-xs text-zinc-500">
                   {fmt(groupActual)}{groupBudget > 0 ? ` / ${fmt(groupBudget)}` : ""}
                 </span>
@@ -402,7 +426,7 @@ export default function BudgetPlanner() {
                 <thead>
                   <tr className="border-b border-zinc-800 text-left text-zinc-600">
                     <th className="px-4 py-2 font-medium">Category</th>
-                    <th className="px-4 py-2 font-medium text-right">Budget</th>
+                    <th className="px-4 py-2 font-medium text-right">{group === "Committed" ? "Ref / Budget" : "Budget"}</th>
                     <th className="px-4 py-2 font-medium text-right">Actual</th>
                     <th className="hidden sm:table-cell px-4 py-2 font-medium text-right">Diff</th>
                     <th className="hidden lg:table-cell px-4 py-2 font-medium text-right text-zinc-600">{year - 1}</th>

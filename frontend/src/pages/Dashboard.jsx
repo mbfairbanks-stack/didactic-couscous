@@ -3,8 +3,8 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 import StatCard from "../components/StatCard";
-import { getMonthlySummary, getTotals, getCategorySummary, getYears, getProjections, getBudgetTargets } from "../api";
-import { getCategoryGroup } from "../constants";
+import { getMonthlySummary, getTotals, getCategorySummary, getYears, getProjections, getBudgetTargets, getCategoryDefinitions } from "../api";
+import { getCategoryGroup, updateCategoryGroups } from "../constants";
 import { MONTH_LABELS, currentYear, currentMonth, fmt } from "../utils";
 
 // ── Tooltip shared by all charts ─────────────────────────────────────────────
@@ -173,6 +173,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     getYears().then((y) => setYears(y.length ? y : [currentYear])).catch(() => {});
+    getCategoryDefinitions().then(updateCategoryGroups).catch(() => {});
   }, []);
 
   const loadDashboardData = () => {
@@ -263,6 +264,26 @@ export default function Dashboard() {
           <StatCard label="Balance" value={fmt(monthTotals.balance)} color={monthTotals.balance >= 0 ? "yellow" : "red"} />
           <StatCard label="Savings Rate" value={`${monthTotals.savings_rate ?? 0}%`} color="purple" />
         </div>
+        {(() => {
+          const committed = categories.filter((c) => getCategoryGroup(c.category) === "Committed");
+          if (!committed.length) return null;
+          const committedTotal = committed.reduce((s, c) => s + c.total, 0);
+          const discretionary = (monthTotals.total_expenses ?? 0) - committedTotal;
+          return (
+            <div className="mt-3 grid grid-cols-2 gap-4">
+              <div className="bg-zinc-900 border border-zinc-700/50 rounded-xl p-4">
+                <p className="text-xs text-zinc-500 uppercase tracking-wide mb-1">Committed Costs</p>
+                <p className="text-xl font-bold text-blue-400">{fmt(committedTotal)}</p>
+                <p className="text-xs text-zinc-600 mt-0.5">fixed recurring</p>
+              </div>
+              <div className="bg-zinc-900 border border-zinc-700/50 rounded-xl p-4">
+                <p className="text-xs text-zinc-500 uppercase tracking-wide mb-1">Discretionary</p>
+                <p className="text-xl font-bold text-zinc-200">{fmt(discretionary)}</p>
+                <p className="text-xs text-zinc-600 mt-0.5">needs + wants</p>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* vs Last Month + Savings Goal */}
