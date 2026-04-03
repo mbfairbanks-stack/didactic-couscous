@@ -19,7 +19,7 @@ const realIncome = (nominal, year) => nominal * (CURRENT_CPI / (CPI_INDEX[year] 
 function DarkTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-xs shadow-lg">
+    <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-xs shadow-lg">
       <p className="font-medium text-zinc-300 mb-1">{label}</p>
       {payload.map((p) => (
         <p key={p.name} style={{ color: p.color }}>{p.name}: {fmt(p.value)}</p>
@@ -148,7 +148,7 @@ export default function Income() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
         {/* Payday entry form */}
-        <form onSubmit={handleSave} className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 space-y-5">
+        <form onSubmit={handleSave} className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-5">
           <h2 className="text-sm font-semibold text-zinc-300">
             Log Paydays — {MONTH_LABELS[month]} {year}
           </h2>
@@ -204,7 +204,7 @@ export default function Income() {
 
         {/* Recorded income for month */}
         {records.length > 0 && (
-          <div className="bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
             <div className="px-4 py-3 border-b border-zinc-700 flex justify-between items-center bg-zinc-800">
               <span className="text-xs text-zinc-500 uppercase tracking-wide">{MONTH_LABELS[month]} {year} — Recorded</span>
               <span className="text-sm font-bold text-yellow-400">{fmt(totalIncome)}</span>
@@ -237,7 +237,7 @@ export default function Income() {
 
       {/* Income History */}
       {!historyLoading && historyData.length > 0 && (
-        <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5 space-y-6">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 space-y-6">
           <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Income History</h2>
 
           <ResponsiveContainer width="100%" height={240}>

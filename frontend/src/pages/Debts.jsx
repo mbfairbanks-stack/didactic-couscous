@@ -341,7 +341,7 @@ function StrategyPanel({ debts }) {
     avalanche.totalMonths === snowball.totalMonths;
 
   return (
-    <div className="bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden">
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
       <div className="px-5 py-4 border-b border-zinc-700 bg-zinc-800 flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-base font-semibold text-zinc-100">Payoff Strategy Comparison</h2>
         {tied && (
@@ -545,15 +545,15 @@ export default function Debts() {
       {/* Summary bar */}
       {debts.length > 0 && (
         <div className="grid grid-cols-3 gap-4">
-          <div className="bg-zinc-900 border border-zinc-700 rounded-xl px-5 py-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4">
             <p className="text-xs text-zinc-500 uppercase tracking-wide mb-1">Total Current Balance</p>
             <p className="text-xl font-bold text-yellow-400">{fmt(totalBalance)}</p>
           </div>
-          <div className="bg-zinc-900 border border-zinc-700 rounded-xl px-5 py-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4">
             <p className="text-xs text-zinc-500 uppercase tracking-wide mb-1">Total Monthly Committed</p>
             <p className="text-xl font-bold text-yellow-400">{fmt(totalMonthly)}</p>
           </div>
-          <div className="bg-zinc-900 border border-zinc-700 rounded-xl px-5 py-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4">
             <p className="text-xs text-zinc-500 uppercase tracking-wide mb-1">Total Remaining</p>
             <p className="text-xl font-bold text-yellow-400">{fmt(totalRemaining)}</p>
           </div>
@@ -567,7 +567,7 @@ export default function Debts() {
 
       {/* Empty state */}
       {!loading && debts.length === 0 && (
-        <div className="bg-zinc-900 border border-zinc-700 rounded-xl py-16 text-center">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl py-16 text-center">
           <p className="text-zinc-500 text-sm">No debts tracked yet.</p>
           <button
             onClick={openAdd}
@@ -584,7 +584,7 @@ export default function Debts() {
           computeDebtStats(debt);
 
         return (
-          <div key={debt.id} className="bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden">
+          <div key={debt.id} className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
             {/* Card header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-700 bg-zinc-800">
               <div className="flex items-center gap-3 flex-wrap">
@@ -688,7 +688,7 @@ export default function Debts() {
       {/* Add / Edit modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <h2 className="text-lg font-semibold mb-4 text-zinc-100">
               {editId ? "Edit Debt" : "Add Debt"}
             </h2>

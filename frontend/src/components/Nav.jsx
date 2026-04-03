@@ -24,12 +24,14 @@ const allLinks = [...mainLinks, ...toolLinks];
 
 const linkCls = ({ isActive }) =>
   `px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${
-    isActive ? "bg-yellow-400 text-black" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
+    isActive
+      ? "bg-yellow-400/15 text-yellow-400 ring-1 ring-yellow-400/30"
+      : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
   }`;
 
 const toolLinkCls = ({ isActive }) =>
   `px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${
-    isActive ? "bg-yellow-400 text-black" : "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800"
+    isActive ? "bg-yellow-400/15 text-yellow-400 ring-1 ring-yellow-400/30" : "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800"
   }`;
 
 export default function Nav() {
@@ -39,7 +41,7 @@ export default function Nav() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <header className="bg-zinc-950 border-b border-zinc-800">
+    <header className="bg-zinc-950/95 backdrop-blur border-b border-zinc-800/80 sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 flex items-center gap-3 h-14">
         <NavLink to="/dashboard" className="shrink-0 flex items-center gap-2" onClick={() => setMenuOpen(false)}>
           <span className="text-yellow-400 font-bold text-base tracking-tight">{householdName}</span>

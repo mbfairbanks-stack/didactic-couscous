@@ -11,7 +11,7 @@ import { MONTH_LABELS, currentYear, currentMonth, fmt } from "../utils";
 function DarkTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-xs shadow-lg">
+    <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-xs shadow-lg">
       <p className="font-medium text-zinc-300 mb-1">{label}</p>
       {payload.map((p) => (
         <p key={p.name} style={{ color: p.color }}>{p.name}: {fmt(p.value)}</p>
@@ -57,7 +57,7 @@ function MoMCard({ current, last }) {
   ];
 
   return (
-    <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-4">
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
       <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">vs Last Month</h3>
       <div className="grid grid-cols-2 gap-3">
         {metrics.map(({ label, value, pct, invert }) => (
@@ -102,7 +102,7 @@ function SavingsGoalBar({ savingsRate, savingsGoal, setSavingsGoal }) {
   const diff = Math.abs(Math.round((goal - rate) * 10) / 10);
 
   return (
-    <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-4">
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Savings Goal</span>
@@ -218,14 +218,14 @@ export default function Dashboard() {
         <h1 className="text-2xl font-bold text-zinc-100">Dashboard</h1>
         <div className="flex gap-3 items-center">
           <select
-            className="bg-zinc-900 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100"
+            className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm text-zinc-100"
             value={year}
             onChange={(e) => setYear(Number(e.target.value))}
           >
             {years.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
           <select
-            className="bg-zinc-900 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100"
+            className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm text-zinc-100"
             value={month}
             onChange={(e) => setMonth(Number(e.target.value))}
           >
@@ -244,7 +244,7 @@ export default function Dashboard() {
 
       {/* Year stats */}
       <div>
-        <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">{year} Year to Date (Jan – {MONTH_LABELS[month]})</h2>
+        <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3 flex items-center gap-2 before:content-[''] before:block before:w-1 before:h-3 before:bg-yellow-400/60 before:rounded-full">{year} Year to Date (Jan – {MONTH_LABELS[month]})</h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <StatCard label="Total Income" value={fmt(totals.total_income)} color="green" />
           <StatCard label="Total Expenses" value={fmt(totals.total_expenses)} color="red" />
@@ -255,7 +255,7 @@ export default function Dashboard() {
 
       {/* Month stats */}
       <div>
-        <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">
+        <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3 flex items-center gap-2 before:content-[''] before:block before:w-1 before:h-3 before:bg-yellow-400/60 before:rounded-full">
           {MONTH_LABELS[month]} {year}
         </h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -271,12 +271,12 @@ export default function Dashboard() {
           const discretionary = (monthTotals.total_expenses ?? 0) - committedTotal;
           return (
             <div className="mt-3 grid grid-cols-2 gap-4">
-              <div className="bg-zinc-900 border border-zinc-700/50 rounded-xl p-4">
+              <div className="bg-zinc-900 border border-zinc-800/50 rounded-xl p-4">
                 <p className="text-xs text-zinc-500 uppercase tracking-wide mb-1">Committed Costs</p>
                 <p className="text-xl font-bold text-blue-400">{fmt(committedTotal)}</p>
                 <p className="text-xs text-zinc-600 mt-0.5">fixed recurring</p>
               </div>
-              <div className="bg-zinc-900 border border-zinc-700/50 rounded-xl p-4">
+              <div className="bg-zinc-900 border border-zinc-800/50 rounded-xl p-4">
                 <p className="text-xs text-zinc-500 uppercase tracking-wide mb-1">Discretionary</p>
                 <p className="text-xl font-bold text-zinc-200">{fmt(discretionary)}</p>
                 <p className="text-xs text-zinc-600 mt-0.5">needs + wants</p>
@@ -307,7 +307,7 @@ export default function Dashboard() {
         const needsPct = Math.round((needsTotal / grandTotal) * 100);
         const wantsPct = 100 - needsPct;
         return (
-          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5 space-y-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 space-y-4">
             <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">
               Needs vs Wants — {MONTH_LABELS[month]} {year}
             </h2>
@@ -378,7 +378,7 @@ export default function Dashboard() {
 
           {/* Fixed expense breakdown — collapsed by default */}
           {projections.fixed_categories?.length > 0 && (
-            <details className="bg-zinc-900 border border-zinc-700 rounded-xl p-5">
+            <details className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
               <summary className="text-xs font-semibold text-zinc-500 uppercase tracking-wide cursor-pointer hover:text-zinc-300 flex items-center justify-between">
                 <span>Fixed Monthly Expenses</span>
                 <span className="text-yellow-400 font-bold normal-case text-sm">{fmt(projections.fixed_monthly_total)}</span>
@@ -395,7 +395,7 @@ export default function Dashboard() {
           )}
 
           {/* Year-end projection bar */}
-          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
             <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-4">Year-End Projection</h3>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
               <div>

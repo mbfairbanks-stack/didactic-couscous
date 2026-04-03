@@ -15,7 +15,7 @@ const COLORS = [
 function DarkTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-zinc-900 border border-zinc-700 shadow-lg rounded-lg p-3 text-xs">
+    <div className="bg-zinc-900 border border-zinc-800 shadow-lg rounded-lg p-3 text-xs">
       <p className="font-medium text-zinc-300 mb-1">{label}</p>
       {payload.map((p) => (
         <p key={p.name} style={{ color: p.color }}>{p.name}: {fmt(p.value)}</p>
@@ -96,7 +96,7 @@ export default function Charts() {
   const projectedAdditional = avgMonthlyIncome * remainingMonths;
   const projectedTotal = actualIncome + projectedAdditional;
 
-  const cardCls = "bg-zinc-900 border border-zinc-700 rounded-xl p-5";
+  const cardCls = "bg-zinc-900 border border-zinc-800 rounded-xl p-5";
   const selectCls = "bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:outline-none";
 
   return (

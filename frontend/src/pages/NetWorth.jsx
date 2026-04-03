@@ -72,7 +72,7 @@ export default function NetWorth() {
       <h1 className="text-2xl font-bold text-zinc-100">Net Worth</h1>
 
       {/* Net Worth Headline */}
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 flex flex-col items-center gap-2">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 flex flex-col items-center gap-2">
         <p className="text-xs text-zinc-500 uppercase tracking-widest">Net Worth</p>
         <p className={`text-5xl font-bold ${netWorth >= 0 ? "text-green-400" : "text-red-400"}`}>
           {fmt(netWorth, 2)}
@@ -89,7 +89,7 @@ export default function NetWorth() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Assets Section */}
-        <div className="bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
           <div className="px-4 py-3 bg-zinc-800 border-b border-zinc-700 flex justify-between items-center">
             <span className="text-sm font-bold text-green-400 uppercase tracking-widest">Assets</span>
             <span className="text-sm font-semibold text-zinc-300">{fmt(totalAssets, 2)}</span>
@@ -136,7 +136,7 @@ export default function NetWorth() {
         </div>
 
         {/* Liabilities Section */}
-        <div className="bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
           <div className="px-4 py-3 bg-zinc-800 border-b border-zinc-700 flex justify-between items-center">
             <span className="text-sm font-bold text-red-400 uppercase tracking-widest">Liabilities</span>
             <span className="text-sm font-semibold text-zinc-300">{fmt(totalLiabilities, 2)}</span>
@@ -175,7 +175,7 @@ export default function NetWorth() {
       </div>
 
       {/* Bar Chart */}
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-4">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
         <p className="text-xs text-zinc-500 uppercase tracking-widest mb-4">Assets vs Liabilities</p>
         <ResponsiveContainer width="100%" height={200}>
           <BarChart data={chartData} barCategoryGap="40%">

@@ -136,7 +136,7 @@ export default function Settings() {
       <h1 className="text-2xl font-bold text-zinc-100">Settings</h1>
 
       {/* Household */}
-      <form onSubmit={handleSave} className="bg-zinc-900 border border-zinc-700 rounded-xl p-5 space-y-4">
+      <form onSubmit={handleSave} className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 space-y-4">
         <h2 className="text-sm font-semibold text-zinc-300">Household</h2>
         <div>
           <label className="text-xs text-zinc-500 block mb-1">Name</label>
@@ -167,7 +167,7 @@ export default function Settings() {
       </form>
 
       {/* Categories */}
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-700">
           <h2 className="text-sm font-semibold text-zinc-300">Categories</h2>

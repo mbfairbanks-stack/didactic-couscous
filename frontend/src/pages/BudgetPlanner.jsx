@@ -236,7 +236,7 @@ export default function BudgetPlanner() {
       )}
 
       {/* Summary bar */}
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-4 flex flex-wrap gap-6 items-center">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-wrap gap-6 items-center">
         <div>
           <p className="text-xs text-zinc-500 uppercase tracking-wide">Total Budgeted</p>
           <p className="text-xl font-bold text-yellow-400">{fmt(totalBudget)}</p>
@@ -270,7 +270,7 @@ export default function BudgetPlanner() {
       </div>
 
       {/* Set Budgets — collapsed by default */}
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
         <button
           onClick={() => setShowSetBudgets((v) => !v)}
           className="w-full flex items-center justify-between px-4 py-3 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
@@ -327,7 +327,7 @@ export default function BudgetPlanner() {
 
       {/* Table grouped by Committed / Needs / Wants / Other */}
       {visibleCategories.length === 0 ? (
-        <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-10 text-center text-zinc-600 text-sm">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-10 text-center text-zinc-600 text-sm">
           No data. Import a spreadsheet or add transactions.
         </div>
       ) : (
@@ -411,7 +411,7 @@ export default function BudgetPlanner() {
           };
 
           return (
-            <div key={group} className="bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden">
+            <div key={group} className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
               <div className={`px-4 py-2.5 border-b border-zinc-700 flex justify-between items-center ${group === "Committed" ? "bg-zinc-800/80" : "bg-zinc-800"}`}>
                 <span className={`text-xs font-bold uppercase tracking-widest ${group === "Committed" ? "text-blue-400" : "text-yellow-400"}`}>
                   {group}

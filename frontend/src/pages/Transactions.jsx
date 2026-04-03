@@ -329,7 +329,7 @@ export default function Transactions() {
       </div>
 
       {/* Filters */}
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-3 space-y-2">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 space-y-2">
         {/* Primary filters */}
         <div className="flex flex-wrap gap-2 items-center">
           <select className={inputCls} value={year} onChange={(e) => setYear(Number(e.target.value))}>
@@ -421,7 +421,7 @@ export default function Transactions() {
       {error && <p className="text-red-400 text-sm">{error}</p>}
 
       {/* Table */}
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
         <div className="flex justify-between items-center px-4 py-3 border-b border-zinc-700 bg-zinc-800">
           <span className="text-xs text-zinc-500">
             {filtered.length} transactions
@@ -617,7 +617,7 @@ export default function Transactions() {
       {/* Add / Edit form modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl p-6 w-full max-w-md">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-6 w-full max-w-md">
             <h2 className="text-lg font-semibold mb-4 text-zinc-100">{editId ? "Edit Transaction" : "Add Transaction"}</h2>
             {error && <p className="text-red-400 text-sm mb-3">{error}</p>}
             <form onSubmit={handleSubmit} className="space-y-3">
