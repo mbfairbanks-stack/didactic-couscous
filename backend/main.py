@@ -882,6 +882,7 @@ class AssetCreate(BaseModel):
     balance: float = 0.0
     notes: Optional[str] = None
     sort_order: int = 0
+    auto_sync: bool = False
 
 
 class AssetOut(AssetCreate):
@@ -890,11 +891,11 @@ class AssetOut(AssetCreate):
 
 
 ASSET_DEFAULTS = [
-    {"name": "Checking", "asset_type": "cash", "sort_order": 1},
-    {"name": "Savings", "asset_type": "cash", "sort_order": 2},
-    {"name": "RRSP", "asset_type": "rrsp", "sort_order": 3},
-    {"name": "TFSA", "asset_type": "tfsa", "sort_order": 4},
-    {"name": "ESPP (Block)", "asset_type": "espp", "sort_order": 5},
+    {"name": "Checking", "asset_type": "cash", "sort_order": 1, "auto_sync": False},
+    {"name": "Savings", "asset_type": "cash", "sort_order": 2, "auto_sync": False},
+    {"name": "RRSP (Payroll)", "asset_type": "rrsp", "sort_order": 3, "auto_sync": True},
+    {"name": "TFSA", "asset_type": "tfsa", "sort_order": 4, "auto_sync": False},
+    {"name": "ESPP (Block)", "asset_type": "espp", "sort_order": 5, "auto_sync": True},
 ]
 
 
@@ -955,23 +956,16 @@ def sync_savings_assets(db: Session = Depends(get_db)):
     espp_value = sum(p.shares_purchased * (p.current_price or p.market_price) for p in espp_purchases)
 
     updated = []
-    skipped = []
-    assets = db.execute(select(models.Asset)).scalars().all()
+    assets = db.execute(select(models.Asset).where(models.Asset.auto_sync == True)).scalars().all()
     for asset in assets:
         if asset.asset_type == "rrsp" and rrsp_total > 0:
-            if asset.balance == 0:
-                asset.balance = round(rrsp_total, 2)
-                updated.append({"id": asset.id, "name": asset.name, "balance": asset.balance})
-            else:
-                skipped.append({"id": asset.id, "name": asset.name, "balance": asset.balance})
+            asset.balance = round(rrsp_total, 2)
+            updated.append({"id": asset.id, "name": asset.name, "balance": asset.balance})
         elif asset.asset_type == "espp" and espp_value > 0:
-            if asset.balance == 0:
-                asset.balance = round(espp_value, 2)
-                updated.append({"id": asset.id, "name": asset.name, "balance": asset.balance})
-            else:
-                skipped.append({"id": asset.id, "name": asset.name, "balance": asset.balance})
+            asset.balance = round(espp_value, 2)
+            updated.append({"id": asset.id, "name": asset.name, "balance": asset.balance})
     db.commit()
-    return {"updated": updated, "skipped": skipped, "rrsp_total": round(rrsp_total, 2), "espp_value": round(espp_value, 2)}
+    return {"updated": updated, "rrsp_total": round(rrsp_total, 2), "espp_value": round(espp_value, 2)}
 
 
 # ---------------------------------------------------------------------------

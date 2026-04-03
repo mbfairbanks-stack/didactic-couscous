@@ -115,6 +115,11 @@ def run_migrations():
         if 'espp_deduction' not in income_cols:
             conn.execute(sa.text("ALTER TABLE income ADD COLUMN espp_deduction REAL NOT NULL DEFAULT 0"))
 
+        if inspector.has_table('assets'):
+            asset_cols = [c['name'] for c in inspector.get_columns('assets')]
+            if 'auto_sync' not in asset_cols:
+                conn.execute(sa.text("ALTER TABLE assets ADD COLUMN auto_sync INTEGER NOT NULL DEFAULT 0"))
+
         # Fix any transactions where year/month doesn't match the stored date
         conn.execute(sa.text("""
             UPDATE transactions

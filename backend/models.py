@@ -101,6 +101,7 @@ class Asset(Base):
     balance = Column(Float, default=0.0)
     notes = Column(String, nullable=True)
     sort_order = Column(Integer, default=0)
+    auto_sync = Column(Boolean, default=False)  # True = sync balance from payroll contributions
 
 
 class SavingsContribution(Base):

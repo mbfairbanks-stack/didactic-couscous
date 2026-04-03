@@ -15,8 +15,6 @@ const TYPE_BAR_COLORS = {
 const TYPE_LABELS = {
   rrsp: "RRSP", espp: "ESPP", tfsa: "TFSA", cash: "Cash", property: "Property", other: "Other",
 };
-// Which asset types are auto-synced from savings data
-const AUTO_SYNC_TYPES = new Set(["rrsp", "espp"]);
 
 export default function NetWorth() {
   const [assets, setAssets] = useState([]);
@@ -61,14 +59,21 @@ export default function NetWorth() {
 
   const startEdit = (asset) => {
     setEditingId(asset.id);
-    setEditDraft({ name: asset.name, balance: String(asset.balance), asset_type: asset.asset_type });
+    setEditDraft({ name: asset.name, balance: String(asset.balance), asset_type: asset.asset_type, auto_sync: asset.auto_sync });
   };
 
   const commitEdit = async (id) => {
     try {
       const asset = assets.find((a) => a.id === id);
-      await updateAsset(id, { ...asset, name: editDraft.name, balance: parseFloat(editDraft.balance) || 0, asset_type: editDraft.asset_type });
+      await updateAsset(id, { ...asset, name: editDraft.name, balance: parseFloat(editDraft.balance) || 0, asset_type: editDraft.asset_type, auto_sync: editDraft.auto_sync });
       setEditingId(null);
+      load();
+    } catch (e) { setError(e.message); }
+  };
+
+  const toggleAutoSync = async (asset) => {
+    try {
+      await updateAsset(asset.id, { ...asset, auto_sync: !asset.auto_sync });
       load();
     } catch (e) { setError(e.message); }
   };
@@ -96,10 +101,8 @@ export default function NetWorth() {
   const netWorth = totalAssets - totalLiabilities;
 
   // Detect stale auto-sync assets (balance = 0 but tracked data exists)
-  const rrspAssets = assets.filter((a) => a.asset_type === "rrsp");
-  const esppAssets = assets.filter((a) => a.asset_type === "espp");
-  const rrspIsStale = rrspAssets.some((a) => a.balance === 0) && savingsSummary?.rrsp_total_ytd > 0;
-  const esppIsStale = esppAssets.some((a) => a.balance === 0) && savingsSummary?.espp_current_value > 0;
+  const rrspIsStale = assets.some((a) => a.auto_sync && a.asset_type === "rrsp" && a.balance === 0) && savingsSummary?.rrsp_total_ytd > 0;
+  const esppIsStale = assets.some((a) => a.auto_sync && a.asset_type === "espp" && a.balance === 0) && savingsSummary?.espp_current_value > 0;
   const needsSync = rrspIsStale || esppIsStale;
 
   const inputCls = "bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400/50";
@@ -132,19 +135,13 @@ export default function NetWorth() {
       {error && <p className="text-red-400 text-sm">{error}</p>}
 
       {syncResult && (
-        <div className="bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-3 text-sm space-y-1">
-          {syncResult.updated.length > 0 && (
+        <div className="bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-3 text-sm">
+          {syncResult.updated.length > 0 ? (
             <p className="text-green-400">
-              Updated: {syncResult.updated.map((a) => `${a.name} → ${fmt(a.balance)}`).join(", ")}
+              Synced: {syncResult.updated.map((a) => `${a.name} → ${fmt(a.balance)}`).join(", ")}
             </p>
-          )}
-          {syncResult.skipped.length > 0 && (
-            <p className="text-zinc-400">
-              Kept existing: {syncResult.skipped.map((a) => `${a.name} (${fmt(a.balance)})`).join(", ")} — edit manually to change.
-            </p>
-          )}
-          {syncResult.updated.length === 0 && syncResult.skipped.length === 0 && (
-            <p className="text-zinc-500">No tracked savings data found — add paycheques on the Income tab first.</p>
+          ) : (
+            <p className="text-zinc-500">Nothing to sync — mark an asset as "payroll sync" first, or add paycheques on the Income tab.</p>
           )}
         </div>
       )}
@@ -191,7 +188,7 @@ export default function NetWorth() {
               {assets.map((asset) => {
                 const isEditing = editingId === asset.id;
                 const colorCls = TYPE_COLORS[asset.asset_type] || "text-zinc-400";
-                const isStale = asset.balance === 0 && AUTO_SYNC_TYPES.has(asset.asset_type);
+                const isStale = asset.auto_sync && asset.balance === 0 && (savingsSummary?.rrsp_total_ytd > 0 || savingsSummary?.espp_current_value > 0);
                 return (
                   <div key={asset.id} className={`flex items-center gap-2 px-4 py-2.5 hover:bg-zinc-800/40 ${isStale ? "bg-yellow-900/5" : ""}`}>
                     {isEditing ? (
@@ -214,10 +211,18 @@ export default function NetWorth() {
                         <div className="flex-1 min-w-0">
                           <span className="text-zinc-200 text-sm">{asset.name}</span>
                           <span className={`text-xs ml-2 ${colorCls}`}>{TYPE_LABELS[asset.asset_type]}</span>
-                          {AUTO_SYNC_TYPES.has(asset.asset_type) && (
-                            <span className="text-xs ml-1.5 text-zinc-600">auto-sync</span>
-                          )}
                         </div>
+                        <button
+                          onClick={() => toggleAutoSync(asset)}
+                          title={asset.auto_sync ? "Payroll sync on — click to disable" : "Enable payroll sync for this asset"}
+                          className={`text-xs px-1.5 py-0.5 rounded border transition-colors ${
+                            asset.auto_sync
+                              ? "border-yellow-500/50 text-yellow-400 bg-yellow-400/10"
+                              : "border-zinc-700 text-zinc-600 hover:text-zinc-400"
+                          }`}
+                        >
+                          {asset.auto_sync ? "payroll sync" : "manual"}
+                        </button>
                         <span className={`text-sm font-semibold tabular-nums ${isStale ? "text-yellow-600" : "text-zinc-100"}`}>
                           {fmt(asset.balance, 2)}
                           {isStale && <span className="text-yellow-600 ml-1 text-xs">⚠</span>}
