@@ -944,7 +944,7 @@ def delete_asset(asset_id: int, db: Session = Depends(get_db)):
 # Savings contributions (RRSP + ESPP per paycheck)
 # ---------------------------------------------------------------------------
 
-RRSP_ANNUAL_MAX = 12500.0
+RRSP_ANNUAL_MAX = 8400.0  # employee portion; with 50% employer match total = $12,600
 RRSP_MATCH_RATE = 0.50
 ESPP_DEDUCTION_RATE = 0.10
 ESPP_DISCOUNT_RATE = 0.15

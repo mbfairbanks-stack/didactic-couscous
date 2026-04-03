@@ -10,7 +10,7 @@ import { useSettings } from "../contexts/SettingsContext";
 
 const inputCls = "bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-yellow-400/50";
 
-const RRSP_MAX = 12500;
+const RRSP_MAX = 8400; // employee portion; with 50% employer match total = $12,600
 
 function ProgressBar({ pct, color = "bg-yellow-400" }) {
   return (
