@@ -955,16 +955,23 @@ def sync_savings_assets(db: Session = Depends(get_db)):
     espp_value = sum(p.shares_purchased * (p.current_price or p.market_price) for p in espp_purchases)
 
     updated = []
+    skipped = []
     assets = db.execute(select(models.Asset)).scalars().all()
     for asset in assets:
         if asset.asset_type == "rrsp" and rrsp_total > 0:
-            asset.balance = round(rrsp_total, 2)
-            updated.append({"id": asset.id, "name": asset.name, "balance": asset.balance})
+            if asset.balance == 0:
+                asset.balance = round(rrsp_total, 2)
+                updated.append({"id": asset.id, "name": asset.name, "balance": asset.balance})
+            else:
+                skipped.append({"id": asset.id, "name": asset.name, "balance": asset.balance})
         elif asset.asset_type == "espp" and espp_value > 0:
-            asset.balance = round(espp_value, 2)
-            updated.append({"id": asset.id, "name": asset.name, "balance": asset.balance})
+            if asset.balance == 0:
+                asset.balance = round(espp_value, 2)
+                updated.append({"id": asset.id, "name": asset.name, "balance": asset.balance})
+            else:
+                skipped.append({"id": asset.id, "name": asset.name, "balance": asset.balance})
     db.commit()
-    return {"updated": updated, "rrsp_total": round(rrsp_total, 2), "espp_value": round(espp_value, 2)}
+    return {"updated": updated, "skipped": skipped, "rrsp_total": round(rrsp_total, 2), "espp_value": round(espp_value, 2)}
 
 
 # ---------------------------------------------------------------------------

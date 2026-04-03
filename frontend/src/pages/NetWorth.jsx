@@ -132,9 +132,20 @@ export default function NetWorth() {
       {error && <p className="text-red-400 text-sm">{error}</p>}
 
       {syncResult && (
-        <div className="bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-3 text-sm text-zinc-300">
-          Synced: RRSP → {fmt(syncResult.rrsp_total)}, ESPP stock → {fmt(syncResult.espp_value)}
-          {syncResult.updated.length === 0 && " (no tracked data found — add paycheques on the Income tab first)"}
+        <div className="bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-3 text-sm space-y-1">
+          {syncResult.updated.length > 0 && (
+            <p className="text-green-400">
+              Updated: {syncResult.updated.map((a) => `${a.name} → ${fmt(a.balance)}`).join(", ")}
+            </p>
+          )}
+          {syncResult.skipped.length > 0 && (
+            <p className="text-zinc-400">
+              Kept existing: {syncResult.skipped.map((a) => `${a.name} (${fmt(a.balance)})`).join(", ")} — edit manually to change.
+            </p>
+          )}
+          {syncResult.updated.length === 0 && syncResult.skipped.length === 0 && (
+            <p className="text-zinc-500">No tracked savings data found — add paycheques on the Income tab first.</p>
+          )}
         </div>
       )}
 
