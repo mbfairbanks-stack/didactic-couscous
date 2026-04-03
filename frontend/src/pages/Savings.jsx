@@ -68,8 +68,8 @@ export default function Savings() {
   const paycheckLog = Object.entries(
     incomeRecords.reduce((acc, r) => {
       const key = r.pay_date || "unspecified";
-      if (!acc[key]) acc[key] = { pay_date: key, year: r.year, month: r.month, gross: 0, rrsp_employee: 0, rrsp_employer: 0, espp_deduction: 0 };
-      acc[key].gross += r.amount;
+      if (!acc[key]) acc[key] = { pay_date: key, year: r.year, month: r.month, net: 0, rrsp_employee: 0, rrsp_employer: 0, espp_deduction: 0 };
+      acc[key].net += r.amount;
       acc[key].rrsp_employee += r.rrsp_employee || 0;
       acc[key].rrsp_employer += r.rrsp_employer || 0;
       acc[key].espp_deduction += r.espp_deduction || 0;
@@ -237,7 +237,7 @@ export default function Savings() {
               <div>
                 <p className="text-xs text-zinc-500 mb-0.5">Deducted YTD ({year})</p>
                 <p className="text-xl font-bold text-zinc-100">{fmt(summary.espp_deducted_ytd)}</p>
-                <p className="text-xs text-zinc-600 mt-0.5">10% of gross</p>
+                <p className="text-xs text-zinc-600 mt-0.5">10% of net pay</p>
               </div>
               <div>
                 <p className="text-xs text-zinc-500 mb-0.5">Pending Balance</p>
@@ -334,7 +334,7 @@ export default function Savings() {
               <thead>
                 <tr className="border-b border-zinc-700 text-left text-zinc-500 text-xs bg-zinc-800/50">
                   <th className="px-4 py-2">Pay Date</th>
-                  <th className="px-4 py-2 text-right">Gross</th>
+                  <th className="px-4 py-2 text-right">Net Pay</th>
                   <th className="px-4 py-2 text-right text-blue-400">RRSP (You)</th>
                   <th className="px-4 py-2 text-right text-green-400">RRSP Match</th>
                   <th className="px-4 py-2 text-right text-purple-400">ESPP (10%)</th>
@@ -344,11 +344,11 @@ export default function Savings() {
               <tbody>
                 {paycheckLog.map((c) => {
                   const total = c.rrsp_employee + c.rrsp_employer + c.espp_deduction;
-                  const savingsRate = c.gross > 0 ? ((c.rrsp_employee + c.espp_deduction) / c.gross * 100).toFixed(0) : 0;
+                  const savingsRate = c.net > 0 ? ((c.rrsp_employee + c.espp_deduction) / c.net * 100).toFixed(0) : 0;
                   return (
                     <tr key={c.pay_date} className="border-b border-zinc-800 last:border-0 hover:bg-zinc-800/40">
                       <td className="px-4 py-2.5 text-zinc-400">{c.pay_date}</td>
-                      <td className="px-4 py-2.5 text-right text-zinc-300">{fmt(c.gross)}</td>
+                      <td className="px-4 py-2.5 text-right text-zinc-300">{fmt(c.net)}</td>
                       <td className="px-4 py-2.5 text-right text-zinc-200">{fmt(c.rrsp_employee)}</td>
                       <td className="px-4 py-2.5 text-right text-green-400">{fmt(c.rrsp_employer)}</td>
                       <td className="px-4 py-2.5 text-right text-purple-400">{fmt(c.espp_deduction)}</td>
@@ -362,16 +362,16 @@ export default function Savings() {
               </tbody>
               {paycheckLog.length > 1 && (() => {
                 const totals = paycheckLog.reduce((s, c) => ({
-                  gross: s.gross + c.gross,
+                  net: s.net + c.net,
                   rrsp_emp: s.rrsp_emp + c.rrsp_employee,
                   rrsp_er: s.rrsp_er + c.rrsp_employer,
                   espp: s.espp + c.espp_deduction,
-                }), { gross: 0, rrsp_emp: 0, rrsp_er: 0, espp: 0 });
+                }), { net: 0, rrsp_emp: 0, rrsp_er: 0, espp: 0 });
                 return (
                   <tfoot>
                     <tr className="border-t border-zinc-700 bg-zinc-800/50 font-semibold text-xs">
                       <td className="px-4 py-2 text-zinc-500 uppercase tracking-wide">YTD Total</td>
-                      <td className="px-4 py-2 text-right text-zinc-300">{fmt(totals.gross)}</td>
+                      <td className="px-4 py-2 text-right text-zinc-300">{fmt(totals.net)}</td>
                       <td className="px-4 py-2 text-right text-zinc-200">{fmt(totals.rrsp_emp)}</td>
                       <td className="px-4 py-2 text-right text-green-400">{fmt(totals.rrsp_er)}</td>
                       <td className="px-4 py-2 text-right text-purple-400">{fmt(totals.espp)}</td>

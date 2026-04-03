@@ -160,7 +160,7 @@ function PaydaySlot({ state, onChange, onRemove, p1, p2, canRemove, isEdit = fal
               onChange={(e) => onChange({ ...state, p1_rrsp_employer: e.target.value })} />
           </div>
           <div>
-            <label className="text-xs text-purple-400 block mb-1">ESPP (auto 10%)</label>
+            <label className="text-xs text-purple-400 block mb-1">ESPP (auto 10% of pay)</label>
             <input type="number" step="0.01" min="0" placeholder="auto"
               className={smallInput} value={state.p1_espp}
               onChange={(e) => onChange({ ...state, p1_espp: e.target.value })} />
