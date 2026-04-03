@@ -106,6 +106,15 @@ def run_migrations():
                     'INSERT INTO categories (name, "group", is_legacy) VALUES (:n, :g, :l)'
                 ), {"n": name, "g": group, "l": is_legacy})
 
+        # Add RRSP/ESPP columns to income if missing
+        income_cols = [c['name'] for c in inspector.get_columns('income')]
+        if 'rrsp_employee' not in income_cols:
+            conn.execute(sa.text("ALTER TABLE income ADD COLUMN rrsp_employee REAL NOT NULL DEFAULT 0"))
+        if 'rrsp_employer' not in income_cols:
+            conn.execute(sa.text("ALTER TABLE income ADD COLUMN rrsp_employer REAL NOT NULL DEFAULT 0"))
+        if 'espp_deduction' not in income_cols:
+            conn.execute(sa.text("ALTER TABLE income ADD COLUMN espp_deduction REAL NOT NULL DEFAULT 0"))
+
         # Fix any transactions where year/month doesn't match the stored date
         conn.execute(sa.text("""
             UPDATE transactions

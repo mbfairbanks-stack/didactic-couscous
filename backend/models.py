@@ -24,10 +24,13 @@ class Income(Base):
     id = Column(Integer, primary_key=True, index=True)
     year = Column(Integer, nullable=False)
     month = Column(Integer, nullable=False)
-    person = Column(String, nullable=False)  # "Matt" or "Nicole"
+    person = Column(String, nullable=False)
     income_type = Column(String, nullable=False)  # "base" or "commission"
     amount = Column(Float, nullable=False)
-    pay_date = Column(Date, nullable=True)  # specific payday date
+    pay_date = Column(Date, nullable=True)
+    rrsp_employee = Column(Float, default=0.0)   # employee RRSP contribution this paycheck
+    rrsp_employer = Column(Float, default=0.0)   # employer 50% match
+    espp_deduction = Column(Float, default=0.0)  # 10% ESPP deduction
 
     __table_args__ = (
         UniqueConstraint("year", "month", "person", "income_type", "pay_date", name="uq_income"),

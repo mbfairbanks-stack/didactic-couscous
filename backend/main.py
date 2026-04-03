@@ -109,6 +109,9 @@ class IncomeCreate(BaseModel):
     income_type: str
     amount: float
     pay_date: Optional[datetime.date] = None
+    rrsp_employee: float = 0.0
+    rrsp_employer: float = 0.0
+    espp_deduction: float = 0.0
 
 
 class IncomeOut(IncomeCreate):
@@ -1031,15 +1034,18 @@ def delete_savings_contribution(contrib_id: int, db: Session = Depends(get_db)):
 
 @app.get("/savings-contributions/summary")
 def savings_summary(year: int, db: Session = Depends(get_db)):
-    """YTD RRSP + ESPP totals, cap progress, and auto-synced asset balances."""
+    """YTD RRSP + ESPP totals sourced from income records, plus cap progress."""
     rows = db.execute(
-        select(models.SavingsContribution).where(models.SavingsContribution.year == year)
+        select(models.Income).where(models.Income.year == year)
     ).scalars().all()
 
     ytd_rrsp_employee = sum(r.rrsp_employee for r in rows)
     ytd_rrsp_employer = sum(r.rrsp_employer for r in rows)
     ytd_rrsp_total = ytd_rrsp_employee + ytd_rrsp_employer
     ytd_espp = sum(r.espp_deduction for r in rows)
+
+    # Count distinct pay dates that have any savings activity
+    pay_dates_with_savings = len({r.pay_date for r in rows if (r.rrsp_employee or 0) > 0 or (r.espp_deduction or 0) > 0})
 
     # ESPP purchases this year
     purchases = db.execute(
@@ -1064,7 +1070,7 @@ def savings_summary(year: int, db: Session = Depends(get_db)):
         "espp_current_value": round(espp_current_value, 2),
         "espp_discount_rate": ESPP_DISCOUNT_RATE,
         "rrsp_match_rate": RRSP_MATCH_RATE,
-        "contributions": len(rows),
+        "contributions": pay_dates_with_savings,
     }
 
 

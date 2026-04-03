@@ -1,18 +1,16 @@
 import { useState, useEffect, useCallback } from "react";
 import {
-  getSavingsSummary, getSavingsContributions, createSavingsContribution,
-  updateSavingsContribution, deleteSavingsContribution,
+  getSavingsSummary,
+  getIncome,
   getEsppPurchases, createEsppPurchase, updateEsppPurchase, deleteEsppPurchase,
   getYears,
 } from "../api";
-import { MONTH_LABELS, currentYear, currentMonth, fmt } from "../utils";
+import { MONTH_LABELS, currentYear, fmt } from "../utils";
+import { useSettings } from "../contexts/SettingsContext";
 
 const inputCls = "bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-yellow-400/50";
 
 const RRSP_MAX = 12500;
-const ESPP_RATE = 0.10;
-const ESPP_DISCOUNT = 0.15;
-const MATCH_RATE = 0.50;
 
 function ProgressBar({ pct, color = "bg-yellow-400" }) {
   return (
@@ -21,17 +19,6 @@ function ProgressBar({ pct, color = "bg-yellow-400" }) {
     </div>
   );
 }
-
-const emptyContrib = {
-  pay_date: new Date().toISOString().slice(0, 10),
-  year: currentYear,
-  month: currentMonth,
-  gross_income: "",
-  rrsp_employee: "",
-  rrsp_employer: "",
-  espp_deduction: "",
-  notes: "",
-};
 
 const emptyPurchase = {
   purchase_date: new Date().toISOString().slice(0, 10),
@@ -46,23 +33,20 @@ const emptyPurchase = {
 };
 
 export default function Savings() {
+  const { settings } = useSettings();
+  const p1 = settings.person_1 || "Person 1";
+  const p2 = settings.person_2 || "Person 2";
+
   const [year, setYear] = useState(currentYear);
   const [years, setYears] = useState([currentYear]);
   const [summary, setSummary] = useState(null);
-  const [contributions, setContributions] = useState([]);
+  const [incomeRecords, setIncomeRecords] = useState([]);
   const [purchases, setPurchases] = useState([]);
   const [error, setError] = useState("");
 
-  // Contribution form
-  const [showContribForm, setShowContribForm] = useState(false);
-  const [contribForm, setContribForm] = useState(emptyContrib);
-  const [editContribId, setEditContribId] = useState(null);
-
-  // Purchase form
   const [showPurchaseForm, setShowPurchaseForm] = useState(false);
   const [purchaseForm, setPurchaseForm] = useState(emptyPurchase);
   const [editPurchaseId, setEditPurchaseId] = useState(null);
-
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -73,78 +57,28 @@ export default function Savings() {
     setError("");
     Promise.all([
       getSavingsSummary(year).then(setSummary).catch(() => setSummary(null)),
-      getSavingsContributions(year).then(setContributions).catch(() => setContributions([])),
+      getIncome({ year }).then(setIncomeRecords).catch(() => setIncomeRecords([])),
       getEsppPurchases().then(setPurchases).catch(() => setPurchases([])),
     ]);
   }, [year]);
 
   useEffect(() => { load(); }, [load]);
 
-  // Auto-calculate fields when gross changes
-  const handleGrossChange = (gross) => {
-    const g = parseFloat(gross) || 0;
-    setContribForm((f) => ({
-      ...f,
-      gross_income: gross,
-      espp_deduction: g ? String((g * ESPP_RATE).toFixed(2)) : "",
-    }));
-  };
-
-  const handleRrspChange = (val) => {
-    const v = parseFloat(val) || 0;
-    setContribForm((f) => ({
-      ...f,
-      rrsp_employee: val,
-      rrsp_employer: v ? String((v * MATCH_RATE).toFixed(2)) : "",
-    }));
-  };
-
-  const handleContribSubmit = async (e) => {
-    e.preventDefault();
-    setSaving(true);
-    setError("");
-    const [y, m] = contribForm.pay_date.split("-").map(Number);
-    const body = {
-      ...contribForm,
-      year: y, month: m,
-      gross_income: parseFloat(contribForm.gross_income) || 0,
-      rrsp_employee: parseFloat(contribForm.rrsp_employee) || 0,
-      rrsp_employer: contribForm.rrsp_employer !== "" ? parseFloat(contribForm.rrsp_employer) : null,
-      espp_deduction: contribForm.espp_deduction !== "" ? parseFloat(contribForm.espp_deduction) : null,
-    };
-    try {
-      if (editContribId) {
-        await updateSavingsContribution(editContribId, body);
-      } else {
-        await createSavingsContribution(body);
-      }
-      setShowContribForm(false);
-      setEditContribId(null);
-      setContribForm(emptyContrib);
-      load();
-    } catch (e) { setError(e.message); }
-    finally { setSaving(false); }
-  };
-
-  const handleEditContrib = (c) => {
-    setContribForm({
-      pay_date: c.pay_date,
-      year: c.year, month: c.month,
-      gross_income: String(c.gross_income),
-      rrsp_employee: String(c.rrsp_employee),
-      rrsp_employer: String(c.rrsp_employer),
-      espp_deduction: String(c.espp_deduction),
-      notes: c.notes || "",
-    });
-    setEditContribId(c.id);
-    setShowContribForm(true);
-  };
-
-  const handleDeleteContrib = async (id) => {
-    if (!confirm("Delete this contribution?")) return;
-    await deleteSavingsContribution(id);
-    load();
-  };
+  // Group income records by pay_date and aggregate savings columns
+  const paycheckLog = Object.entries(
+    incomeRecords.reduce((acc, r) => {
+      const key = r.pay_date || "unspecified";
+      if (!acc[key]) acc[key] = { pay_date: key, year: r.year, month: r.month, gross: 0, rrsp_employee: 0, rrsp_employer: 0, espp_deduction: 0 };
+      acc[key].gross += r.amount;
+      acc[key].rrsp_employee += r.rrsp_employee || 0;
+      acc[key].rrsp_employer += r.rrsp_employer || 0;
+      acc[key].espp_deduction += r.espp_deduction || 0;
+      return acc;
+    }, {})
+  )
+    .map(([, v]) => v)
+    .filter((v) => v.rrsp_employee > 0 || v.espp_deduction > 0)
+    .sort((a, b) => a.pay_date.localeCompare(b.pay_date));
 
   const handlePurchaseSubmit = async (e) => {
     e.preventDefault();
@@ -194,6 +128,12 @@ export default function Savings() {
     load();
   };
 
+  const resolvePerson = (dbPerson) => {
+    if (dbPerson === "Person 1") return p1;
+    if (dbPerson === "Person 2") return p2;
+    return dbPerson;
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -203,14 +143,12 @@ export default function Savings() {
           <select className={inputCls} value={year} onChange={(e) => setYear(Number(e.target.value))}>
             {years.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
-          <button
-            onClick={() => { setShowContribForm(true); setEditContribId(null); setContribForm(emptyContrib); }}
-            className="bg-yellow-400 text-black px-4 py-2 rounded-lg text-sm font-medium hover:bg-yellow-300"
-          >
-            + Log Paycheck
-          </button>
         </div>
       </div>
+
+      <p className="text-xs text-zinc-600">
+        Savings data is sourced from paycheck entries on the <a href="/income" className="text-yellow-500 hover:text-yellow-400 underline underline-offset-2">Income tab</a> — add or edit paycheques there.
+      </p>
 
       {error && <p className="text-red-400 text-sm">{error}</p>}
 
@@ -356,16 +294,19 @@ export default function Savings() {
         </>
       )}
 
-      {/* Contribution log */}
+      {/* Paycheck savings log (from income records) */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-4 py-3 bg-zinc-800 border-b border-zinc-700 flex justify-between items-center">
-          <span className="text-xs font-bold uppercase tracking-widest text-zinc-300">Paycheck Log — {year}</span>
-          <span className="text-xs text-zinc-500">{contributions.length} entries</span>
+          <span className="text-xs font-bold uppercase tracking-widest text-zinc-300">Paycheck Savings Log — {year}</span>
+          <span className="text-xs text-zinc-500">{paycheckLog.length} paychecks with savings</span>
         </div>
-        {contributions.length === 0 ? (
+        {paycheckLog.length === 0 ? (
           <div className="py-12 text-center">
-            <p className="text-zinc-500 font-medium">No contributions logged yet</p>
-            <p className="text-zinc-600 text-sm mt-1">Click "+ Log Paycheck" to add your first entry — ESPP and employer match auto-calculate.</p>
+            <p className="text-zinc-500 font-medium">No savings data for {year}</p>
+            <p className="text-zinc-600 text-sm mt-1">
+              Add RRSP or ESPP amounts when logging paycheques on the{" "}
+              <a href="/income" className="text-yellow-500 hover:text-yellow-400 underline underline-offset-2">Income tab</a>.
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -374,21 +315,20 @@ export default function Savings() {
                 <tr className="border-b border-zinc-700 text-left text-zinc-500 text-xs bg-zinc-800/50">
                   <th className="px-4 py-2">Pay Date</th>
                   <th className="px-4 py-2 text-right">Gross</th>
-                  <th className="px-4 py-2 text-right">RRSP (You)</th>
+                  <th className="px-4 py-2 text-right text-blue-400">RRSP (You)</th>
                   <th className="px-4 py-2 text-right text-green-400">RRSP Match</th>
                   <th className="px-4 py-2 text-right text-purple-400">ESPP (10%)</th>
                   <th className="px-4 py-2 text-right text-yellow-400">Total Saved</th>
-                  <th className="px-4 py-2"></th>
                 </tr>
               </thead>
               <tbody>
-                {contributions.map((c) => {
+                {paycheckLog.map((c) => {
                   const total = c.rrsp_employee + c.rrsp_employer + c.espp_deduction;
-                  const savingsRate = c.gross_income > 0 ? ((c.rrsp_employee + c.espp_deduction) / c.gross_income * 100).toFixed(0) : 0;
+                  const savingsRate = c.gross > 0 ? ((c.rrsp_employee + c.espp_deduction) / c.gross * 100).toFixed(0) : 0;
                   return (
-                    <tr key={c.id} className="border-b border-zinc-800 last:border-0 hover:bg-zinc-800/40">
+                    <tr key={c.pay_date} className="border-b border-zinc-800 last:border-0 hover:bg-zinc-800/40">
                       <td className="px-4 py-2.5 text-zinc-400">{c.pay_date}</td>
-                      <td className="px-4 py-2.5 text-right text-zinc-300">{fmt(c.gross_income)}</td>
+                      <td className="px-4 py-2.5 text-right text-zinc-300">{fmt(c.gross)}</td>
                       <td className="px-4 py-2.5 text-right text-zinc-200">{fmt(c.rrsp_employee)}</td>
                       <td className="px-4 py-2.5 text-right text-green-400">{fmt(c.rrsp_employer)}</td>
                       <td className="px-4 py-2.5 text-right text-purple-400">{fmt(c.espp_deduction)}</td>
@@ -396,17 +336,13 @@ export default function Savings() {
                         {fmt(total)}
                         <span className="text-zinc-600 text-xs ml-1">({savingsRate}%)</span>
                       </td>
-                      <td className="px-4 py-2.5 text-right">
-                        <button onClick={() => handleEditContrib(c)} className="text-yellow-400 hover:text-yellow-300 text-xs mr-2">Edit</button>
-                        <button onClick={() => handleDeleteContrib(c.id)} className="text-red-600 hover:text-red-400 text-xs">Delete</button>
-                      </td>
                     </tr>
                   );
                 })}
               </tbody>
-              {contributions.length > 1 && (() => {
-                const totals = contributions.reduce((s, c) => ({
-                  gross: s.gross + c.gross_income,
+              {paycheckLog.length > 1 && (() => {
+                const totals = paycheckLog.reduce((s, c) => ({
+                  gross: s.gross + c.gross,
                   rrsp_emp: s.rrsp_emp + c.rrsp_employee,
                   rrsp_er: s.rrsp_er + c.rrsp_employer,
                   espp: s.espp + c.espp_deduction,
@@ -420,7 +356,6 @@ export default function Savings() {
                       <td className="px-4 py-2 text-right text-green-400">{fmt(totals.rrsp_er)}</td>
                       <td className="px-4 py-2 text-right text-purple-400">{fmt(totals.espp)}</td>
                       <td className="px-4 py-2 text-right text-yellow-400">{fmt(totals.rrsp_emp + totals.rrsp_er + totals.espp)}</td>
-                      <td />
                     </tr>
                   </tfoot>
                 );
@@ -430,87 +365,10 @@ export default function Savings() {
         )}
       </div>
 
-      {/* Add/Edit contribution modal */}
-      {showContribForm && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-6 w-full max-w-lg">
-            <h2 className="text-lg font-semibold mb-1 text-zinc-100">{editContribId ? "Edit" : "Log"} Paycheck</h2>
-            <p className="text-xs text-zinc-500 mb-4">Employer match and ESPP auto-calculate — adjust if needed.</p>
-            {error && <p className="text-red-400 text-sm mb-3">{error}</p>}
-            <form onSubmit={handleContribSubmit} className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-zinc-500">Pay Date</label>
-                  <input type="date" required className={`w-full mt-0.5 ${inputCls}`}
-                    value={contribForm.pay_date}
-                    onChange={(e) => setContribForm({ ...contribForm, pay_date: e.target.value })} />
-                </div>
-                <div>
-                  <label className="text-xs text-zinc-500">Gross Income ($)</label>
-                  <input type="number" step="0.01" min="0" required className={`w-full mt-0.5 ${inputCls}`}
-                    value={contribForm.gross_income}
-                    onChange={(e) => handleGrossChange(e.target.value)}
-                    placeholder="e.g. 5000" />
-                </div>
-              </div>
-
-              <div className="bg-zinc-800/50 rounded-lg p-3 space-y-2">
-                <p className="text-xs font-semibold text-blue-400 uppercase tracking-wide">RRSP</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs text-zinc-500">Your Contribution ($)</label>
-                    <input type="number" step="0.01" min="0" required className={`w-full mt-0.5 ${inputCls}`}
-                      value={contribForm.rrsp_employee}
-                      onChange={(e) => handleRrspChange(e.target.value)}
-                      placeholder="0.00" />
-                  </div>
-                  <div>
-                    <label className="text-xs text-zinc-500">Employer Match (auto 50%)</label>
-                    <input type="number" step="0.01" min="0" className={`w-full mt-0.5 ${inputCls}`}
-                      value={contribForm.rrsp_employer}
-                      onChange={(e) => setContribForm({ ...contribForm, rrsp_employer: e.target.value })}
-                      placeholder="auto" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-zinc-800/50 rounded-lg p-3 space-y-2">
-                <p className="text-xs font-semibold text-purple-400 uppercase tracking-wide">ESPP</p>
-                <div>
-                  <label className="text-xs text-zinc-500">Deduction (auto 10% of gross)</label>
-                  <input type="number" step="0.01" min="0" className={`w-full mt-0.5 ${inputCls}`}
-                    value={contribForm.espp_deduction}
-                    onChange={(e) => setContribForm({ ...contribForm, espp_deduction: e.target.value })}
-                    placeholder="auto" />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs text-zinc-500">Notes (optional)</label>
-                <input type="text" className={`w-full mt-0.5 ${inputCls}`}
-                  value={contribForm.notes}
-                  onChange={(e) => setContribForm({ ...contribForm, notes: e.target.value })} />
-              </div>
-
-              <div className="flex gap-3 pt-1">
-                <button type="submit" disabled={saving}
-                  className="flex-1 bg-yellow-400 text-black py-2 rounded-lg text-sm font-medium hover:bg-yellow-300 disabled:opacity-40">
-                  {saving ? "Saving..." : editContribId ? "Save Changes" : "Log Paycheck"}
-                </button>
-                <button type="button" onClick={() => { setShowContribForm(false); setEditContribId(null); setError(""); }}
-                  className="flex-1 border border-zinc-700 py-2 rounded-lg text-sm font-medium text-zinc-300 hover:bg-zinc-800">
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
       {/* Add/Edit ESPP purchase modal */}
       {showPurchaseForm && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-6 w-full max-w-lg">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <h2 className="text-lg font-semibold mb-1 text-zinc-100">{editPurchaseId ? "Edit" : "Log"} ESPP Purchase</h2>
             <p className="text-xs text-zinc-500 mb-4">Record when your ESPP period closes and stock is purchased at the 15% discount.</p>
             {error && <p className="text-red-400 text-sm mb-3">{error}</p>}
@@ -575,9 +433,10 @@ export default function Savings() {
                   placeholder="0.00" />
               </div>
               {purchaseForm.shares_purchased && purchaseForm.market_price && purchaseForm.purchase_price && (
-                <div className="bg-zinc-800/60 rounded p-3 text-xs space-y-1">
+                <div className="bg-zinc-800/60 rounded p-3 text-xs">
                   <p className="text-zinc-400">
-                    Instant gain at purchase: <span className="text-green-400 font-semibold">
+                    Instant gain at purchase:{" "}
+                    <span className="text-green-400 font-semibold">
                       {fmt((parseFloat(purchaseForm.market_price) - parseFloat(purchaseForm.purchase_price)) * parseFloat(purchaseForm.shares_purchased))}
                     </span>
                     {" "}({(((parseFloat(purchaseForm.market_price) - parseFloat(purchaseForm.purchase_price)) / parseFloat(purchaseForm.purchase_price)) * 100).toFixed(1)}%)
