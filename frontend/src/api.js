@@ -239,6 +239,7 @@ export const createAsset = (body) =>
 export const updateAsset = (id, body) =>
   req(`/assets/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 export const deleteAsset = (id) => req(`/assets/${id}`, { method: "DELETE" });
+export const syncSavingsAssets = () => req("/assets/sync-savings", { method: "POST" });
 
 // Savings contributions (RRSP + ESPP)
 export const getSavingsContributions = (year) =>

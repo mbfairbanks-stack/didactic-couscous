@@ -940,6 +940,33 @@ def delete_asset(asset_id: int, db: Session = Depends(get_db)):
     db.commit()
 
 
+@app.post("/assets/sync-savings")
+def sync_savings_assets(db: Session = Depends(get_db)):
+    """Auto-update RRSP and ESPP asset balances from tracked contribution data."""
+    # All-time RRSP total (employee + employer contributions from income records)
+    rrsp_total = db.execute(
+        select(
+            func.sum(models.Income.rrsp_employee + models.Income.rrsp_employer)
+        )
+    ).scalar() or 0
+
+    # All-time ESPP stock value (shares at current/market price from purchases)
+    espp_purchases = db.execute(select(models.EsppPurchase)).scalars().all()
+    espp_value = sum(p.shares_purchased * (p.current_price or p.market_price) for p in espp_purchases)
+
+    updated = []
+    assets = db.execute(select(models.Asset)).scalars().all()
+    for asset in assets:
+        if asset.asset_type == "rrsp" and rrsp_total > 0:
+            asset.balance = round(rrsp_total, 2)
+            updated.append({"id": asset.id, "name": asset.name, "balance": asset.balance})
+        elif asset.asset_type == "espp" and espp_value > 0:
+            asset.balance = round(espp_value, 2)
+            updated.append({"id": asset.id, "name": asset.name, "balance": asset.balance})
+    db.commit()
+    return {"updated": updated, "rrsp_total": round(rrsp_total, 2), "espp_value": round(espp_value, 2)}
+
+
 # ---------------------------------------------------------------------------
 # Savings contributions (RRSP + ESPP per paycheck)
 # ---------------------------------------------------------------------------
