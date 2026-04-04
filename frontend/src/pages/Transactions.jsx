@@ -824,6 +824,7 @@ export default function Transactions() {
                 <label className="text-xs text-zinc-500">Category</label>
                 <select required className={`w-full mt-0.5 ${inputCls}`}
                   value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+                  {!form.category && <option value="">— choose category —</option>}
                   {form.category && !allCategories.includes(form.category) && (
                     <option value={form.category}>{form.category}</option>
                   )}
