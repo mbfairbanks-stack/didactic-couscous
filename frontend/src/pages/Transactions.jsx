@@ -634,9 +634,9 @@ export default function Transactions() {
                     {renderEditableCell(
                       txn,
                       "category",
-                      <span className="bg-yellow-400/10 text-yellow-400 px-2 py-0.5 rounded text-xs font-medium">
-                        {txn.category}
-                      </span>
+                      txn.category
+                        ? <span className="bg-yellow-400/10 text-yellow-400 px-2 py-0.5 rounded text-xs font-medium">{txn.category}</span>
+                        : <span className="text-zinc-600 text-xs italic">Uncategorized</span>
                     )}
                     {/* Inline-editable: amount */}
                     {renderEditableCell(
