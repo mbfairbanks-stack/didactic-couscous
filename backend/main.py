@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 import datetime
 import hashlib
-import tempfile, os, io, json, csv, re
+import tempfile, os, io, json, csv, re, math
 from collections import defaultdict
 
 from dotenv import load_dotenv
@@ -1931,6 +1931,54 @@ MONTH_NAMES = ["", "January", "February", "March", "April", "May", "June",
                "July", "August", "September", "October", "November", "December"]
 
 
+def _build_debt_context(db: Session) -> list[str]:
+    """Build debt section for AI context, including payoff recommendations request."""
+    debts = db.execute(select(models.Debt)).scalars().all()
+    if not debts:
+        return []
+
+    lines = ["", "### Current Debts"]
+    total_balance = 0
+    total_min_payment = 0
+
+    for d in debts:
+        total_balance += d.current_balance
+        total_min_payment += d.monthly_payment + d.monthly_extra
+        debt_type = "Line of Credit" if d.debt_type == "loc" else "Loan"
+        rate_str = f" @ {d.interest_rate * 100:.2f}% p.a." if d.interest_rate else " (0% interest)"
+
+        if d.debt_type == "loc":
+            available = max(0, (d.credit_limit or 0) - d.current_balance)
+            monthly_interest = d.current_balance * (d.interest_rate / 12) if d.interest_rate else 0
+            lines.append(
+                f"- **{d.name}** ({debt_type}, {d.creditor}){rate_str}: "
+                f"${d.current_balance:,.0f} outstanding / ${d.credit_limit:,.0f} limit "
+                f"(${available:,.0f} available) — min payment ${d.monthly_payment:,.0f}/mo, "
+                f"monthly interest ~${monthly_interest:,.0f}"
+            )
+        else:
+            months_left = None
+            if d.monthly_payment + d.monthly_extra > 0 and d.current_balance > 0:
+                total_pmt = d.monthly_payment + d.monthly_extra
+                if d.interest_rate:
+                    r = d.interest_rate / 12
+                    if total_pmt > d.current_balance * r:
+                        months_left = int(math.ceil(math.log(total_pmt / (total_pmt - d.current_balance * r)) / math.log(1 + r)))
+                else:
+                    months_left = int(math.ceil(d.current_balance / total_pmt)) if total_pmt > 0 else None
+            payoff_str = f", payoff in ~{months_left} months" if months_left else ""
+            lines.append(
+                f"- **{d.name}** ({debt_type}, {d.creditor}){rate_str}: "
+                f"${d.current_balance:,.0f} remaining — "
+                f"${d.monthly_payment + d.monthly_extra:,.0f}/mo total payment{payoff_str}"
+            )
+
+    lines += [
+        f"- **Total debt: ${total_balance:,.0f}** | Total committed payments: ${total_min_payment:,.0f}/mo",
+    ]
+    return lines
+
+
 def _build_insights_context(year: int, month: Optional[int], db: Session) -> str:
     """Build the AI prompt context. month=None means full-year annual analysis."""
 
@@ -2025,6 +2073,23 @@ def _build_monthly_context(year: int, month: int, db: Session) -> str:
         "",
         "Keep the tone practical and encouraging. Use Canadian dollar amounts. Be specific with numbers.",
     ]
+
+    debt_lines = _build_debt_context(db)
+    if debt_lines:
+        lines += debt_lines
+        lines += [
+            "",
+            "---",
+            "",
+            "**Debt Payoff Recommendations:**",
+            f"Given the household income of ${total_income:,.0f}/month and expenses of ${total_expenses:,.0f}/month (leaving ${savings:,.0f}/month):",
+            "6. **Recommended monthly payment per debt** — calculate the optimal payment for each debt to pay them off efficiently. Show the math: how much goes to each debt, what order, and the projected payoff date.",
+            "7. **Acceleration opportunity** — if they freed up $200-500/month, how much faster could they be debt-free?",
+            "8. **Interest cost warning** — for any debts with interest rates, show the total interest they'll pay at current payment pace vs an accelerated pace.",
+            "",
+            "Keep the tone practical and encouraging. Use Canadian dollar amounts. Be specific with numbers.",
+        ]
+
     return "\n".join(lines)
 
 
@@ -2173,6 +2238,27 @@ def _build_annual_context(year: int, db: Session) -> str:
         "",
         "Keep the tone practical and encouraging. Use Canadian dollar amounts. Be specific with numbers.",
     ]
+
+    debt_lines = _build_debt_context(db)
+    if debt_lines:
+        avg_monthly_income = total_income / len([m for m in range(1, 13) if inc_by_month.get(m, 0) > 0]) if total_income else 0
+        avg_monthly_expenses = total_expenses / len([m for m in range(1, 13) if exp_by_month.get(m, 0) > 0]) if total_expenses else 0
+        avg_monthly_savings = avg_monthly_income - avg_monthly_expenses
+        lines += debt_lines
+        lines += [
+            "",
+            "---",
+            "",
+            "**Debt Payoff Recommendations:**",
+            f"Average monthly income: ${avg_monthly_income:,.0f} | Average monthly expenses: ${avg_monthly_expenses:,.0f} | Average monthly surplus: ${avg_monthly_savings:,.0f}",
+            "7. **Recommended monthly payment per debt** — based on their income and spending patterns, calculate the optimal payment for each debt. Show the math: recommended amount per debt, payoff order, and projected payoff dates.",
+            "8. **Optimal payoff strategy** — avalanche (highest interest first) vs snowball (lowest balance first). Given their specific debts, which saves more money?",
+            "9. **Acceleration scenario** — if they put an extra $300/month toward debt, which debt should receive it first and how much sooner would they be debt-free?",
+            "10. **Total interest cost** — how much interest will they pay at current pace? How much would they save with the accelerated plan?",
+            "",
+            "Keep the tone practical and encouraging. Use Canadian dollar amounts. Be specific with numbers.",
+        ]
+
     return "\n".join(lines)
 
 
