@@ -350,17 +350,17 @@ export default function BudgetPlanner() {
           <div className="border-t border-zinc-800 p-4 space-y-4">
             {/* Add single */}
             <form onSubmit={addNew} className="flex gap-3 flex-wrap items-end">
-              <div>
+              <div className="flex-1 min-w-[120px]">
                 <label className="text-xs text-zinc-500 block mb-1">Category</label>
-                <input type="text" placeholder="e.g. Groceries" className={`${inputCls} w-40`}
+                <input type="text" placeholder="e.g. Groceries" className={`w-full ${inputCls}`}
                   value={newCategory} onChange={(e) => setNewCategory(e.target.value)} />
               </div>
-              <div>
-                <label className="text-xs text-zinc-500 block mb-1">Monthly Budget ($)</label>
-                <input type="number" step="0.01" min="0" placeholder="0.00" className={`${inputCls} w-28`}
+              <div className="w-28 shrink-0">
+                <label className="text-xs text-zinc-500 block mb-1">Budget ($)</label>
+                <input type="number" step="0.01" min="0" placeholder="0.00" className={`w-full ${inputCls}`}
                   value={newAmount} onChange={(e) => setNewAmount(e.target.value)} />
               </div>
-              <button type="submit" className="bg-yellow-400 text-black px-4 py-1.5 rounded text-sm font-medium hover:bg-yellow-300">Set</button>
+              <button type="submit" className="bg-yellow-400 text-black px-4 py-1.5 rounded text-sm font-medium hover:bg-yellow-300 shrink-0">Set</button>
             </form>
             {/* Auto-populate */}
             <div className="border-t border-zinc-800 pt-4 space-y-3">

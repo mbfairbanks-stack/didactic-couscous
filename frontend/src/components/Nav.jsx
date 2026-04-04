@@ -79,11 +79,11 @@ export default function Nav() {
 
       {/* Mobile drawer */}
       {menuOpen && (
-        <div className="md:hidden border-t border-zinc-800 bg-zinc-950 px-4 py-3 grid grid-cols-2 gap-1">
+        <div className="md:hidden border-t border-zinc-800 bg-zinc-950 px-4 py-3 grid grid-cols-2 sm:grid-cols-3 gap-1">
           {allLinks.map((l) => (
             <NavLink key={l.to} to={l.to} onClick={() => setMenuOpen(false)}
               className={({ isActive }) =>
-                `px-3 py-2.5 rounded-md text-sm font-medium transition-colors ${isActive ? "bg-yellow-400 text-black" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"}`
+                `px-3 py-2.5 rounded-md text-sm font-medium transition-colors truncate ${isActive ? "bg-yellow-400 text-black" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"}`
               }>
               {l.label}
             </NavLink>

@@ -277,7 +277,7 @@ export default function Dashboard() {
           const committedTotal = committed.reduce((s, c) => s + c.total, 0);
           const discretionary = (monthTotals.total_expenses ?? 0) - committedTotal;
           return (
-            <div className="mt-3 grid grid-cols-2 gap-4">
+            <div className="mt-3 grid grid-cols-2 gap-3">
               <div className="bg-zinc-900 border border-zinc-800/50 rounded-xl p-4">
                 <p className="text-xs text-zinc-500 uppercase tracking-wide mb-1">Committed Costs</p>
                 <p className="text-xl font-bold text-blue-400">{fmt(committedTotal)}</p>
@@ -396,7 +396,7 @@ export default function Dashboard() {
                       return (
                         <div key={c.category}>
                           <div className="flex justify-between text-xs mb-0.5">
-                            <span className="text-zinc-400 truncate max-w-[140px]">{c.category}</span>
+                            <span className="text-zinc-400 truncate min-w-0 mr-2">{c.category}</span>
                             <span className={`font-medium ${over ? "text-red-400" : "text-zinc-300"}`}>
                               {fmt(c.total)}{budget ? <span className="text-zinc-600"> / {fmt(budget)}</span> : null}
                             </span>
@@ -504,8 +504,8 @@ export default function Dashboard() {
                 return (
                   <div key={c.category}>
                     <div className="flex justify-between text-xs mb-1">
-                      <span className="truncate max-w-[180px] text-zinc-300">{c.category}</span>
-                      <span className="font-medium text-yellow-400">{fmt(c.total)}</span>
+                      <span className="truncate min-w-0 mr-2 text-zinc-300">{c.category}</span>
+                      <span className="font-medium text-yellow-400 shrink-0">{fmt(c.total)}</span>
                     </div>
                     <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
                       <div
