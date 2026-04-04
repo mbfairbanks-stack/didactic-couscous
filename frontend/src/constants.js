@@ -45,6 +45,9 @@ export const getCategoryGroup = (category) => {
   if (_committed.has(category)) return "Committed";
   if (_needs.has(category)) return "Needs";
   if (_wants.has(category)) return "Wants";
+  // Fallback to hardcoded sets in case DB groupings are missing/incomplete
+  if (NEEDS.has(category)) return "Needs";
+  if (WANTS.has(category)) return "Wants";
   return "Other";
 };
 

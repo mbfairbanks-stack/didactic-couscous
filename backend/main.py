@@ -715,6 +715,8 @@ def onboarding_status(db: Session = Depends(get_db)):
 def list_categories(db: Session = Depends(get_db)):
     rows = db.execute(
         select(distinct(models.Transaction.category))
+        .where(models.Transaction.category != None)  # noqa: E711
+        .where(models.Transaction.category != "")
         .order_by(models.Transaction.category)
     ).scalars().all()
     return rows
