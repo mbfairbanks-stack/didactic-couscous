@@ -293,6 +293,55 @@ export default function Dashboard() {
         })()}
       </div>
 
+      {/* Spending pace — current month only */}
+      {month === new Date().getMonth() + 1 && year === new Date().getFullYear() && monthTotals.total_expenses > 0 && (
+        (() => {
+          const today = new Date();
+          const daysInMonth = new Date(year, month, 0).getDate();
+          const dayOfMonth = today.getDate();
+          const monthPct = Math.round((dayOfMonth / daysInMonth) * 100);
+          const expensePct = monthTotals.total_income > 0
+            ? Math.round((monthTotals.total_expenses / monthTotals.total_income) * 100)
+            : null;
+          const projectedExpenses = Math.round((monthTotals.total_expenses / dayOfMonth) * daysInMonth);
+          const ahead = expensePct !== null && expensePct > monthPct + 10;
+          return (
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+              <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">
+                Spending Pace — Day {dayOfMonth} of {daysInMonth}
+              </h3>
+              <div className="relative h-2 bg-zinc-800 rounded-full overflow-hidden mb-2">
+                <div className="absolute top-0 left-0 h-full bg-zinc-600 rounded-full transition-all" style={{ width: `${monthPct}%` }} />
+                <div className={`absolute top-0 left-0 h-full rounded-full transition-all ${ahead ? "bg-red-500" : "bg-green-500"}`}
+                  style={{ width: `${Math.min(expensePct ?? monthPct, 100)}%` }} />
+              </div>
+              <div className="flex justify-between text-xs text-zinc-500 mb-3">
+                <span>Expenses: <span className={ahead ? "text-red-400 font-semibold" : "text-zinc-300"}>{expensePct != null ? `${expensePct}% of income` : fmt(monthTotals.total_expenses)}</span></span>
+                <span>Month: <span className="text-zinc-300">{monthPct}% elapsed</span></span>
+              </div>
+              <div className="flex gap-4 text-xs">
+                <div>
+                  <p className="text-zinc-500">Spent so far</p>
+                  <p className="font-semibold text-zinc-100">{fmt(monthTotals.total_expenses)}</p>
+                </div>
+                <div>
+                  <p className="text-zinc-500">Month-end projection</p>
+                  <p className={`font-semibold ${ahead ? "text-red-400" : "text-zinc-100"}`}>{fmt(projectedExpenses)}</p>
+                </div>
+                {monthTotals.total_income > 0 && (
+                  <div>
+                    <p className="text-zinc-500">Remaining income</p>
+                    <p className={`font-semibold ${monthTotals.total_income - monthTotals.total_expenses < 0 ? "text-red-400" : "text-green-400"}`}>
+                      {fmt(Math.max(0, monthTotals.total_income - monthTotals.total_expenses))}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()
+      )}
+
       {/* vs Last Month + Savings Goal */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <MoMCard current={monthTotals} last={lastMonthTotals} />

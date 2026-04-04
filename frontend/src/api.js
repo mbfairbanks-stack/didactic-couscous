@@ -105,6 +105,10 @@ export const getCategoryTrend = (category) =>
   req(`/summary/category-trend?category=${encodeURIComponent(category)}`);
 export const getProjections = (year, month) =>
   req(`/summary/projections?year=${year}&month=${month}`);
+export const getDailySummary = (year, month) => {
+  const qs = month ? `?year=${year}&month=${month}` : `?year=${year}`;
+  return req(`/summary/daily${qs}`);
+};
 
 // Settings
 export const getSettings = () => req("/settings");

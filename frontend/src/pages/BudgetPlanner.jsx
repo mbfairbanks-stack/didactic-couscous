@@ -235,6 +235,11 @@ export default function BudgetPlanner() {
 
   const yoyMap = Object.fromEntries(yoyActuals.map((r) => [r.category, r.total]));
 
+  // Prior month actual map (most recent of the 3 prior months loaded)
+  const priorMonthMap = priorMonthsActuals.length > 0
+    ? Object.fromEntries(priorMonthsActuals[0].map((r) => [r.category, r.total]))
+    : {};
+
   // 3-month rolling average per category for committed group
   const committedAvgMap = (() => {
     const totals = {};
@@ -496,6 +501,18 @@ export default function BudgetPlanner() {
                 <td className={`hidden sm:table-cell px-4 py-2.5 text-right font-medium ${ref > 0 ? (diff < 0 ? "text-red-400" : "text-green-400") : "text-zinc-600"}`}>
                   {ref > 0 ? (diff < 0 ? `-${fmt(Math.abs(diff))}` : `+${fmt(diff)}`) : "—"}
                 </td>
+                <td className="hidden md:table-cell px-4 py-2.5 text-right text-xs">
+                  {(() => {
+                    const prior = priorMonthMap[row.category];
+                    if (prior == null) return <span className="text-zinc-700">—</span>;
+                    const momDiff = row.total - prior;
+                    return (
+                      <span className={momDiff > 5 ? "text-red-400" : momDiff < -5 ? "text-green-400" : "text-zinc-500"}>
+                        {momDiff > 0 ? "+" : ""}{fmt(momDiff)}
+                      </span>
+                    );
+                  })()}
+                </td>
                 <td className="hidden lg:table-cell px-4 py-2.5 text-right text-zinc-600 text-xs">
                   {yoyMap[row.category] != null ? fmt(yoyMap[row.category]) : "—"}
                 </td>
@@ -532,6 +549,7 @@ export default function BudgetPlanner() {
                     <th className="px-4 py-2 font-medium text-right">{group === "Committed" ? "Ref / Budget" : "Budget"}</th>
                     <th className="px-4 py-2 font-medium text-right">Actual</th>
                     <th className="hidden sm:table-cell px-4 py-2 font-medium text-right">Diff</th>
+                    <th className="hidden md:table-cell px-4 py-2 font-medium text-right text-zinc-500 text-xs">vs Last Mo</th>
                     <th className="hidden lg:table-cell px-4 py-2 font-medium text-right text-zinc-600">{year - 1}</th>
                     <th className="hidden sm:table-cell px-4 py-2 font-medium w-28">Progress</th>
                     <th className="px-4 py-2"></th>
@@ -570,6 +588,7 @@ export default function BudgetPlanner() {
                           <td className={`hidden sm:table-cell px-4 py-2.5 text-right font-medium ${rollupBudget - rollupActual < 0 ? "text-red-400" : "text-green-400"}`}>
                             {rollupBudget ? (rollupBudget - rollupActual < 0 ? `-${fmt(Math.abs(rollupBudget - rollupActual))}` : `+${fmt(rollupBudget - rollupActual)}`) : "—"}
                           </td>
+                          <td className="hidden md:table-cell px-4 py-2.5 text-right text-zinc-700 text-xs">—</td>
                           <td className="hidden lg:table-cell px-4 py-2.5 text-right text-zinc-600 text-xs">—</td>
                           <td className="hidden sm:table-cell px-4 py-2.5"><ProgressBar actual={rollupActual} budget={rollupBudget} /></td>
                           <td></td>

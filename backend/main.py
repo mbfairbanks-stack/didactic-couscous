@@ -468,6 +468,21 @@ def totals_summary(year: int, month: Optional[int] = None, through_month: Option
     }
 
 
+@app.get("/summary/daily")
+def daily_summary(year: int, month: Optional[int] = None, db: Session = Depends(get_db)):
+    """Returns spending totals grouped by date for a given year/month."""
+    q = (
+        select(models.Transaction.date, func.sum(models.Transaction.amount).label("total"))
+        .where(models.Transaction.year == year)
+        .where(models.Transaction.amount > 0)
+    )
+    if month:
+        q = q.where(models.Transaction.month == month)
+    q = q.group_by(models.Transaction.date).order_by(models.Transaction.date)
+    rows = db.execute(q).all()
+    return [{"date": r.date, "total": round(r.total, 2)} for r in rows]
+
+
 @app.get("/summary/category-trend")
 def category_trend(category: str, db: Session = Depends(get_db)):
     """Returns monthly spending for a category across all years."""

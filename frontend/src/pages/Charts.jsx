@@ -3,7 +3,7 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
-import { getMonthlySummary, getCategorySummary, getCategoryTrend, getCategories, getYears, getMultiCategoryTrend } from "../api";
+import { getMonthlySummary, getCategorySummary, getCategoryTrend, getCategories, getYears, getMultiCategoryTrend, getDailySummary } from "../api";
 import { MONTH_LABELS, currentYear, fmt } from "../utils";
 
 const COLORS = [
@@ -111,6 +111,8 @@ export default function Charts() {
   const [monthly, setMonthly] = useState([]);
   const [catSummary, setCatSummary] = useState([]);
   const [catTrend, setCatTrend] = useState([]);
+  const [dailyData, setDailyData] = useState([]);
+  const [heatmapMonth, setHeatmapMonth] = useState(new Date().getMonth() + 1);
 
   useEffect(() => {
     getYears().then((y) => setYears(y.length ? [...y].sort((a, b) => b - a) : [currentYear]));
@@ -128,6 +130,22 @@ export default function Charts() {
   useEffect(() => {
     if (selectedCategory) getCategoryTrend(selectedCategory).then(setCatTrend);
   }, [selectedCategory]);
+
+  useEffect(() => {
+    getDailySummary(year, heatmapMonth).then((rows) => {
+      // Build day 1–31 array
+      const byDay = {};
+      for (const r of rows) {
+        const day = parseInt(r.date.split("-")[2], 10);
+        byDay[day] = (byDay[day] || 0) + r.total;
+      }
+      const days = Array.from({ length: 31 }, (_, i) => ({
+        day: i + 1,
+        total: Math.round((byDay[i + 1] || 0) * 100) / 100,
+      }));
+      setDailyData(days);
+    }).catch(() => setDailyData([]));
+  }, [year, heatmapMonth]);
 
   const incomeExpenseData = monthly.map((m) => ({
     name: MONTH_LABELS[m.month],
@@ -363,7 +381,51 @@ export default function Charts() {
         </div>
       )}
 
-      {/* Row 4: Multi-category spending trends */}
+      {/* Row 4: Daily spending heatmap */}
+      <div className={cardCls}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Daily Spending — {MONTH_LABELS[heatmapMonth]} {year}</h2>
+          <select className={selectCls} value={heatmapMonth} onChange={(e) => setHeatmapMonth(Number(e.target.value))}>
+            {MONTH_LABELS.slice(1).map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+          </select>
+        </div>
+        {dailyData.every((d) => d.total === 0) ? (
+          <p className="text-zinc-600 text-sm text-center py-10">No spending data for this month</p>
+        ) : (
+          <>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={dailyData} barCategoryGap="20%">
+                <CartesianGrid {...gridProps} />
+                <XAxis dataKey="day" tick={{ fontSize: 10, fill: "#71717a" }} axisLine={false} tickLine={false} label={{ value: "Day of Month", position: "insideBottom", offset: -2, fontSize: 10, fill: "#52525b" }} height={30} />
+                <YAxis tick={{ fontSize: 11, fill: "#71717a" }} tickFormatter={(v) => `$${v}`} axisLine={false} tickLine={false} />
+                <Tooltip
+                  formatter={(v) => [fmt(v), "Spending"]}
+                  labelFormatter={(l) => `Day ${l}`}
+                  contentStyle={{ backgroundColor: "#18181b", border: "1px solid #3f3f46", borderRadius: "8px", fontSize: 12 }}
+                  labelStyle={{ color: "#a1a1aa" }}
+                />
+                <Bar dataKey="total" radius={[3, 3, 0, 0]}>
+                  {dailyData.map((d, i) => {
+                    const max = Math.max(...dailyData.map((x) => x.total));
+                    const intensity = max > 0 ? d.total / max : 0;
+                    const r = Math.round(251 * intensity + 39 * (1 - intensity));
+                    const g = Math.round(191 * intensity + 39 * (1 - intensity));
+                    const b = Math.round(36 * intensity + 39 * (1 - intensity));
+                    return <Cell key={i} fill={d.total > 0 ? `rgb(${r},${g},${b})` : "#27272a"} />;
+                  })}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+            <div className="mt-3 flex justify-between text-xs text-zinc-500">
+              <span>Total: {fmt(dailyData.reduce((s, d) => s + d.total, 0))}</span>
+              <span>Peak: {fmt(Math.max(...dailyData.map((d) => d.total)))} on day {dailyData.reduce((max, d) => d.total > max.total ? d : max, { total: 0, day: 0 }).day}</span>
+              <span>Avg: {fmt(Math.round(dailyData.filter((d) => d.total > 0).reduce((s, d) => s + d.total, 0) / Math.max(dailyData.filter((d) => d.total > 0).length, 1)))} on spending days</span>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Row 5: Multi-category spending trends */}
       <MultiCategoryTrend categories={categories} />
     </div>
   );

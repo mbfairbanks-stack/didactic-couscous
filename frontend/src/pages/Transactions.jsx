@@ -105,7 +105,9 @@ export default function Transactions() {
   const load = useCallback(() => {
     setLoading(true);
     setPage(0);
-    getTransactions({ year, month, category: filterCategory || undefined, limit: 5000 })
+    // "__uncategorized__" is a client-only pseudo-filter; don't send to API
+    const apiCategory = (filterCategory && filterCategory !== "__uncategorized__") ? filterCategory : undefined;
+    getTransactions({ year, month, category: apiCategory, limit: 5000 })
       .then(setTransactions)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -122,8 +124,9 @@ export default function Transactions() {
 
   const filtered = transactions
     .filter((t) => {
-      if (search && !t.merchant.toLowerCase().includes(search.toLowerCase()) &&
-          !t.category.toLowerCase().includes(search.toLowerCase())) return false;
+      if (search && !t.merchant?.toLowerCase().includes(search.toLowerCase()) &&
+          !(t.category || "").toLowerCase().includes(search.toLowerCase())) return false;
+      if (filterCategory === "__uncategorized__" && t.category && t.category.trim() !== "") return false;
       if (filterSource && t.source !== filterSource) return false;
       if (amountMin !== "" && t.amount < parseFloat(amountMin)) return false;
       if (amountMax !== "" && t.amount > parseFloat(amountMax)) return false;
@@ -440,6 +443,7 @@ export default function Transactions() {
           </select>
           <select className={inputCls} value={filterCategory} onChange={(e) => { setFilterCategory(e.target.value); setPage(0); }}>
             <option value="">All categories</option>
+            <option value="__uncategorized__">Uncategorized</option>
             {allCategories.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
           <input

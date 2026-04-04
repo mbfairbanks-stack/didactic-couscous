@@ -5,6 +5,7 @@ import {
   XAxis,
   YAxis,
   Tooltip,
+  Legend,
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
@@ -104,6 +105,57 @@ function calcMonthsToPayoff(balance, monthlyPayment, annualRate = 0) {
   const r = annualRate / 12;
   if (monthlyPayment <= balance * r) return null; // payment doesn't cover interest
   return Math.ceil(Math.log(monthlyPayment / (monthlyPayment - balance * r)) / Math.log(1 + r));
+}
+
+const DEBT_COLORS = ["#fbbf24", "#22c55e", "#a78bfa", "#06b6d4", "#ec4899", "#f97316", "#84cc16", "#14b8a6"];
+
+function buildAllDebtsPayoffData(debts) {
+  const active = debts.filter((d) => d.current_balance > 0 && (d.monthly_payment + d.monthly_extra) > 0);
+  if (!active.length) return { data: [], keys: [] };
+
+  const perDebt = active.map((d) => ({ name: d.name, points: buildPayoffData(d) }));
+  // Collect all unique month labels in order
+  const allLabels = [...new Map(
+    perDebt.flatMap((d) => d.points.map((p) => [p.month, true]))
+  ).keys()];
+
+  const data = allLabels.map((label) => {
+    const row = { month: label };
+    for (const d of perDebt) {
+      const p = d.points.find((pt) => pt.month === label);
+      row[d.name] = p ? p.balance : 0;
+    }
+    return row;
+  });
+
+  return { data, keys: perDebt.map((d) => d.name) };
+}
+
+function AggregatePayoffChart({ debts }) {
+  const { data, keys } = buildAllDebtsPayoffData(debts);
+  if (!keys.length) return null;
+
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+      <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-4">All Debts — Payoff Timeline</h2>
+      <ResponsiveContainer width="100%" height={260}>
+        <LineChart data={data}>
+          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
+          <XAxis dataKey="month" tick={{ fontSize: 10, fill: "#71717a" }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+          <YAxis tick={{ fontSize: 11, fill: "#71717a" }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} axisLine={false} tickLine={false} />
+          <Tooltip
+            formatter={(v) => fmt(v)}
+            contentStyle={{ backgroundColor: "#18181b", border: "1px solid #3f3f46", borderRadius: "8px", fontSize: 12 }}
+            labelStyle={{ color: "#a1a1aa" }}
+          />
+          <Legend wrapperStyle={{ fontSize: 11, color: "#a1a1aa" }} />
+          {keys.map((name, i) => (
+            <Line key={name} type="monotone" dataKey={name} stroke={DEBT_COLORS[i % DEBT_COLORS.length]} strokeWidth={2} dot={false} />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
 }
 
 function PayoffTooltip({ active, payload, label }) {
@@ -557,6 +609,21 @@ export default function Debts() {
 
       {error && <p className="text-red-400 text-sm">{error}</p>}
 
+      {/* LOC utilization alerts */}
+      {debts.filter((d) => d.debt_type === "loc" && d.credit_limit > 0 && d.current_balance / d.credit_limit >= 0.8).map((d) => {
+        const pct = Math.round((d.current_balance / d.credit_limit) * 100);
+        return (
+          <div key={d.id} className="bg-red-900/20 border border-red-700/40 rounded-xl px-4 py-3 flex items-center gap-3">
+            <span className="text-red-400 font-bold text-sm">⚠</span>
+            <div>
+              <span className="text-red-400 font-semibold text-sm">{d.name}</span>
+              <span className="text-zinc-400 text-sm ml-2">is {pct}% utilized</span>
+              <span className="text-zinc-500 text-xs ml-2">({fmt(d.current_balance)} of {fmt(d.credit_limit)} limit)</span>
+            </div>
+          </div>
+        );
+      })}
+
       {/* Summary bar */}
       {debts.length > 0 && (
         <div className="grid grid-cols-3 gap-4">
@@ -573,6 +640,11 @@ export default function Debts() {
             <p className="text-xl font-bold text-yellow-400">{fmt(totalRemaining)}</p>
           </div>
         </div>
+      )}
+
+      {/* Aggregate payoff chart (2+ debts with active payments) */}
+      {debts.filter((d) => d.current_balance > 0 && (d.monthly_payment + d.monthly_extra) > 0).length >= 2 && (
+        <AggregatePayoffChart debts={debts} />
       )}
 
       {/* Loading */}
