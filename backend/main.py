@@ -951,9 +951,10 @@ def sync_savings_assets(db: Session = Depends(get_db)):
         )
     ).scalar() or 0
 
-    # All-time ESPP stock value (shares at current/market price from purchases)
-    espp_purchases = db.execute(select(models.EsppPurchase)).scalars().all()
-    espp_value = sum(p.shares_purchased * (p.current_price or p.market_price) for p in espp_purchases)
+    # All-time ESPP deductions from income records (payroll deductions, not stock purchases)
+    espp_total = db.execute(
+        select(func.sum(models.Income.espp_deduction))
+    ).scalar() or 0
 
     updated = []
     assets = db.execute(select(models.Asset).where(models.Asset.auto_sync == True)).scalars().all()
@@ -961,11 +962,11 @@ def sync_savings_assets(db: Session = Depends(get_db)):
         if asset.asset_type == "rrsp" and rrsp_total > 0:
             asset.balance = round(rrsp_total, 2)
             updated.append({"id": asset.id, "name": asset.name, "balance": asset.balance})
-        elif asset.asset_type == "espp" and espp_value > 0:
-            asset.balance = round(espp_value, 2)
+        elif asset.asset_type == "espp" and espp_total > 0:
+            asset.balance = round(espp_total, 2)
             updated.append({"id": asset.id, "name": asset.name, "balance": asset.balance})
     db.commit()
-    return {"updated": updated, "rrsp_total": round(rrsp_total, 2), "espp_value": round(espp_value, 2)}
+    return {"updated": updated, "rrsp_total": round(rrsp_total, 2), "espp_total": round(espp_total, 2)}
 
 
 # ---------------------------------------------------------------------------
