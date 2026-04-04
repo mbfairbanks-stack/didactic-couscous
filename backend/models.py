@@ -82,6 +82,9 @@ class Debt(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)           # "Brookstone (Doors)"
     creditor = Column(String, nullable=False)        # "FinanceIt"
+    debt_type = Column(String, default="loan")       # "loan" or "loc" (line of credit)
+    credit_limit = Column(Float, default=0.0)        # LOC: maximum credit available
+    interest_rate = Column(Float, default=0.0)       # annual rate e.g. 0.0645 for 6.45%
     initial_balance = Column(Float, default=0.0)
     current_balance = Column(Float, default=0.0)
     monthly_payment = Column(Float, default=0.0)    # minimum payment

@@ -17,6 +17,9 @@ const inputCls =
 const emptyForm = {
   name: "",
   creditor: "",
+  debt_type: "loan",
+  credit_limit: "",
+  interest_rate: "",
   initial_balance: "",
   current_balance: "",
   monthly_payment: "",
@@ -67,6 +70,7 @@ function buildPayoffData(debt) {
 
   const data = [];
   let balance = debt.current_balance;
+  const monthlyRate = (debt.interest_rate || 0) / 12;
 
   // Include month 0 (today's balance)
   for (let i = 0; i <= cap; i++) {
@@ -76,9 +80,10 @@ function buildPayoffData(debt) {
     const label = `${MONTH_ABBRS[month]} ${String(year).slice(2)}`;
     data.push({ month: label, balance: Math.round(balance * 100) / 100 });
     if (balance <= 0) break;
+    // Apply interest then payment
+    balance = balance * (1 + monthlyRate);
     balance = Math.max(0, balance - totalMonthly);
     if (balance === 0) {
-      // push the zero point then stop
       const nextAbsMonth = startMonth + i + 1;
       const nextMonth = nextAbsMonth % 12;
       const nextYear = startYear + Math.floor(nextAbsMonth / 12);
@@ -91,11 +96,14 @@ function buildPayoffData(debt) {
   return data;
 }
 
-// Calculate months to pay off at 0% interest
-function calcMonthsToPayoff(balance, monthlyPayment) {
+// Calculate months to pay off (handles interest)
+function calcMonthsToPayoff(balance, monthlyPayment, annualRate = 0) {
   if (monthlyPayment <= 0) return null;
   if (balance <= 0) return 0;
-  return Math.ceil(balance / monthlyPayment);
+  if (!annualRate) return Math.ceil(balance / monthlyPayment);
+  const r = annualRate / 12;
+  if (monthlyPayment <= balance * r) return null; // payment doesn't cover interest
+  return Math.ceil(Math.log(monthlyPayment / (monthlyPayment - balance * r)) / Math.log(1 + r));
 }
 
 function PayoffTooltip({ active, payload, label }) {
@@ -114,8 +122,9 @@ function ExtraPaymentSimulator({ debt }) {
   const baseMonthly = debt.monthly_payment + debt.monthly_extra;
   const balance = debt.current_balance;
 
-  const baseMonths = calcMonthsToPayoff(balance, baseMonthly);
-  const newMonths = calcMonthsToPayoff(balance, baseMonthly + extra);
+  const rate = debt.interest_rate || 0;
+  const baseMonths = calcMonthsToPayoff(balance, baseMonthly, rate);
+  const newMonths = calcMonthsToPayoff(balance, baseMonthly + extra, rate);
 
   const monthsSaved = baseMonths != null && newMonths != null ? baseMonths - newMonths : null;
 
@@ -463,6 +472,9 @@ export default function Debts() {
     setForm({
       name: debt.name,
       creditor: debt.creditor || "",
+      debt_type: debt.debt_type || "loan",
+      credit_limit: debt.credit_limit ? String(debt.credit_limit) : "",
+      interest_rate: debt.interest_rate ? String(debt.interest_rate * 100) : "",
       initial_balance: String(debt.initial_balance),
       current_balance: String(debt.current_balance),
       monthly_payment: String(debt.monthly_payment),
@@ -493,6 +505,9 @@ export default function Debts() {
     const body = {
       name: form.name.trim(),
       creditor: form.creditor.trim(),
+      debt_type: form.debt_type,
+      credit_limit: parseFloat(form.credit_limit) || 0,
+      interest_rate: parseFloat(form.interest_rate) / 100 || 0,  // store as decimal
       initial_balance: parseFloat(form.initial_balance) || 0,
       current_balance: parseFloat(form.current_balance) || 0,
       monthly_payment: parseFloat(form.monthly_payment) || 0,
@@ -628,13 +643,40 @@ export default function Debts() {
                 </div>
               </div>
 
+              {/* LOC summary bar */}
+              {debt.debt_type === "loc" && debt.credit_limit > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <StatBox label="Credit Limit" value={fmt(debt.credit_limit)} />
+                  <StatBox label="Outstanding" value={fmt(debt.current_balance)} />
+                  <div className="bg-green-900/30 border border-green-700/30 rounded-lg px-3 py-2">
+                    <p className="text-xs text-zinc-500 mb-0.5">Available</p>
+                    <p className="text-sm font-semibold text-green-400">{fmt(Math.max(0, debt.credit_limit - debt.current_balance))}</p>
+                  </div>
+                  <div className="bg-zinc-800 rounded-lg px-3 py-2">
+                    <p className="text-xs text-zinc-500 mb-0.5">Monthly Interest</p>
+                    <p className="text-sm font-semibold text-red-400">
+                      {fmt(debt.current_balance * (debt.interest_rate / 12))}
+                      <span className="text-zinc-500 text-xs ml-1">@ {(debt.interest_rate * 100).toFixed(2)}%</span>
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Stats grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <StatBox label="Current Balance" value={fmt(debt.current_balance)} />
-                <StatBox label="Initial Balance" value={fmt(debt.initial_balance)} />
-                <StatBox label="Remaining (net)" value={fmt(remaining)} />
-                <StatBox label="Savings Set Aside" value={fmt(debt.savings)} />
-              </div>
+              {debt.debt_type !== "loc" ? (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <StatBox label="Current Balance" value={fmt(debt.current_balance)} />
+                  <StatBox label="Initial Balance" value={fmt(debt.initial_balance)} />
+                  <StatBox label="Remaining (net)" value={fmt(remaining)} />
+                  <StatBox label="Savings Set Aside" value={fmt(debt.savings)} />
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <StatBox label="Minimum Payment" value={fmt(debt.monthly_payment)} />
+                  <StatBox label="Extra Payment" value={fmt(debt.monthly_extra)} />
+                  <StatBox label="Total Monthly" value={fmt(debt.monthly_payment + debt.monthly_extra)} />
+                </div>
+              )}
 
               {/* Due date stats */}
               {debt.due_date && (
@@ -702,11 +744,21 @@ export default function Debts() {
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Car Loan"
+                    placeholder="e.g. TD Line of Credit"
                     className={`w-full ${inputCls}`}
                     {...field("name")}
                   />
                 </div>
+                <div>
+                  <label className="text-xs text-zinc-500 block mb-0.5">Type</label>
+                  <select className={`w-full ${inputCls}`} {...field("debt_type")}>
+                    <option value="loan">Loan</option>
+                    <option value="loc">Line of Credit</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-zinc-500 block mb-0.5">Creditor</label>
                   <input
@@ -716,22 +768,51 @@ export default function Debts() {
                     {...field("creditor")}
                   />
                 </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-zinc-500 block mb-0.5">Initial Balance ($)</label>
+                  <label className="text-xs text-zinc-500 block mb-0.5">Interest Rate (%)</label>
                   <input
                     type="number"
                     step="0.01"
                     min="0"
-                    placeholder="0"
+                    placeholder="e.g. 6.45"
                     className={`w-full ${inputCls}`}
-                    {...field("initial_balance")}
+                    {...field("interest_rate")}
                   />
                 </div>
+              </div>
+
+              {form.debt_type === "loc" && (
                 <div>
-                  <label className="text-xs text-zinc-500 block mb-0.5">Current Balance ($)</label>
+                  <label className="text-xs text-zinc-500 block mb-0.5">Credit Limit ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="e.g. 10000"
+                    className={`w-full ${inputCls}`}
+                    {...field("credit_limit")}
+                  />
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                {form.debt_type !== "loc" && (
+                  <div>
+                    <label className="text-xs text-zinc-500 block mb-0.5">Initial Balance ($)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0"
+                      className={`w-full ${inputCls}`}
+                      {...field("initial_balance")}
+                    />
+                  </div>
+                )}
+                <div className={form.debt_type === "loc" ? "col-span-2" : ""}>
+                  <label className="text-xs text-zinc-500 block mb-0.5">
+                    {form.debt_type === "loc" ? "Outstanding Balance ($)" : "Current Balance ($)"}
+                  </label>
                   <input
                     type="number"
                     step="0.01"

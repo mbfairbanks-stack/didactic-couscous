@@ -120,6 +120,15 @@ def run_migrations():
             if 'auto_sync' not in asset_cols:
                 conn.execute(sa.text("ALTER TABLE assets ADD COLUMN auto_sync INTEGER NOT NULL DEFAULT 0"))
 
+        if inspector.has_table('debts'):
+            debt_cols = [c['name'] for c in inspector.get_columns('debts')]
+            if 'debt_type' not in debt_cols:
+                conn.execute(sa.text("ALTER TABLE debts ADD COLUMN debt_type TEXT NOT NULL DEFAULT 'loan'"))
+            if 'credit_limit' not in debt_cols:
+                conn.execute(sa.text("ALTER TABLE debts ADD COLUMN credit_limit REAL NOT NULL DEFAULT 0"))
+            if 'interest_rate' not in debt_cols:
+                conn.execute(sa.text("ALTER TABLE debts ADD COLUMN interest_rate REAL NOT NULL DEFAULT 0"))
+
         # Fix any transactions where year/month doesn't match the stored date
         conn.execute(sa.text("""
             UPDATE transactions

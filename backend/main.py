@@ -823,6 +823,9 @@ def migrate_categories(db: Session = Depends(get_db)):
 class DebtCreate(BaseModel):
     name: str
     creditor: str
+    debt_type: str = "loan"         # "loan" or "loc"
+    credit_limit: float = 0.0       # LOC only
+    interest_rate: float = 0.0      # annual rate, e.g. 0.0645
     initial_balance: float = 0.0
     current_balance: float = 0.0
     monthly_payment: float = 0.0
