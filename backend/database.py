@@ -2,6 +2,7 @@ import os
 from contextvars import ContextVar
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
+from starlette.requests import Request
 
 DEMO_MODE = os.getenv("DEMO_MODE", "").lower() in ("1", "true", "yes")
 DB_PATH = os.getenv("DB_PATH", "demo.db" if DEMO_MODE else "budget.db")
@@ -39,8 +40,10 @@ def set_current_db_path(db_path):
     _current_db_path.set(db_path)
 
 
-def get_db():
-    path = _current_db_path.get()
+def get_db(request: Request):
+    # request.state.db_path is set by auth middleware; it survives the thread pool.
+    # Fall back to ContextVar, then to the default engine.
+    path = getattr(request.state, "db_path", None) or _current_db_path.get()
     eng = get_engine_for_path(path) if path else engine
     Session = sessionmaker(autocommit=False, autoflush=False, bind=eng)
     db = Session()

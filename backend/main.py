@@ -65,6 +65,7 @@ async def auth_middleware(request: Request, call_next):
         # Route this request to the correct user DB
         db_path = user_auth.get_user_db_path(username, is_demo)
         set_current_db_path(db_path)
+        request.state.db_path = db_path
         request.state.username = username
         request.state.is_demo = is_demo
         return await call_next(request)
