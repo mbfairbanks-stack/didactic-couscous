@@ -37,6 +37,13 @@ app.add_middleware(
 async def auth_middleware(request: Request, call_next):
     # Skip auth when no password is configured
     if not BUDGET_PASSWORD:
+        # In demo mode with no password, block all write operations
+        if DEMO_MODE and request.method in ("POST", "PUT", "PATCH", "DELETE"):
+            if request.url.path not in ("/auth/login", "/auth/check"):
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "Demo mode is read-only. Sign up for your own instance!"},
+                )
         return await call_next(request)
     # Always allow CORS preflight and the login endpoint
     if request.method == "OPTIONS" or request.url.path == "/auth/login":

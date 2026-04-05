@@ -10,6 +10,7 @@ services:
       - caddy_config:/config
     depends_on:
       - app
+      - demo
     restart: unless-stopped
 
   app:
@@ -21,6 +22,16 @@ services:
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - BUDGET_PASSWORD=${BUDGET_PASSWORD:-}
+    restart: unless-stopped
+
+  demo:
+    build: .
+    expose:
+      - "80"
+    environment:
+      - DEMO_MODE=true
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # No BUDGET_PASSWORD = no login required, and writes are blocked by demo middleware
     restart: unless-stopped
 
 volumes:

@@ -43,7 +43,15 @@ function DemoBanner() {
   if (!demo) return null;
   return (
     <div className="bg-yellow-400 text-black text-xs font-semibold text-center py-1.5 tracking-wide">
-      DEMO MODE — data is fake and resets on restart
+      DEMO MODE — sample data only, all changes are disabled.{" "}
+      <a
+        href="https://github.com/mbfairbanks-stack/didactic-couscous"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline hover:text-yellow-900"
+      >
+        Host your own →
+      </a>
     </div>
   );
 }
