@@ -76,7 +76,7 @@ def _init_db_extras(eng, seed_demo: bool = False):
                 CREATE TABLE categories (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL UNIQUE,
-                    group_name TEXT NOT NULL,
+                    "group" TEXT NOT NULL,
                     is_legacy INTEGER NOT NULL DEFAULT 0
                 )
             """))
@@ -100,7 +100,7 @@ def _init_db_extras(eng, seed_demo: bool = False):
             for name, group in CATEGORY_GROUPS.items():
                 is_leg = 0 if name in canonical else 1
                 conn.execute(sa.text(
-                    "INSERT INTO categories (name, group_name, is_legacy) VALUES (:n, :g, :l)"
+                    'INSERT INTO categories (name, "group", is_legacy) VALUES (:n, :g, :l)'
                 ), {"n": name, "g": group, "l": is_leg})
 
         # transactions extras
