@@ -4,7 +4,7 @@ from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
 DEMO_MODE = os.getenv("DEMO_MODE", "").lower() in ("1", "true", "yes")
 DB_PATH = os.getenv("DB_PATH", "demo.db" if DEMO_MODE else "budget.db")
-DATABASE_URL = f"sqlite:///./{DB_PATH}"
+DATABASE_URL = f"sqlite:///{DB_PATH}" if os.path.isabs(DB_PATH) else f"sqlite:///./{DB_PATH}"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
