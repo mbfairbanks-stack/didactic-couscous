@@ -31,13 +31,29 @@ async function req(path, options = {}) {
 }
 
 // Auth
-export const loginApi = (password) =>
+export const loginApi = (username, password) =>
   fetch(`${BASE}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password }),
+    body: JSON.stringify({ username, password }),
   }).then(async (r) => {
-    if (!r.ok) throw new Error("Incorrect password");
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || "Incorrect username or password");
+    }
+    return r.json();
+  });
+
+export const registerApi = (username, password) =>
+  fetch(`${BASE}/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  }).then(async (r) => {
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || "Registration failed");
+    }
     return r.json();
   });
 

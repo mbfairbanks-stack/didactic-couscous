@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { checkAuth, loginApi } from "../api";
+import { checkAuth, loginApi, registerApi } from "../api";
 
 const TOKEN_KEY = "budget_token";
 const AuthContext = createContext(null);
@@ -19,19 +19,28 @@ export function AuthProvider({ children }) {
       .finally(() => setChecking(false));
   }, []);
 
-  const login = useCallback(async (password) => {
-    const { token } = await loginApi(password);
+  const login = useCallback(async (username, password) => {
+    const { token, demo: isDemo } = await loginApi(username, password);
     localStorage.setItem(TOKEN_KEY, token);
     setIsAuthenticated(true);
+    setDemo(!!isDemo);
+  }, []);
+
+  const register = useCallback(async (username, password) => {
+    const { token } = await registerApi(username, password);
+    localStorage.setItem(TOKEN_KEY, token);
+    setIsAuthenticated(true);
+    setDemo(false);
   }, []);
 
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     setIsAuthenticated(false);
+    setDemo(false);
   }, []);
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, demo, checking, login, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, demo, checking, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );
