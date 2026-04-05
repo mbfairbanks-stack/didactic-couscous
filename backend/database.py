@@ -18,8 +18,19 @@ def run_migrations():
     """Apply all pending Alembic migrations at startup."""
     from alembic.config import Config
     from alembic import command
+    from sqlalchemy import inspect as sa_inspect, text as sa_text
 
     alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "alembic.ini"))
+
+    # On a fresh database, create_all() already built all tables — stamp as head
+    # so Alembic doesn't try to run migrations on an already-current schema.
+    with engine.connect() as conn:
+        tables = sa_inspect(engine).get_table_names()
+        has_version = "alembic_version" in tables
+        if not has_version:
+            command.stamp(alembic_cfg, "head")
+            return
+
     command.upgrade(alembic_cfg, "head")
 
     # Idempotent inline migrations for columns not yet covered by Alembic revisions
