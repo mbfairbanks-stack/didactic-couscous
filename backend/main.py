@@ -141,7 +141,14 @@ def auth_login(body: LoginRequest):
 
 @app.get("/auth/check")
 def auth_check(request: Request):
-    """Returns 200 if the caller is authenticated."""
+    """Returns ok:true only if the token is valid."""
+    if MULTI_USER:
+        token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+        user = user_auth.get_user_from_token(token) if token else None
+        if not user:
+            return {"ok": False, "demo": False}
+        _, is_demo = user
+        return {"ok": True, "demo": is_demo}
     is_demo = getattr(request.state, "is_demo", DEMO_MODE)
     return {"ok": True, "demo": is_demo}
 
