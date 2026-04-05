@@ -25,6 +25,8 @@ COPY --from=frontend-build /app/frontend/dist /app/frontend/dist
 # nginx config
 COPY nginx.conf /etc/nginx/sites-available/default
 
+RUN mkdir -p /data && chmod 777 /data
+
 EXPOSE 80
 
 CMD ["sh", "-c", "nginx && uvicorn main:app --host 127.0.0.1 --port 8000"]
