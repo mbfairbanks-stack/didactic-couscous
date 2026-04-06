@@ -20,11 +20,13 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { getOnboardingStatus } from "./api";
 
 function OnboardingGuard({ children }) {
+  const { demo } = useAuth();
   const [status, setStatus] = useState(null);
 
   useEffect(() => {
+    if (demo) { setStatus({ needs_onboarding: false }); return; }
     getOnboardingStatus().then(setStatus).catch(() => setStatus({ needs_onboarding: false }));
-  }, []);
+  }, [demo]);
 
   if (status === null) return null;
   if (status.needs_onboarding) return <Navigate to="/onboarding" replace />;
