@@ -31,7 +31,8 @@ def get_engine_for_path(db_path: str):
         eng = _make_engine(db_path)
         import models as _models
         _models.Base.metadata.create_all(bind=eng)
-        _init_db_extras(eng, seed_demo=False)
+        is_demo_db = db_path.endswith("demo.db")
+        _init_db_extras(eng, seed_demo=is_demo_db)
         _engine_cache[db_path] = eng
     return _engine_cache[db_path]
 
