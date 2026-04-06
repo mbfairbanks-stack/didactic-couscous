@@ -117,7 +117,18 @@ export default function Onboarding() {
             <div key={i} className={`h-1 flex-1 rounded-full transition-colors ${i + 1 <= step ? "bg-yellow-400" : "bg-zinc-800"}`} />
           ))}
         </div>
-        <p className="text-xs text-zinc-600 text-right">Step {step} of {TOTAL_STEPS}</p>
+        <div className="flex justify-between items-center">
+          <p className="text-xs text-zinc-600">Step {step} of {TOTAL_STEPS}</p>
+          <button
+            onClick={async () => {
+              await updateSettings({ onboarding_complete: "true" }).catch(() => {});
+              navigate("/dashboard", { replace: true });
+            }}
+            className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+          >
+            Skip setup →
+          </button>
+        </div>
 
         {/* Step 1: Household */}
         {step === 1 && (
