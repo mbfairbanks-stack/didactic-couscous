@@ -9,7 +9,7 @@ if [ -z "$ANTHROPIC_API_KEY" ]; then
   echo ""
 fi
 
-echo "Starting backend on http://localhost:8000"
+echo "Starting backend on http://localhost:8001"
 cd "$(dirname "$0")/backend"
 
 # Install Python dependencies if needed
@@ -18,10 +18,10 @@ if ! python3 -c "import fastapi" 2>/dev/null; then
   pip install -r requirements.txt -q
 fi
 
-uvicorn main:app --reload --port 8000 &
+uvicorn main:app --reload --port 8001 &
 BACKEND_PID=$!
 
-echo "Starting frontend on http://localhost:5173"
+echo "Starting frontend on http://localhost:5174"
 cd "$(dirname "$0")/frontend"
 
 # Install Node dependencies if needed
@@ -34,8 +34,8 @@ npm run dev &
 FRONTEND_PID=$!
 
 echo ""
-echo "App running at  http://localhost:5173"
-echo "API docs at     http://localhost:8000/docs"
+echo "App running at  http://localhost:5174"
+echo "API docs at     http://localhost:8001/docs"
 echo ""
 echo "Press Ctrl+C to stop both servers."
 
