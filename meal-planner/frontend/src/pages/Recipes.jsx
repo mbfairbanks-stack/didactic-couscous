@@ -1,0 +1,574 @@
+import { useState, useEffect, useRef } from "react";
+import { getRecipes, createRecipe, updateRecipe, deleteRecipe, getPantry, streamGenerateRecipe } from "../api";
+
+const EMPTY_FORM = {
+  title: "",
+  servings: 4,
+  prep_min: 0,
+  cook_min: 0,
+  ingredients: [{ name: "", amount: "", unit: "" }],
+  instructions: "",
+  tags: "",
+  notes: "",
+};
+
+const ALL_TAGS = ["quick", "vegetarian", "vegan", "gluten-free", "dairy-free", "batch-cook", "slow-cooker", "one-pan"];
+
+function RecipeCard({ recipe, onEdit, onDelete, onToggleFavorite }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className={`bg-white rounded-xl border shadow-sm overflow-hidden ${recipe.is_favorite ? "border-yellow-300" : "border-gray-200"}`}>
+      <div className="p-4">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="font-semibold text-gray-800 text-left hover:text-green-700 w-full"
+            >
+              {recipe.title}
+            </button>
+            <div className="flex gap-3 text-xs text-gray-400 mt-1">
+              {recipe.prep_min > 0 && <span>Prep {recipe.prep_min}m</span>}
+              {recipe.cook_min > 0 && <span>Cook {recipe.cook_min}m</span>}
+              {recipe.servings && <span>Serves {recipe.servings}</span>}
+            </div>
+            {recipe.tags?.length > 0 && (
+              <div className="flex gap-1 flex-wrap mt-2">
+                {recipe.tags.map((t) => (
+                  <span key={t} className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full border border-green-100">{t}</span>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={() => onToggleFavorite(recipe)}
+              className={`text-lg ${recipe.is_favorite ? "text-yellow-400" : "text-gray-200 hover:text-yellow-300"}`}
+              title={recipe.is_favorite ? "Unfavorite" : "Favorite"}
+            >
+              ★
+            </button>
+            <button onClick={() => onEdit(recipe)} className="text-xs text-green-600 hover:underline px-1">Edit</button>
+            <button onClick={() => onDelete(recipe.id)} className="text-xs text-red-400 hover:underline px-1">Delete</button>
+          </div>
+        </div>
+
+        {expanded && (
+          <div className="mt-4 space-y-3 border-t pt-3">
+            {recipe.ingredients?.length > 0 && (
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Ingredients</h4>
+                <ul className="space-y-0.5">
+                  {recipe.ingredients.map((ing, i) => (
+                    <li key={i} className="text-sm text-gray-700">
+                      {ing.amount && <span className="font-medium">{ing.amount} {ing.unit} </span>}
+                      {ing.name}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {recipe.instructions && (
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Instructions</h4>
+                <p className="text-sm text-gray-700 whitespace-pre-line">{recipe.instructions}</p>
+              </div>
+            )}
+            {recipe.notes && (
+              <p className="text-xs text-gray-400 italic">{recipe.notes}</p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function IngredientFields({ ingredients, onChange }) {
+  const add = () => onChange([...ingredients, { name: "", amount: "", unit: "" }]);
+  const remove = (i) => onChange(ingredients.filter((_, idx) => idx !== i));
+  const update = (i, field, val) => {
+    const updated = [...ingredients];
+    updated[i] = { ...updated[i], [field]: val };
+    onChange(updated);
+  };
+  return (
+    <div className="space-y-2">
+      {ingredients.map((ing, i) => (
+        <div key={i} className="flex gap-2 items-center">
+          <input
+            placeholder="Amount"
+            value={ing.amount}
+            onChange={(e) => update(i, "amount", e.target.value)}
+            className="border rounded px-2 py-1 text-sm w-20"
+          />
+          <input
+            placeholder="Unit"
+            value={ing.unit}
+            onChange={(e) => update(i, "unit", e.target.value)}
+            className="border rounded px-2 py-1 text-sm w-20"
+          />
+          <input
+            placeholder="Ingredient name"
+            value={ing.name}
+            onChange={(e) => update(i, "name", e.target.value)}
+            className="border rounded px-2 py-1 text-sm flex-1"
+          />
+          <button
+            type="button"
+            onClick={() => remove(i)}
+            className="text-red-400 hover:text-red-600 text-lg leading-none"
+          >
+            ×
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={add}
+        className="text-sm text-green-600 hover:underline"
+      >
+        + Add ingredient
+      </button>
+    </div>
+  );
+}
+
+export default function Recipes() {
+  const [recipes, setRecipes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [editingId, setEditingId] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [filterTag, setFilterTag] = useState("");
+  const [search, setSearch] = useState("");
+
+  // AI Generator state
+  const [showAI, setShowAI] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [usePantry, setUsePantry] = useState(false);
+  const [aiStreaming, setAiStreaming] = useState(false);
+  const [aiRaw, setAiRaw] = useState("");
+  const [aiParsed, setAiParsed] = useState(null);
+  const [aiError, setAiError] = useState(null);
+  const rawRef = useRef("");
+
+  const load = () => {
+    setLoading(true);
+    getRecipes()
+      .then(setRecipes)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const body = {
+      ...form,
+      servings: parseInt(form.servings) || 4,
+      prep_min: parseInt(form.prep_min) || 0,
+      cook_min: parseInt(form.cook_min) || 0,
+      tags: typeof form.tags === "string"
+        ? form.tags.split(",").map((t) => t.trim()).filter(Boolean)
+        : form.tags,
+      ingredients: form.ingredients.filter((i) => i.name.trim()),
+    };
+    try {
+      if (editingId) {
+        await updateRecipe(editingId, body);
+      } else {
+        await createRecipe(body);
+      }
+      setForm(EMPTY_FORM);
+      setEditingId(null);
+      setShowForm(false);
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const handleEdit = (recipe) => {
+    setForm({
+      title: recipe.title,
+      servings: recipe.servings,
+      prep_min: recipe.prep_min,
+      cook_min: recipe.cook_min,
+      ingredients: recipe.ingredients?.length ? recipe.ingredients : [{ name: "", amount: "", unit: "" }],
+      instructions: recipe.instructions,
+      tags: (recipe.tags || []).join(", "),
+      notes: recipe.notes || "",
+    });
+    setEditingId(recipe.id);
+    setShowForm(true);
+    setShowAI(false);
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm("Delete this recipe?")) return;
+    await deleteRecipe(id);
+    load();
+  };
+
+  const handleToggleFavorite = async (recipe) => {
+    await updateRecipe(recipe.id, { is_favorite: !recipe.is_favorite });
+    load();
+  };
+
+  const handleCancel = () => {
+    setForm(EMPTY_FORM);
+    setEditingId(null);
+    setShowForm(false);
+  };
+
+  // AI generation
+  const handleGenerate = async () => {
+    if (!aiPrompt.trim()) return;
+    setAiStreaming(true);
+    setAiRaw("");
+    setAiParsed(null);
+    setAiError(null);
+    rawRef.current = "";
+
+    let pantryItems = [];
+    if (usePantry) {
+      const items = await getPantry().catch(() => []);
+      pantryItems = items.map((i) => `${i.name} (${i.quantity} ${i.unit})`);
+    }
+
+    streamGenerateRecipe(
+      { prompt: aiPrompt, pantry_items: pantryItems.length ? pantryItems : null },
+      (chunk) => {
+        rawRef.current += chunk;
+        setAiRaw(rawRef.current);
+      },
+      () => {
+        setAiStreaming(false);
+        try {
+          const parsed = JSON.parse(rawRef.current);
+          setAiParsed(parsed);
+        } catch {
+          setAiError("Could not parse recipe JSON. Try again.");
+        }
+      },
+      (err) => {
+        setAiStreaming(false);
+        setAiError(err);
+      }
+    );
+  };
+
+  const handleSaveAI = async () => {
+    if (!aiParsed) return;
+    const body = {
+      ...aiParsed,
+      source: "ai",
+      tags: aiParsed.tags || [],
+      ingredients: aiParsed.ingredients || [],
+    };
+    try {
+      await createRecipe(body);
+      setShowAI(false);
+      setAiParsed(null);
+      setAiRaw("");
+      setAiPrompt("");
+      load();
+    } catch (e) {
+      setAiError(e.message);
+    }
+  };
+
+  const filtered = recipes.filter((r) => {
+    const matchTag = !filterTag || (r.tags || []).includes(filterTag);
+    const matchSearch = r.title.toLowerCase().includes(search.toLowerCase());
+    return matchTag && matchSearch;
+  });
+
+  const favorites = filtered.filter((r) => r.is_favorite);
+  const rest = filtered.filter((r) => !r.is_favorite);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+        <h1 className="text-2xl font-bold text-gray-800">Recipes</h1>
+        <div className="flex gap-2">
+          <button
+            onClick={() => { setShowAI(!showAI); setShowForm(false); }}
+            className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700"
+          >
+            AI Generate
+          </button>
+          <button
+            onClick={() => { setShowForm(!showForm); setShowAI(false); setEditingId(null); setForm(EMPTY_FORM); }}
+            className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700"
+          >
+            + Add Recipe
+          </button>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex gap-3 mb-4 flex-wrap items-center">
+        <input
+          type="text"
+          placeholder="Search..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="border rounded-lg px-3 py-1.5 text-sm w-48"
+        />
+        <div className="flex gap-1 flex-wrap">
+          <button
+            onClick={() => setFilterTag("")}
+            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${!filterTag ? "bg-green-600 text-white border-green-600" : "bg-white text-gray-600 border-gray-300 hover:border-green-400"}`}
+          >
+            All
+          </button>
+          {ALL_TAGS.map((t) => (
+            <button
+              key={t}
+              onClick={() => setFilterTag(t === filterTag ? "" : t)}
+              className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${filterTag === t ? "bg-green-600 text-white border-green-600" : "bg-white text-gray-600 border-gray-300 hover:border-green-400"}`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+
+      {/* AI Generator Panel */}
+      {showAI && (
+        <div className="bg-purple-50 border border-purple-200 rounded-xl p-5 mb-6 shadow-sm">
+          <h2 className="font-semibold text-purple-800 mb-3">AI Recipe Generator</h2>
+          <div className="flex gap-2 mb-3">
+            <input
+              type="text"
+              placeholder='e.g. "30-minute chicken stir fry" or "easy vegetarian pasta"'
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
+              className="border rounded-lg px-3 py-2 text-sm flex-1"
+              onKeyDown={(e) => e.key === "Enter" && handleGenerate()}
+            />
+            <button
+              onClick={handleGenerate}
+              disabled={aiStreaming || !aiPrompt.trim()}
+              className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50"
+            >
+              {aiStreaming ? "Generating..." : "Generate"}
+            </button>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-purple-700 mb-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={usePantry}
+              onChange={(e) => setUsePantry(e.target.checked)}
+              className="rounded"
+            />
+            Use ingredients from my pantry
+          </label>
+
+          {aiError && <p className="text-red-500 text-sm mb-2">{aiError}</p>}
+
+          {aiParsed && (
+            <div className="bg-white rounded-lg border border-purple-200 p-4 mt-2">
+              <div className="flex items-start justify-between mb-2">
+                <h3 className="font-semibold text-gray-800 text-lg">{aiParsed.title}</h3>
+                <button
+                  onClick={handleSaveAI}
+                  className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-green-700 shrink-0 ml-2"
+                >
+                  Save Recipe
+                </button>
+              </div>
+              <div className="flex gap-4 text-xs text-gray-400 mb-3">
+                {aiParsed.prep_min > 0 && <span>Prep {aiParsed.prep_min}m</span>}
+                {aiParsed.cook_min > 0 && <span>Cook {aiParsed.cook_min}m</span>}
+                {aiParsed.servings && <span>Serves {aiParsed.servings}</span>}
+              </div>
+              {aiParsed.tags?.length > 0 && (
+                <div className="flex gap-1 flex-wrap mb-3">
+                  {aiParsed.tags.map((t) => (
+                    <span key={t} className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full border border-purple-100">{t}</span>
+                  ))}
+                </div>
+              )}
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Ingredients</h4>
+                  <ul className="space-y-0.5">
+                    {(aiParsed.ingredients || []).map((ing, i) => (
+                      <li key={i} className="text-sm text-gray-700">
+                        {ing.amount && <span className="font-medium">{ing.amount} {ing.unit} </span>}
+                        {ing.name}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Instructions</h4>
+                  <p className="text-sm text-gray-700 whitespace-pre-line">{aiParsed.instructions}</p>
+                </div>
+              </div>
+              {aiParsed.notes && <p className="text-xs text-gray-400 italic mt-3">{aiParsed.notes}</p>}
+            </div>
+          )}
+
+          {aiStreaming && !aiParsed && (
+            <div className="bg-white rounded-lg border border-purple-200 p-4 mt-2">
+              <p className="text-xs text-gray-400 mb-1">Generating recipe...</p>
+              <pre className="text-xs text-gray-500 whitespace-pre-wrap max-h-40 overflow-auto">{aiRaw}</pre>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Add / Edit Form */}
+      {showForm && (
+        <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6 shadow-sm">
+          <h2 className="font-semibold text-gray-700 mb-4">{editingId ? "Edit Recipe" : "Add Recipe"}</h2>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="col-span-2">
+                <label className="text-xs text-gray-500 block mb-1">Title *</label>
+                <input
+                  required
+                  value={form.title}
+                  onChange={(e) => setForm({ ...form, title: e.target.value })}
+                  className="border rounded-lg px-3 py-1.5 text-sm w-full"
+                  placeholder="Recipe name"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Servings</label>
+                <input
+                  type="number"
+                  value={form.servings}
+                  onChange={(e) => setForm({ ...form, servings: e.target.value })}
+                  className="border rounded-lg px-3 py-1.5 text-sm w-full"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">Prep (min)</label>
+                  <input
+                    type="number"
+                    value={form.prep_min}
+                    onChange={(e) => setForm({ ...form, prep_min: e.target.value })}
+                    className="border rounded-lg px-3 py-1.5 text-sm w-full"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">Cook (min)</label>
+                  <input
+                    type="number"
+                    value={form.cook_min}
+                    onChange={(e) => setForm({ ...form, cook_min: e.target.value })}
+                    className="border rounded-lg px-3 py-1.5 text-sm w-full"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Ingredients</label>
+              <IngredientFields
+                ingredients={form.ingredients}
+                onChange={(ings) => setForm({ ...form, ingredients: ings })}
+              />
+            </div>
+
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Instructions</label>
+              <textarea
+                value={form.instructions}
+                onChange={(e) => setForm({ ...form, instructions: e.target.value })}
+                rows={5}
+                className="border rounded-lg px-3 py-1.5 text-sm w-full"
+                placeholder="Step by step instructions..."
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Tags (comma-separated)</label>
+                <input
+                  value={form.tags}
+                  onChange={(e) => setForm({ ...form, tags: e.target.value })}
+                  className="border rounded-lg px-3 py-1.5 text-sm w-full"
+                  placeholder="quick, vegetarian..."
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Notes</label>
+                <input
+                  value={form.notes}
+                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                  className="border rounded-lg px-3 py-1.5 text-sm w-full"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">
+                {editingId ? "Save Changes" : "Add Recipe"}
+              </button>
+              <button type="button" onClick={handleCancel} className="border border-gray-300 px-4 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {loading ? (
+        <p className="text-gray-400 text-sm">Loading...</p>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-16 text-gray-400">
+          <p className="text-lg">No recipes yet.</p>
+          <p className="text-sm mt-1">Add one manually or use AI Generate.</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {favorites.length > 0 && (
+            <div>
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Favorites</h3>
+              <div className="grid sm:grid-cols-2 gap-3">
+                {favorites.map((r) => (
+                  <RecipeCard
+                    key={r.id}
+                    recipe={r}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                    onToggleFavorite={handleToggleFavorite}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+          {rest.length > 0 && (
+            <div>
+              {favorites.length > 0 && (
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">All Recipes</h3>
+              )}
+              <div className="grid sm:grid-cols-2 gap-3">
+                {rest.map((r) => (
+                  <RecipeCard
+                    key={r.id}
+                    recipe={r}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                    onToggleFavorite={handleToggleFavorite}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
