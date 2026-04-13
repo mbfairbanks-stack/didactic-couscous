@@ -2,6 +2,8 @@
 # Start Wetbanks Sous Chef (backend + frontend dev server)
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 # Check for ANTHROPIC_API_KEY
 if [ -z "$ANTHROPIC_API_KEY" ]; then
   echo "Warning: ANTHROPIC_API_KEY is not set. AI features will not work."
@@ -10,7 +12,7 @@ if [ -z "$ANTHROPIC_API_KEY" ]; then
 fi
 
 echo "Starting backend on http://localhost:8001"
-cd "$(dirname "$0")/backend"
+cd "$SCRIPT_DIR/backend"
 
 # Install Python dependencies if needed
 if ! python3 -c "import fastapi" 2>/dev/null; then
@@ -22,7 +24,7 @@ uvicorn main:app --reload --port 8001 &
 BACKEND_PID=$!
 
 echo "Starting frontend on http://localhost:5174"
-cd "$(dirname "$0")/frontend"
+cd "$SCRIPT_DIR/frontend"
 
 # Install Node dependencies if needed
 if [ ! -d "node_modules" ]; then
