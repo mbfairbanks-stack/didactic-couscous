@@ -12,7 +12,7 @@ export default function App() {
     <BrowserRouter>
       <div className="min-h-screen flex flex-col">
         <Nav />
-        <main className="flex-1 p-6 max-w-7xl mx-auto w-full">
+        <main className="flex-1 p-4 sm:p-6 max-w-7xl mx-auto w-full pb-24 sm:pb-6">
           <Routes>
             <Route path="/" element={<Navigate to="/meal-plan" replace />} />
             <Route path="/meal-plan" element={<MealPlan />} />

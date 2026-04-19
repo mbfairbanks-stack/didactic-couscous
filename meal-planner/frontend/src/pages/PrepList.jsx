@@ -118,9 +118,9 @@ export default function PrepList() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-gray-800">Prep List</h1>
+      <div className="flex items-center justify-between mb-4 sm:mb-6 flex-wrap gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Prep List</h1>
           <div className="flex items-center gap-1">
             <button onClick={prevWeek} className="p-1.5 rounded hover:bg-gray-100 text-gray-500">‹</button>
             <span className="text-sm font-medium text-gray-600 min-w-max">
@@ -159,7 +159,7 @@ export default function PrepList() {
       )}
 
       {/* Add Task */}
-      <form onSubmit={handleAdd} className="flex gap-2 mb-6 flex-wrap">
+      <form onSubmit={handleAdd} className="flex flex-col sm:flex-row gap-2 mb-6">
         <input
           type="text"
           placeholder="Add a prep task..."

@@ -5,3 +5,12 @@
 body {
   @apply bg-gray-50 text-gray-900;
 }
+
+/* iOS safe area for bottom tab bar */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Hide scrollbar on day tabs row */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
