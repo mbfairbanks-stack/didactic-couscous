@@ -6,6 +6,7 @@ const links = [
   { to: "/pantry", label: "Pantry" },
   { to: "/prep-list", label: "Prep List" },
   { to: "/shopping-list", label: "Shopping List" },
+  { to: "/preferences", label: "Preferences" },
 ];
 
 export default function Nav() {

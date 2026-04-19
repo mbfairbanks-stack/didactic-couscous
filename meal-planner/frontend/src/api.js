@@ -48,6 +48,10 @@ export const deletePrepTask = (id) => req(`/prep-tasks/${id}`, { method: "DELETE
 // Shopping List
 export const getShoppingList = (weekStart) => req(`/shopping-list?week_start=${weekStart}`);
 
+// Preferences
+export const getPreferences = () => req("/preferences");
+export const updatePreferences = (body) => req("/preferences", { method: "PUT", ...json(body) });
+
 // AI streaming helpers
 async function streamSSE(url, body, onChunk, onDone, onError) {
   let res;

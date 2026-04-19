@@ -107,10 +107,19 @@ class GenerateMealPlanRequest(BaseModel):
     week_start: date
     preferences: Optional[str] = None
     use_pantry: bool = False
+    use_favorites: bool = True
 
 
 class GeneratePrepListRequest(BaseModel):
     week_start: date
+
+
+class HouseholdPreferencesSchema(BaseModel):
+    servings: int = 4
+    dietary_restrictions: str = ""
+    cuisine_preferences: str = ""
+    avoid: str = ""
+    notes: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -329,6 +338,34 @@ def delete_prep_task(task_id: int, db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
+# Household Preferences (singleton row, id=1)
+# ---------------------------------------------------------------------------
+
+@app.get("/preferences")
+def get_preferences(db: Session = Depends(get_db)):
+    prefs = db.get(models.HouseholdPreferences, 1)
+    if not prefs:
+        prefs = models.HouseholdPreferences(id=1)
+        db.add(prefs)
+        db.commit()
+        db.refresh(prefs)
+    return prefs
+
+
+@app.put("/preferences")
+def update_preferences(body: HouseholdPreferencesSchema, db: Session = Depends(get_db)):
+    prefs = db.get(models.HouseholdPreferences, 1)
+    if not prefs:
+        prefs = models.HouseholdPreferences(id=1)
+        db.add(prefs)
+    for k, v in body.model_dump().items():
+        setattr(prefs, k, v)
+    db.commit()
+    db.refresh(prefs)
+    return prefs
+
+
+# ---------------------------------------------------------------------------
 # AI: Generate Recipe (streaming)
 # ---------------------------------------------------------------------------
 
@@ -373,24 +410,64 @@ def generate_recipe(body: GenerateRecipeRequest):
 def generate_meal_plan(body: GenerateMealPlanRequest, db: Session = Depends(get_db)):
     import anthropic
 
+    # Load saved household preferences
+    saved_prefs = db.get(models.HouseholdPreferences, 1)
+
+    # Build preferences block
+    pref_lines = []
+    if saved_prefs:
+        if saved_prefs.dietary_restrictions:
+            pref_lines.append(f"Dietary restrictions: {saved_prefs.dietary_restrictions}")
+        if saved_prefs.cuisine_preferences:
+            pref_lines.append(f"Cuisine preferences: {saved_prefs.cuisine_preferences}")
+        if saved_prefs.avoid:
+            pref_lines.append(f"Avoid: {saved_prefs.avoid}")
+        if saved_prefs.notes:
+            pref_lines.append(f"Other notes: {saved_prefs.notes}")
+        if saved_prefs.servings:
+            pref_lines.append(f"Household size: {saved_prefs.servings} people")
+    if body.preferences:
+        pref_lines.append(f"Additional preferences: {body.preferences}")
+    if not pref_lines:
+        pref_lines.append("balanced, family-friendly meals")
+
+    prefs_text = "\n".join(pref_lines)
+
+    # Build favorites block
+    favorites_context = ""
+    if body.use_favorites:
+        favorites = db.query(models.Recipe).filter(models.Recipe.is_favorite == True).all()
+        if favorites:
+            fav_list = "\n".join(
+                f"  - {r.title}" + (f" (tags: {', '.join(r.tags)})" if r.tags else "")
+                for r in favorites
+            )
+            favorites_context = (
+                f"\n\nFavourite recipes to work into the plan (use their EXACT titles):\n{fav_list}\n"
+                "Try to schedule 3-5 of these favourites across the week, primarily for Dinner. "
+                "Use their exact title as-is so they can be matched back to the recipe library."
+            )
+
+    # Build pantry block
     pantry_context = ""
     if body.use_pantry:
         items = db.query(models.PantryItem).all()
         if items:
             pantry_list = ", ".join(f"{i.name} ({i.quantity} {i.unit})" for i in items)
-            pantry_context = f"\n\nPantry items available: {pantry_list}"
+            pantry_context = f"\n\nPantry items available to use up: {pantry_list}"
 
-    prefs = body.preferences or "balanced, family-friendly meals"
     system = (
         "You are a helpful meal planning assistant. Respond with ONLY a valid JSON object — "
         "no markdown, no code fences. The JSON must be an object with keys for each day of the week "
         "(Monday through Sunday). Each day is an object with keys: Breakfast, Lunch, Dinner, Snack. "
-        "Each value is a short meal name string (e.g. 'Oatmeal with berries', 'Grilled chicken salad'). "
-        "Keep meal names concise (under 8 words)."
+        "Each value is a short meal name string. Keep meal names concise (under 8 words). "
+        "When scheduling a favourite recipe, use its EXACT title."
     )
     user_msg = (
-        f"Create a weekly meal plan starting {body.week_start}. "
-        f"Preferences: {prefs}.{pantry_context}"
+        f"Create a weekly meal plan for the week of {body.week_start}.\n\n"
+        f"Household preferences:\n{prefs_text}"
+        f"{favorites_context}"
+        f"{pantry_context}"
     )
 
     def stream():

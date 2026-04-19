@@ -50,3 +50,14 @@ class PrepTask(Base):
     scheduled_day = Column(String, nullable=True)   # day to do the prep
     is_done = Column(Boolean, default=False)
     source = Column(String, default="manual")       # "manual" | "ai"
+
+
+class HouseholdPreferences(Base):
+    __tablename__ = "household_preferences"
+
+    id = Column(Integer, primary_key=True, default=1)
+    servings = Column(Integer, default=4)
+    dietary_restrictions = Column(Text, default="")  # e.g. "Nicole is lactose intolerant"
+    cuisine_preferences = Column(Text, default="")   # e.g. "Mexican, Italian, Asian"
+    avoid = Column(Text, default="")                 # ingredients/meals to avoid
+    notes = Column(Text, default="")                 # any other preferences

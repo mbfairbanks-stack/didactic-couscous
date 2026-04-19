@@ -5,6 +5,7 @@ import Pantry from "./pages/Pantry";
 import Recipes from "./pages/Recipes";
 import PrepList from "./pages/PrepList";
 import ShoppingList from "./pages/ShoppingList";
+import Preferences from "./pages/Preferences";
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
             <Route path="/recipes" element={<Recipes />} />
             <Route path="/prep-list" element={<PrepList />} />
             <Route path="/shopping-list" element={<ShoppingList />} />
+            <Route path="/preferences" element={<Preferences />} />
           </Routes>
         </main>
       </div>
