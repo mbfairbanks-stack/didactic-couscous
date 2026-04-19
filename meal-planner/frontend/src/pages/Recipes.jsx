@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { getRecipes, createRecipe, updateRecipe, deleteRecipe, getPantry, streamGenerateRecipe } from "../api";
+import { getRecipes, createRecipe, updateRecipe, deleteRecipe, getPantry, streamGenerateRecipe, streamImportRecipePDF, streamImportRecipeURL } from "../api";
 
 const EMPTY_FORM = {
   title: "",
@@ -144,10 +144,12 @@ export default function Recipes() {
   const [filterTag, setFilterTag] = useState("");
   const [search, setSearch] = useState("");
 
-  // AI Generator state
-  const [showAI, setShowAI] = useState(false);
+  // Import / AI panel: mode = null | "generate" | "pdf" | "url"
+  const [importMode, setImportMode] = useState(null);
   const [aiPrompt, setAiPrompt] = useState("");
   const [usePantry, setUsePantry] = useState(false);
+  const [importUrl, setImportUrl] = useState("");
+  const [importFile, setImportFile] = useState(null);
   const [aiStreaming, setAiStreaming] = useState(false);
   const [aiRaw, setAiRaw] = useState("");
   const [aiParsed, setAiParsed] = useState(null);
@@ -204,7 +206,7 @@ export default function Recipes() {
     });
     setEditingId(recipe.id);
     setShowForm(true);
-    setShowAI(false);
+    setImportMode(null);
   };
 
   const handleDelete = async (id) => {
@@ -224,57 +226,54 @@ export default function Recipes() {
     setShowForm(false);
   };
 
-  // AI generation
-  const handleGenerate = async () => {
-    if (!aiPrompt.trim()) return;
+  const startStream = (streamFn, ...args) => {
     setAiStreaming(true);
     setAiRaw("");
     setAiParsed(null);
     setAiError(null);
     rawRef.current = "";
+    streamFn(
+      ...args,
+      (chunk) => { rawRef.current += chunk; setAiRaw(rawRef.current); },
+      () => {
+        setAiStreaming(false);
+        try { setAiParsed(JSON.parse(rawRef.current)); }
+        catch { setAiError("Could not parse recipe. Try again."); }
+      },
+      (err) => { setAiStreaming(false); setAiError(err); }
+    );
+  };
 
+  const handleGenerate = async () => {
+    if (!aiPrompt.trim()) return;
     let pantryItems = [];
     if (usePantry) {
       const items = await getPantry().catch(() => []);
       pantryItems = items.map((i) => `${i.name} (${i.quantity} ${i.unit})`);
     }
+    startStream(streamGenerateRecipe, { prompt: aiPrompt, pantry_items: pantryItems.length ? pantryItems : null });
+  };
 
-    streamGenerateRecipe(
-      { prompt: aiPrompt, pantry_items: pantryItems.length ? pantryItems : null },
-      (chunk) => {
-        rawRef.current += chunk;
-        setAiRaw(rawRef.current);
-      },
-      () => {
-        setAiStreaming(false);
-        try {
-          const parsed = JSON.parse(rawRef.current);
-          setAiParsed(parsed);
-        } catch {
-          setAiError("Could not parse recipe JSON. Try again.");
-        }
-      },
-      (err) => {
-        setAiStreaming(false);
-        setAiError(err);
-      }
-    );
+  const handleImportURL = () => {
+    if (!importUrl.trim()) return;
+    startStream(streamImportRecipeURL, importUrl.trim());
+  };
+
+  const handleImportPDF = () => {
+    if (!importFile) return;
+    startStream(streamImportRecipePDF, importFile);
   };
 
   const handleSaveAI = async () => {
     if (!aiParsed) return;
-    const body = {
-      ...aiParsed,
-      source: "ai",
-      tags: aiParsed.tags || [],
-      ingredients: aiParsed.ingredients || [],
-    };
     try {
-      await createRecipe(body);
-      setShowAI(false);
+      await createRecipe({ ...aiParsed, source: "ai", tags: aiParsed.tags || [], ingredients: aiParsed.ingredients || [] });
+      setImportMode(null);
       setAiParsed(null);
       setAiRaw("");
       setAiPrompt("");
+      setImportUrl("");
+      setImportFile(null);
       load();
     } catch (e) {
       setAiError(e.message);
@@ -294,15 +293,18 @@ export default function Recipes() {
     <div>
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-gray-800">Recipes</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          {["generate", "pdf", "url"].map((mode) => (
+            <button
+              key={mode}
+              onClick={() => { setImportMode(importMode === mode ? null : mode); setShowForm(false); setAiParsed(null); setAiRaw(""); setAiError(null); }}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${importMode === mode ? "bg-purple-700 text-white" : "bg-purple-600 text-white hover:bg-purple-700"}`}
+            >
+              {mode === "generate" ? "AI Generate" : mode === "pdf" ? "Import PDF" : "Import URL"}
+            </button>
+          ))}
           <button
-            onClick={() => { setShowAI(!showAI); setShowForm(false); }}
-            className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700"
-          >
-            AI Generate
-          </button>
-          <button
-            onClick={() => { setShowForm(!showForm); setShowAI(false); setEditingId(null); setForm(EMPTY_FORM); }}
+            onClick={() => { setShowForm(!showForm); setImportMode(null); setEditingId(null); setForm(EMPTY_FORM); }}
             className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700"
           >
             + Add Recipe
@@ -340,36 +342,67 @@ export default function Recipes() {
 
       {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
 
-      {/* AI Generator Panel */}
-      {showAI && (
+      {/* Import / AI Panel */}
+      {importMode && (
         <div className="bg-purple-50 border border-purple-200 rounded-xl p-5 mb-6 shadow-sm">
-          <h2 className="font-semibold text-purple-800 mb-3">AI Recipe Generator</h2>
-          <div className="flex gap-2 mb-3">
-            <input
-              type="text"
-              placeholder='e.g. "30-minute chicken stir fry" or "easy vegetarian pasta"'
-              value={aiPrompt}
-              onChange={(e) => setAiPrompt(e.target.value)}
-              className="border rounded-lg px-3 py-2 text-sm flex-1"
-              onKeyDown={(e) => e.key === "Enter" && handleGenerate()}
-            />
-            <button
-              onClick={handleGenerate}
-              disabled={aiStreaming || !aiPrompt.trim()}
-              className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50"
-            >
-              {aiStreaming ? "Generating..." : "Generate"}
-            </button>
-          </div>
-          <label className="flex items-center gap-2 text-sm text-purple-700 mb-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={usePantry}
-              onChange={(e) => setUsePantry(e.target.checked)}
-              className="rounded"
-            />
-            Use ingredients from my pantry
-          </label>
+          <h2 className="font-semibold text-purple-800 mb-3">
+            {importMode === "generate" ? "AI Recipe Generator" : importMode === "pdf" ? "Import from PDF" : "Import from URL"}
+          </h2>
+
+          {importMode === "generate" && (
+            <>
+              <div className="flex gap-2 mb-3">
+                <input
+                  type="text"
+                  placeholder='e.g. "30-minute chicken stir fry" or "easy vegetarian pasta"'
+                  value={aiPrompt}
+                  onChange={(e) => setAiPrompt(e.target.value)}
+                  className="border rounded-lg px-3 py-2 text-sm flex-1"
+                  onKeyDown={(e) => e.key === "Enter" && handleGenerate()}
+                />
+                <button onClick={handleGenerate} disabled={aiStreaming || !aiPrompt.trim()}
+                  className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50">
+                  {aiStreaming ? "Generating..." : "Generate"}
+                </button>
+              </div>
+              <label className="flex items-center gap-2 text-sm text-purple-700 mb-3 cursor-pointer">
+                <input type="checkbox" checked={usePantry} onChange={(e) => setUsePantry(e.target.checked)} className="rounded" />
+                Use ingredients from my pantry
+              </label>
+            </>
+          )}
+
+          {importMode === "pdf" && (
+            <div className="flex gap-2 mb-3">
+              <input
+                type="file"
+                accept=".pdf"
+                onChange={(e) => setImportFile(e.target.files[0] || null)}
+                className="border rounded-lg px-3 py-2 text-sm flex-1 bg-white"
+              />
+              <button onClick={handleImportPDF} disabled={aiStreaming || !importFile}
+                className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 shrink-0">
+                {aiStreaming ? "Reading..." : "Import"}
+              </button>
+            </div>
+          )}
+
+          {importMode === "url" && (
+            <div className="flex gap-2 mb-3">
+              <input
+                type="url"
+                placeholder="https://www.allrecipes.com/recipe/..."
+                value={importUrl}
+                onChange={(e) => setImportUrl(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleImportURL()}
+                className="border rounded-lg px-3 py-2 text-sm flex-1"
+              />
+              <button onClick={handleImportURL} disabled={aiStreaming || !importUrl.trim()}
+                className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 shrink-0">
+                {aiStreaming ? "Fetching..." : "Import"}
+              </button>
+            </div>
+          )}
 
           {aiError && <p className="text-red-500 text-sm mb-2">{aiError}</p>}
 

@@ -1,11 +1,11 @@
-from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 from datetime import date, timedelta
-import json, os
+import json, os, base64, re
 
 import models, database
 from database import engine, get_db
@@ -112,6 +112,10 @@ class GenerateMealPlanRequest(BaseModel):
 
 class GeneratePrepListRequest(BaseModel):
     week_start: date
+
+
+class ImportRecipeURLRequest(BaseModel):
+    url: str
 
 
 class HouseholdPreferencesSchema(BaseModel):
@@ -577,3 +581,121 @@ def get_shopping_list(week_start: date, db: Session = Depends(get_db)):
     to_buy = [v for v in needed.values() if not v["in_pantry"]]
     have = [v for v in needed.values() if v["in_pantry"]]
     return {"to_buy": to_buy, "already_have": have}
+
+
+RECIPE_JSON_SYSTEM = (
+    "You are a helpful home chef assistant. Extract or generate the recipe and respond with "
+    "ONLY a valid JSON object — no markdown, no code fences, no extra text. "
+    "The JSON must have these exact keys: "
+    "title (string), servings (int), prep_min (int), cook_min (int), "
+    "ingredients (array of {name, amount, unit}), instructions (string with newlines), "
+    "tags (array of strings like 'quick', 'vegetarian', 'gluten-free'), notes (string or null)."
+)
+
+
+# ---------------------------------------------------------------------------
+# AI: Import Recipe from PDF
+# ---------------------------------------------------------------------------
+
+@app.post("/ai/import-recipe/pdf")
+async def import_recipe_pdf(file: UploadFile = File(...)):
+    import anthropic
+
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(400, "Only PDF files are supported")
+
+    pdf_bytes = await file.read()
+    pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
+
+    def stream():
+        client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+        with client.messages.stream(
+            model="claude-sonnet-4-6",
+            max_tokens=2048,
+            system=RECIPE_JSON_SYSTEM,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "document",
+                        "source": {"type": "base64", "media_type": "application/pdf", "data": pdf_b64},
+                    },
+                    {"type": "text", "text": "Extract the recipe from this PDF and return it as JSON."},
+                ],
+            }],
+        ) as s:
+            for text in s.text_stream:
+                yield f"data: {json.dumps({'text': text})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+# ---------------------------------------------------------------------------
+# AI: Import Recipe from URL
+# ---------------------------------------------------------------------------
+
+def _fetch_page_text(url: str) -> str:
+    import urllib.request
+    from html.parser import HTMLParser
+
+    class TextExtractor(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.chunks = []
+            self._skip = False
+
+        def handle_starttag(self, tag, attrs):
+            if tag in ("script", "style", "nav", "footer", "header"):
+                self._skip = True
+
+        def handle_endtag(self, tag):
+            if tag in ("script", "style", "nav", "footer", "header"):
+                self._skip = False
+
+        def handle_data(self, data):
+            if not self._skip:
+                text = data.strip()
+                if text:
+                    self.chunks.append(text)
+
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        html = resp.read().decode("utf-8", errors="ignore")
+
+    parser = TextExtractor()
+    parser.feed(html)
+    raw = " ".join(parser.chunks)
+    # Collapse whitespace and truncate to avoid token limits
+    raw = re.sub(r"\s+", " ", raw).strip()
+    return raw[:12000]
+
+
+@app.post("/ai/import-recipe/url")
+def import_recipe_url(body: ImportRecipeURLRequest):
+    import anthropic
+
+    try:
+        page_text = _fetch_page_text(body.url)
+    except Exception as e:
+        raise HTTPException(400, f"Could not fetch URL: {e}")
+
+    def stream():
+        client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+        with client.messages.stream(
+            model="claude-sonnet-4-6",
+            max_tokens=2048,
+            system=RECIPE_JSON_SYSTEM,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Extract the recipe from the following webpage text and return it as JSON.\n\n"
+                    f"URL: {body.url}\n\nPage content:\n{page_text}"
+                ),
+            }],
+        ) as s:
+            for text in s.text_stream:
+                yield f"data: {json.dumps({'text': text})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream")

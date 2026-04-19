@@ -101,3 +101,44 @@ export const streamGenerateMealPlan = (body, onChunk, onDone, onError) =>
 
 export const streamGeneratePrepList = (body, onChunk, onDone, onError) =>
   streamSSE("/ai/generate-prep-list", body, onChunk, onDone, onError);
+
+export const streamImportRecipeURL = (url, onChunk, onDone, onError) =>
+  streamSSE("/ai/import-recipe/url", { url }, onChunk, onDone, onError);
+
+export async function streamImportRecipePDF(file, onChunk, onDone, onError) {
+  const fd = new FormData();
+  fd.append("file", file);
+  let res;
+  try {
+    res = await fetch(`${BASE}/ai/import-recipe/pdf`, { method: "POST", body: fd });
+  } catch (e) {
+    onError(e.message);
+    return;
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    onError(err.detail || "Upload failed");
+    return;
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const payload = line.slice(6).trim();
+      if (payload === "[DONE]") { onDone(); return; }
+      try {
+        const parsed = JSON.parse(payload);
+        if (parsed.error) { onError(parsed.error); return; }
+        if (parsed.text) onChunk(parsed.text);
+      } catch {}
+    }
+  }
+  onDone();
+}
