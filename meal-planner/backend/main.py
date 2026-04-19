@@ -382,14 +382,15 @@ def generate_recipe(body: GenerateRecipeRequest):
         pantry_context = f"\n\nAvailable pantry items: {', '.join(body.pantry_items)}"
 
     system = (
-        "You are a helpful home chef assistant. When asked to generate a recipe, "
-        "respond with ONLY a valid JSON object — no markdown, no code fences, no extra text. "
+        "You are a helpful home chef assistant specialising in classic, time-tested recipes. "
+        "Only generate traditional, well-established recipes — no trendy, fusion, or novelty dishes. "
+        "When asked to generate a recipe, respond with ONLY a valid JSON object — no markdown, no code fences, no extra text. "
         "The JSON must have these exact keys: "
         "title (string), servings (int), prep_min (int), cook_min (int), "
         "ingredients (array of {name, amount, unit}), instructions (string with newlines), "
         "tags (array of strings like 'quick', 'vegetarian', 'gluten-free'), notes (string or null)."
     )
-    user_msg = f"Generate a recipe for: {body.prompt}{pantry_context}"
+    user_msg = f"Generate a classic recipe for: {body.prompt}{pantry_context}"
 
     def stream():
         client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
