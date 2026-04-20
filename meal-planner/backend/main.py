@@ -491,9 +491,11 @@ def generate_meal_plan(body: GenerateMealPlanRequest, db: Session = Depends(get_
             )
 
     system = (
-        "You are a helpful meal planning assistant. Respond with ONLY a valid JSON object — "
-        "no markdown, no code fences. The JSON must be an object with keys for each day of the week "
-        "(Monday through Sunday). Each day is an object with keys: Breakfast, Lunch, Dinner, Snack. "
+        "You are a helpful meal planning assistant specialising in classic, time-tested home cooking. "
+        "Only suggest traditional, well-established meals — no trendy, fusion, or novelty dishes. "
+        "Respond with ONLY a valid JSON object — no markdown, no code fences. "
+        "The JSON must be an object with keys for each day of the week (Monday through Sunday). "
+        "Each day is an object with keys: Breakfast, Lunch, Dinner, Snack. "
         "Each value is a short meal name string. Keep meal names concise (under 8 words). "
         "When scheduling a favourite recipe, use its EXACT title."
     )
@@ -737,7 +739,8 @@ def refresh_meal_slot(body: RefreshMealSlotRequest, db: Session = Depends(get_db
         )
     else:
         system = (
-            "You are a helpful meal planning assistant. Suggest ONE classic, home-cooked meal for a specific slot. "
+            "You are a helpful meal planning assistant specialising in classic, time-tested home cooking. "
+            "Suggest ONE traditional, well-established meal — no trendy, fusion, or novelty dishes. "
             "Respond with ONLY the meal name — no punctuation, no explanation, no quotes, no extra text. "
             "Keep it concise (under 8 words). Suggest something different from the existing plan."
         )
