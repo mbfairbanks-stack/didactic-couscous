@@ -652,45 +652,51 @@ def generate_week_recipes(body: GenerateWeekRecipesRequest, db: Session = Depend
     )
 
     client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=8000,
-        system=system,
-        messages=[{"role": "user", "content": user_msg}],
-    )
-
-    raw_text = message.content[0].text
-    # Extract the outermost JSON object regardless of surrounding text/fences
-    start = raw_text.find("{")
-    end = raw_text.rfind("}") + 1
-    if start == -1 or end == 0:
-        raise HTTPException(500, f"No JSON object found in AI response: {raw_text[:200]}")
-    try:
-        recipes_data = json.loads(raw_text[start:end])
-    except Exception as exc:
-        raise HTTPException(500, f"Could not parse recipes JSON: {exc} — snippet: {raw_text[start:start+200]}")
-
     saved = 0
-    for meal_name, rd in recipes_data.items():
-        recipe = models.Recipe(
-            title=rd.get("title", meal_name),
-            servings=rd.get("servings", servings),
-            prep_min=rd.get("prep_min", 0),
-            cook_min=rd.get("cook_min", 0),
-            ingredients=rd.get("ingredients", []),
-            instructions=rd.get("instructions", ""),
-            tags=rd.get("tags", []),
-            notes=rd.get("notes"),
-            source="ai",
+    BATCH = 5
+
+    for i in range(0, len(meal_names), BATCH):
+        batch = meal_names[i:i + BATCH]
+        user_msg = (
+            f"Generate classic recipes for these meals (target {servings} servings each):\n"
+            + "\n".join(f"- {m}" for m in batch)
         )
-        db.add(recipe)
-        db.flush()
-        lower = meal_name.lower()
-        for entry in entries:
-            if entry.free_text and entry.free_text.lower() == lower:
-                entry.recipe_id = recipe.id
-                entry.free_text = None
-        saved += 1
+        message = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=8000,
+            system=system,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+        raw_text = message.content[0].text
+        start = raw_text.find("{")
+        end = raw_text.rfind("}") + 1
+        if start == -1 or end == 0:
+            continue
+        try:
+            batch_data = json.loads(raw_text[start:end])
+        except Exception:
+            continue
+
+        for meal_name, rd in batch_data.items():
+            recipe = models.Recipe(
+                title=rd.get("title", meal_name),
+                servings=rd.get("servings", servings),
+                prep_min=rd.get("prep_min", 0),
+                cook_min=rd.get("cook_min", 0),
+                ingredients=rd.get("ingredients", []),
+                instructions=rd.get("instructions", ""),
+                tags=rd.get("tags", []),
+                notes=rd.get("notes"),
+                source="ai",
+            )
+            db.add(recipe)
+            db.flush()
+            lower = meal_name.lower()
+            for entry in entries:
+                if entry.free_text and entry.free_text.lower() == lower:
+                    entry.recipe_id = recipe.id
+                    entry.free_text = None
+            saved += 1
 
     db.commit()
     return {"generated": saved}
