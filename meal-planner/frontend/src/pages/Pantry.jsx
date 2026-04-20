@@ -4,6 +4,38 @@ import { getPantry, createPantryItem, bulkCreatePantryItems, updatePantryItem, d
 const UNITS = ["lbs", "lb", "kg", "g", "oz", "cups", "cup", "cans", "can", "bottles", "bottle",
   "bags", "bag", "boxes", "box", "l", "ml", "tsp", "tbsp", "dozen", "pcs", "bunch", "jar", "jars", "loaf", "loaves"];
 
+const CATEGORY_KEYWORDS = {
+  Produce: ["apple", "apples", "banana", "bananas", "orange", "oranges", "lemon", "lemons", "lime", "limes",
+    "tomato", "tomatoes", "potato", "potatoes", "onion", "onions", "garlic", "carrot", "carrots",
+    "celery", "broccoli", "spinach", "lettuce", "kale", "cucumber", "zucchini", "pepper", "peppers",
+    "mushroom", "mushrooms", "avocado", "avocados", "corn", "peas", "beans", "ginger", "herbs",
+    "basil", "cilantro", "parsley", "mint", "thyme", "rosemary", "berry", "berries", "strawberry",
+    "blueberry", "raspberry", "grape", "grapes", "mango", "pineapple", "watermelon", "melon",
+    "cabbage", "cauliflower", "asparagus", "beetroot", "beet", "leek", "shallot", "scallion",
+    "spring onion", "sweet potato", "yam", "squash", "pumpkin", "eggplant", "artichoke"],
+  Dairy: ["milk", "cheese", "butter", "cream", "yogurt", "yoghurt", "egg", "eggs", "sour cream",
+    "cream cheese", "cottage cheese", "mozzarella", "cheddar", "parmesan", "brie", "feta",
+    "half and half", "heavy cream", "whipping cream", "ice cream", "kefir", "ghee"],
+  Meat: ["chicken", "beef", "pork", "lamb", "turkey", "fish", "salmon", "tuna", "shrimp", "prawn",
+    "prawns", "bacon", "sausage", "sausages", "steak", "mince", "ground beef", "ground turkey",
+    "ham", "salami", "pepperoni", "duck", "veal", "brisket", "ribs", "wings", "thigh", "thighs",
+    "breast", "fillet", "cod", "tilapia", "sardines", "anchovies", "crab", "lobster", "scallops",
+    "meatballs", "deli meat", "chorizo", "prosciutto"],
+  Beverages: ["juice", "soda", "water", "coffee", "tea", "wine", "beer", "kombucha", "sparkling",
+    "lemonade", "almond milk", "oat milk", "soy milk", "broth", "stock", "coconut water",
+    "energy drink", "smoothie", "cocktail", "spirits", "whiskey", "vodka", "gin", "rum"],
+  Freezer: ["frozen", "ice cream", "gelato", "sorbet", "popsicle", "frozen peas", "frozen corn",
+    "frozen berries", "frozen fish", "frozen chicken", "frozen pizza", "edamame"],
+};
+
+function detectCategory(name) {
+  const lower = name.toLowerCase();
+  for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+    if (keywords.some((kw) => lower.includes(kw))) return category;
+  }
+  return "Pantry";
+}
+
 function parseBulkText(text) {
   const unitPattern = new RegExp(`^(\\d+\\.?\\d*)\\s*(${UNITS.join("|")})\\.?\\s+(.+)$`, "i");
   const qtyPattern = /^(\d+\.?\d*)\s+(.+)$/;
@@ -15,13 +47,15 @@ function parseBulkText(text) {
     .map((line) => {
       const unitMatch = line.match(unitPattern);
       if (unitMatch) {
-        return { name: unitMatch[3].trim(), quantity: parseFloat(unitMatch[1]), unit: unitMatch[2].toLowerCase(), category: "Pantry", expiry_date: null, notes: null };
+        const name = unitMatch[3].trim();
+        return { name, quantity: parseFloat(unitMatch[1]), unit: unitMatch[2].toLowerCase(), category: detectCategory(name), expiry_date: null, notes: null };
       }
       const qtyMatch = line.match(qtyPattern);
       if (qtyMatch) {
-        return { name: qtyMatch[2].trim(), quantity: parseFloat(qtyMatch[1]), unit: "", category: "Pantry", expiry_date: null, notes: null };
+        const name = qtyMatch[2].trim();
+        return { name, quantity: parseFloat(qtyMatch[1]), unit: "", category: detectCategory(name), expiry_date: null, notes: null };
       }
-      return { name: line, quantity: 0, unit: "", category: "Pantry", expiry_date: null, notes: null };
+      return { name: line, quantity: 0, unit: "", category: detectCategory(line), expiry_date: null, notes: null };
     });
 }
 
