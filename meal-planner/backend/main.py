@@ -204,6 +204,14 @@ def create_pantry_item(body: PantryItemCreate, db: Session = Depends(get_db)):
     return item
 
 
+@app.post("/pantry/bulk", status_code=201)
+def bulk_create_pantry_items(body: list[PantryItemCreate], db: Session = Depends(get_db)):
+    for item_data in body:
+        db.add(models.PantryItem(**item_data.model_dump()))
+    db.commit()
+    return {"created": len(body)}
+
+
 @app.put("/pantry/{item_id}")
 def update_pantry_item(item_id: int, body: PantryItemUpdate, db: Session = Depends(get_db)):
     item = db.get(models.PantryItem, item_id)

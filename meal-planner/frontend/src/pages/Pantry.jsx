@@ -1,5 +1,29 @@
 import { useState, useEffect } from "react";
-import { getPantry, createPantryItem, updatePantryItem, deletePantryItem } from "../api";
+import { getPantry, createPantryItem, bulkCreatePantryItems, updatePantryItem, deletePantryItem } from "../api";
+
+const UNITS = ["lbs", "lb", "kg", "g", "oz", "cups", "cup", "cans", "can", "bottles", "bottle",
+  "bags", "bag", "boxes", "box", "l", "ml", "tsp", "tbsp", "dozen", "pcs", "bunch", "jar", "jars", "loaf", "loaves"];
+
+function parseBulkText(text) {
+  const unitPattern = new RegExp(`^(\\d+\\.?\\d*)\\s*(${UNITS.join("|")})\\.?\\s+(.+)$`, "i");
+  const qtyPattern = /^(\d+\.?\d*)\s+(.+)$/;
+
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const unitMatch = line.match(unitPattern);
+      if (unitMatch) {
+        return { name: unitMatch[3].trim(), quantity: parseFloat(unitMatch[1]), unit: unitMatch[2].toLowerCase(), category: "Pantry", expiry_date: null, notes: null };
+      }
+      const qtyMatch = line.match(qtyPattern);
+      if (qtyMatch) {
+        return { name: qtyMatch[2].trim(), quantity: parseFloat(qtyMatch[1]), unit: "", category: "Pantry", expiry_date: null, notes: null };
+      }
+      return { name: line, quantity: 0, unit: "", category: "Pantry", expiry_date: null, notes: null };
+    });
+}
 
 const CATEGORIES = ["Produce", "Dairy", "Meat", "Pantry", "Freezer", "Beverages", "Other"];
 
@@ -34,6 +58,10 @@ export default function Pantry() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [showBulk, setShowBulk] = useState(false);
+  const [bulkText, setBulkText] = useState("");
+  const [bulkPreview, setBulkPreview] = useState([]);
+  const [bulkSaving, setBulkSaving] = useState(false);
   const [filterCategory, setFilterCategory] = useState("All");
   const [search, setSearch] = useState("");
 
@@ -94,6 +122,32 @@ export default function Pantry() {
     setShowForm(false);
   };
 
+  const handleBulkParse = () => setBulkPreview(parseBulkText(bulkText));
+
+  const handleBulkSave = async () => {
+    if (!bulkPreview.length) return;
+    setBulkSaving(true);
+    try {
+      await bulkCreatePantryItems(bulkPreview);
+      setBulkText("");
+      setBulkPreview([]);
+      setShowBulk(false);
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
+  const updatePreviewItem = (i, field, val) => {
+    const updated = [...bulkPreview];
+    updated[i] = { ...updated[i], [field]: val };
+    setBulkPreview(updated);
+  };
+
+  const removePreviewItem = (i) => setBulkPreview(bulkPreview.filter((_, idx) => idx !== i));
+
   const filtered = items.filter((item) => {
     const matchCat = filterCategory === "All" || item.category === filterCategory;
     const matchSearch = item.name.toLowerCase().includes(search.toLowerCase());
@@ -109,15 +163,105 @@ export default function Pantry() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4 sm:mb-6">
+      <div className="flex items-center justify-between mb-4 sm:mb-6 flex-wrap gap-2">
         <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Pantry</h1>
-        <button
-          onClick={() => { setShowForm(true); setEditingId(null); setForm(EMPTY_FORM); }}
-          className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700"
-        >
-          + Add Item
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => { setShowBulk(!showBulk); setShowForm(false); setBulkPreview([]); setBulkText(""); }}
+            className="border border-green-600 text-green-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-green-50"
+          >
+            Bulk Add
+          </button>
+          <button
+            onClick={() => { setShowForm(true); setShowBulk(false); setEditingId(null); setForm(EMPTY_FORM); }}
+            className="bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-green-700"
+          >
+            + Add Item
+          </button>
+        </div>
       </div>
+
+      {/* Bulk Add Panel */}
+      {showBulk && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-5 mb-5 shadow-sm">
+          <h2 className="font-semibold text-green-800 mb-1">Bulk Add Items</h2>
+          <p className="text-xs text-green-600 mb-3">
+            One item per line. Supports formats like:<br />
+            <span className="font-mono">chicken breast</span> &nbsp;·&nbsp;
+            <span className="font-mono">2 lbs ground beef</span> &nbsp;·&nbsp;
+            <span className="font-mono">3 cans tomatoes</span> &nbsp;·&nbsp;
+            <span className="font-mono">4 chicken thighs</span>
+          </p>
+          <textarea
+            rows={8}
+            value={bulkText}
+            onChange={(e) => { setBulkText(e.target.value); setBulkPreview([]); }}
+            placeholder={"olive oil\n2 lbs chicken breast\n3 cans diced tomatoes\nmilk\n1 dozen eggs\n500g pasta"}
+            className="w-full border rounded-lg px-3 py-2 text-sm font-mono mb-3"
+          />
+          <div className="flex gap-2 mb-4">
+            <button
+              onClick={handleBulkParse}
+              disabled={!bulkText.trim()}
+              className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50"
+            >
+              Preview ({bulkText.trim().split("\n").filter(Boolean).length} items)
+            </button>
+            <button
+              onClick={() => { setShowBulk(false); setBulkText(""); setBulkPreview([]); }}
+              className="border border-gray-300 px-4 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+          </div>
+
+          {bulkPreview.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">Preview — edit before saving</h3>
+              <div className="space-y-2 mb-4">
+                {bulkPreview.map((item, i) => (
+                  <div key={i} className="flex gap-2 items-center bg-white border border-gray-200 rounded-lg px-3 py-2">
+                    <input
+                      value={item.name}
+                      onChange={(e) => updatePreviewItem(i, "name", e.target.value)}
+                      className="border rounded px-2 py-1 text-sm flex-1 min-w-0"
+                      placeholder="Name"
+                    />
+                    <input
+                      type="number"
+                      value={item.quantity || ""}
+                      onChange={(e) => updatePreviewItem(i, "quantity", parseFloat(e.target.value) || 0)}
+                      className="border rounded px-2 py-1 text-sm w-16"
+                      placeholder="Qty"
+                    />
+                    <input
+                      value={item.unit}
+                      onChange={(e) => updatePreviewItem(i, "unit", e.target.value)}
+                      className="border rounded px-2 py-1 text-sm w-16"
+                      placeholder="Unit"
+                    />
+                    <select
+                      value={item.category}
+                      onChange={(e) => updatePreviewItem(i, "category", e.target.value)}
+                      className="border rounded px-2 py-1 text-sm"
+                    >
+                      {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+                    </select>
+                    <button onClick={() => removePreviewItem(i)} className="text-red-400 hover:text-red-600 shrink-0">×</button>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={handleBulkSave}
+                disabled={bulkSaving || !bulkPreview.length}
+                className="bg-green-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50"
+              >
+                {bulkSaving ? "Saving..." : `Save ${bulkPreview.length} items`}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex gap-3 mb-4 flex-wrap">

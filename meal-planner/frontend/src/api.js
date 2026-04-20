@@ -31,6 +31,7 @@ export const getPantry = (params = {}) => {
   return req(`/pantry${qs ? "?" + qs : ""}`);
 };
 export const createPantryItem = (body) => req("/pantry", { method: "POST", ...json(body) });
+export const bulkCreatePantryItems = (items) => req("/pantry/bulk", { method: "POST", ...json(items) });
 export const updatePantryItem = (id, body) => req(`/pantry/${id}`, { method: "PUT", ...json(body) });
 export const deletePantryItem = (id) => req(`/pantry/${id}`, { method: "DELETE" });
 
