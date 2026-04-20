@@ -109,6 +109,9 @@ export const streamGeneratePrepList = (body, onChunk, onDone, onError) =>
 export const streamImportRecipeURL = (url, onChunk, onDone, onError) =>
   streamSSE("/ai/import-recipe/url", { url }, onChunk, onDone, onError);
 
+export const streamImportRecipeText = (text, onChunk, onDone, onError) =>
+  streamSSE("/ai/import-recipe/text", { text }, onChunk, onDone, onError);
+
 export async function streamImportRecipePDF(file, onChunk, onDone, onError) {
   const fd = new FormData();
   fd.append("file", file);

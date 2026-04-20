@@ -125,6 +125,10 @@ class ImportRecipeURLRequest(BaseModel):
     url: str
 
 
+class ImportRecipeTextRequest(BaseModel):
+    text: str
+
+
 class HouseholdPreferencesSchema(BaseModel):
     servings: int = 4
     dietary_restrictions: str = ""
@@ -756,6 +760,28 @@ def _fetch_page_text(url: str) -> str:
     # Collapse whitespace and truncate to avoid token limits
     raw = re.sub(r"\s+", " ", raw).strip()
     return raw[:12000]
+
+
+@app.post("/ai/import-recipe/text")
+def import_recipe_text(body: ImportRecipeTextRequest):
+    import anthropic
+
+    def stream():
+        client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+        with client.messages.stream(
+            model="claude-sonnet-4-6",
+            max_tokens=2048,
+            system=RECIPE_JSON_SYSTEM,
+            messages=[{
+                "role": "user",
+                "content": f"Extract the recipe from the following text and return it as JSON.\n\n{body.text[:12000]}",
+            }],
+        ) as s:
+            for text in s.text_stream:
+                yield f"data: {json.dumps({'text': text})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
 
 
 @app.post("/ai/import-recipe/url")

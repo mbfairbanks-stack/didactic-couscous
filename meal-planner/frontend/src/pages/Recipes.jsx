@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { getRecipes, createRecipe, updateRecipe, deleteRecipe, getPantry, streamGenerateRecipe, streamImportRecipePDF, streamImportRecipeURL } from "../api";
+import { getRecipes, createRecipe, updateRecipe, deleteRecipe, getPantry, streamGenerateRecipe, streamImportRecipePDF, streamImportRecipeURL, streamImportRecipeText } from "../api";
 
 const EMPTY_FORM = {
   title: "",
@@ -149,6 +149,7 @@ export default function Recipes() {
   const [aiPrompt, setAiPrompt] = useState("");
   const [usePantry, setUsePantry] = useState(false);
   const [importUrl, setImportUrl] = useState("");
+  const [pasteText, setPasteText] = useState("");
   const [importFile, setImportFile] = useState(null);
   const [aiStreaming, setAiStreaming] = useState(false);
   const [aiRaw, setAiRaw] = useState("");
@@ -259,6 +260,11 @@ export default function Recipes() {
     startStream(streamImportRecipeURL, importUrl.trim());
   };
 
+  const handleImportText = () => {
+    if (!pasteText.trim()) return;
+    startStream(streamImportRecipeText, pasteText.trim());
+  };
+
   const handleImportPDF = () => {
     if (!importFile) return;
     startStream(streamImportRecipePDF, importFile);
@@ -294,13 +300,13 @@ export default function Recipes() {
       <div className="flex items-center justify-between mb-4 sm:mb-6 flex-wrap gap-3">
         <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Recipes</h1>
         <div className="flex gap-2 flex-wrap">
-          {["generate", "pdf", "url"].map((mode) => (
+          {["generate", "paste", "pdf", "url"].map((mode) => (
             <button
               key={mode}
               onClick={() => { setImportMode(importMode === mode ? null : mode); setShowForm(false); setAiParsed(null); setAiRaw(""); setAiError(null); }}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${importMode === mode ? "bg-purple-700 text-white" : "bg-purple-600 text-white hover:bg-purple-700"}`}
             >
-              {mode === "generate" ? "AI Generate" : mode === "pdf" ? "Import PDF" : "Import URL"}
+              {mode === "generate" ? "AI Generate" : mode === "paste" ? "Paste Recipe" : mode === "pdf" ? "Import PDF" : "Import URL"}
             </button>
           ))}
           <button
@@ -346,7 +352,7 @@ export default function Recipes() {
       {importMode && (
         <div className="bg-purple-50 border border-purple-200 rounded-xl p-5 mb-6 shadow-sm">
           <h2 className="font-semibold text-purple-800 mb-3">
-            {importMode === "generate" ? "AI Recipe Generator" : importMode === "pdf" ? "Import from PDF" : "Import from URL"}
+            {importMode === "generate" ? "AI Recipe Generator" : importMode === "paste" ? "Paste a Recipe" : importMode === "pdf" ? "Import from PDF" : "Import from URL"}
           </h2>
 
           {importMode === "generate" && (
@@ -370,6 +376,22 @@ export default function Recipes() {
                 Use ingredients from my pantry
               </label>
             </>
+          )}
+
+          {importMode === "paste" && (
+            <div className="space-y-2 mb-3">
+              <textarea
+                placeholder="Paste a recipe here — from a website, email, notes app, anywhere. AI will extract it into the structured format."
+                value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
+                rows={6}
+                className="border rounded-lg px-3 py-2 text-sm w-full resize-y"
+              />
+              <button onClick={handleImportText} disabled={aiStreaming || !pasteText.trim()}
+                className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50">
+                {aiStreaming ? "Extracting..." : "Extract Recipe"}
+              </button>
+            </div>
           )}
 
           {importMode === "pdf" && (
