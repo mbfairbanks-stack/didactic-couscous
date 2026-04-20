@@ -120,6 +120,55 @@ function MobileSheet({ title, recipes, onSelect, onClear, onClose }) {
   );
 }
 
+// Recipe quick-view sheet (bottom on mobile, centered modal on desktop)
+function RecipeSheet({ recipe, onClose }) {
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
+      <div
+        className="fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-2xl shadow-xl overflow-hidden sm:inset-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-[480px] sm:rounded-2xl"
+        style={{ maxHeight: "85vh" }}
+      >
+        <div className="flex items-start justify-between px-4 py-3 border-b bg-white sticky top-0">
+          <div>
+            <p className="font-semibold text-gray-800">{recipe.title}</p>
+            <div className="flex gap-3 text-xs text-gray-400 mt-0.5">
+              {recipe.prep_min > 0 && <span>Prep {recipe.prep_min}m</span>}
+              {recipe.cook_min > 0 && <span>Cook {recipe.cook_min}m</span>}
+              {recipe.servings > 0 && <span>Serves {recipe.servings}</span>}
+            </div>
+          </div>
+          <button onClick={onClose} className="text-gray-400 text-2xl leading-none ml-4 mt-0.5">×</button>
+        </div>
+        <div className="overflow-y-auto p-4 space-y-4">
+          {recipe.ingredients?.length > 0 && (
+            <div>
+              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Ingredients</h4>
+              <ul className="space-y-1">
+                {recipe.ingredients.map((ing, i) => (
+                  <li key={i} className="text-sm text-gray-700 flex gap-2">
+                    {(ing.amount || ing.unit) && (
+                      <span className="font-medium text-gray-500 shrink-0 min-w-[60px]">{ing.amount} {ing.unit}</span>
+                    )}
+                    <span>{ing.name}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {recipe.instructions && (
+            <div>
+              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Instructions</h4>
+              <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{recipe.instructions}</p>
+            </div>
+          )}
+          {recipe.notes && <p className="text-xs text-gray-400 italic">{recipe.notes}</p>}
+        </div>
+      </div>
+    </>
+  );
+}
+
 export default function MealPlan() {
   const [weekStart, setWeekStart] = useState(getMonday(new Date()));
   const [selectedDay, setSelectedDay] = useState(getTodayDayName());
@@ -129,6 +178,7 @@ export default function MealPlan() {
   const [loading, setLoading] = useState(true);
   const [activeCell, setActiveCell] = useState(null); // {day, meal_type} for desktop
   const [mobileSheet, setMobileSheet] = useState(null); // {day, meal_type} for mobile
+  const [recipeSheet, setRecipeSheet] = useState(null); // recipe object
   const [error, setError] = useState(null);
 
   const [refreshingSlot, setRefreshingSlot] = useState(null); // "Day-MealType"
@@ -356,12 +406,23 @@ export default function MealPlan() {
                     key={mealType}
                     className={`w-full flex items-center rounded-xl border px-4 py-3.5 transition-colors ${entryClass(entry)}`}
                   >
-                    <div className="flex-1 text-left cursor-pointer" onClick={() => setMobileSheet({ day: selectedDay, meal_type: mealType })}>
+                    <div
+                      className="flex-1 text-left cursor-pointer"
+                      onClick={() => {
+                        const linked = entry?.recipe_id ? recipes.find((r) => r.id === entry.recipe_id) : null;
+                        if (linked) setRecipeSheet(linked);
+                        else setMobileSheet({ day: selectedDay, meal_type: mealType });
+                      }}
+                    >
                       <p className="text-xs font-semibold uppercase tracking-wider opacity-60 mb-0.5">{mealType}</p>
                       {entry ? (
                         <p className="text-sm font-medium flex items-center gap-1.5">
                           {isFav && <span className="text-yellow-400">★</span>}
-                          {isRefreshing ? <span className="text-gray-400 italic">Getting suggestion…</span> : entry.label}
+                          {isRefreshing ? (
+                            <span className="text-gray-400 italic">Getting suggestion…</span>
+                          ) : entry.recipe_id ? (
+                            <span className="text-green-700 underline decoration-dotted">{entry.label}</span>
+                          ) : entry.label}
                         </p>
                       ) : (
                         <p className="text-sm text-gray-400">Tap to add</p>
@@ -422,7 +483,16 @@ export default function MealPlan() {
                               {entry ? (
                                 <span className="flex items-start gap-1">
                                   {isFav && <span className="text-yellow-400 shrink-0">★</span>}
-                                  {isRefreshing ? <span className="text-gray-400 italic">…</span> : entry.label}
+                                  {isRefreshing ? (
+                                    <span className="text-gray-400 italic">…</span>
+                                  ) : entry.recipe_id ? (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); setRecipeSheet(recipes.find((r) => r.id === entry.recipe_id)); }}
+                                      className="text-green-700 hover:underline text-left leading-tight"
+                                    >
+                                      {entry.label}
+                                    </button>
+                                  ) : entry.label}
                                 </span>
                               ) : <span className="text-gray-300">+</span>}
                             </button>
@@ -465,6 +535,11 @@ export default function MealPlan() {
           onClear={() => handleClear(mobileSheet.day, mobileSheet.meal_type)}
           onClose={() => setMobileSheet(null)}
         />
+      )}
+
+      {/* Recipe detail sheet */}
+      {recipeSheet && (
+        <RecipeSheet recipe={recipeSheet} onClose={() => setRecipeSheet(null)} />
       )}
     </div>
   );

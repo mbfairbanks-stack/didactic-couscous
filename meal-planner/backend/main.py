@@ -474,7 +474,12 @@ def generate_meal_plan(body: GenerateMealPlanRequest, db: Session = Depends(get_
         items = db.query(models.PantryItem).all()
         if items:
             pantry_list = ", ".join(f"{i.name} ({i.quantity} {i.unit})" for i in items)
-            pantry_context = f"\n\nPantry items available to use up: {pantry_list}"
+            pantry_context = (
+                f"\n\nCurrent pantry inventory (for reference only):\n{pantry_list}\n"
+                "Use these ingredients when they fit naturally into a meal the household would enjoy, "
+                "but do NOT force pantry items into every slot — plan what sounds good and let the "
+                "shopping list handle any gaps."
+            )
 
     system = (
         "You are a helpful meal planning assistant. Respond with ONLY a valid JSON object — "
