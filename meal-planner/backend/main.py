@@ -659,14 +659,16 @@ def generate_week_recipes(body: GenerateWeekRecipesRequest, db: Session = Depend
         messages=[{"role": "user", "content": user_msg}],
     )
 
-    raw_text = message.content[0].text.strip()
-    # Strip markdown code fences if present
-    raw_text = re.sub(r"^```[a-z]*\n?", "", raw_text)
-    raw_text = re.sub(r"\n?```$", "", raw_text).strip()
+    raw_text = message.content[0].text
+    # Extract the outermost JSON object regardless of surrounding text/fences
+    start = raw_text.find("{")
+    end = raw_text.rfind("}") + 1
+    if start == -1 or end == 0:
+        raise HTTPException(500, f"No JSON object found in AI response: {raw_text[:200]}")
     try:
-        recipes_data = json.loads(raw_text)
-    except Exception:
-        raise HTTPException(500, "Could not parse recipes from AI response")
+        recipes_data = json.loads(raw_text[start:end])
+    except Exception as exc:
+        raise HTTPException(500, f"Could not parse recipes JSON: {exc} — snippet: {raw_text[start:start+200]}")
 
     saved = 0
     for meal_name, rd in recipes_data.items():
