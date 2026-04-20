@@ -659,8 +659,12 @@ def generate_week_recipes(body: GenerateWeekRecipesRequest, db: Session = Depend
         messages=[{"role": "user", "content": user_msg}],
     )
 
+    raw_text = message.content[0].text.strip()
+    # Strip markdown code fences if present
+    raw_text = re.sub(r"^```[a-z]*\n?", "", raw_text)
+    raw_text = re.sub(r"\n?```$", "", raw_text).strip()
     try:
-        recipes_data = json.loads(message.content[0].text)
+        recipes_data = json.loads(raw_text)
     except Exception:
         raise HTTPException(500, "Could not parse recipes from AI response")
 
