@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
-import { getMealPlan, setMealPlanEntry, deleteMealPlanEntry, getRecipes, getPreferences, streamGenerateMealPlan, streamRefreshMealSlot } from "../api";
+import { getMealPlan, setMealPlanEntry, deleteMealPlanEntry, getRecipes, getPreferences, streamGenerateMealPlan, streamRefreshMealSlot, generateWeekRecipes } from "../api";
 import { format, addDays, addWeeks, subWeeks } from "date-fns";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const MEAL_TYPES = ["Breakfast", "Lunch", "Dinner", "Snack"];
@@ -174,6 +174,7 @@ function RecipeSheet({ recipe, onClose }) {
 }
 
 export default function MealPlan() {
+  const navigate = useNavigate();
   const [weekStart, setWeekStart] = useState(getMonday(new Date()));
   const [selectedDay, setSelectedDay] = useState(getTodayDayName());
   const [entries, setEntries] = useState([]);
@@ -195,6 +196,7 @@ export default function MealPlan() {
   const [useFavorites, setUseFavorites] = useState(true);
   const [aiStreaming, setAiStreaming] = useState(false);
   const [aiError, setAiError] = useState(null);
+  const [publishing, setPublishing] = useState(false);
   const rawRef = useRef("");
 
   const weekKey = toYMD(weekStart);
@@ -281,6 +283,17 @@ export default function MealPlan() {
     );
   };
 
+  const handlePublish = async () => {
+    setPublishing(true);
+    try {
+      await generateWeekRecipes(weekKey);
+      navigate(`/shopping-list?week=${weekKey}`);
+    } catch (e) {
+      setError(e.message);
+      setPublishing(false);
+    }
+  };
+
   const handleSkip = async (day, mealType) => {
     setActiveCell(null);
     setMobileSheet(null);
@@ -352,10 +365,13 @@ export default function MealPlan() {
           <button onClick={thisWeek} className="text-xs text-green-600 hover:underline">Today</button>
         </div>
         <div className="flex items-center gap-2">
-          <Link to={`/shopping-list?week=${weekKey}`}
-            className="bg-green-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-sm font-medium hover:bg-green-700">
-            Publish
-          </Link>
+          <button
+            onClick={handlePublish}
+            disabled={publishing}
+            className="bg-green-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-60"
+          >
+            {publishing ? "Saving recipes…" : "Publish"}
+          </button>
           <button onClick={() => setShowAI(!showAI)}
             className="bg-purple-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-sm font-medium hover:bg-purple-700">
             AI Generate

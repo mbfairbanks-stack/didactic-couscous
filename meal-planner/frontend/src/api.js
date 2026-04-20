@@ -40,6 +40,9 @@ export const getMealPlan = (weekStart) => req(`/meal-plan?week_start=${weekStart
 export const setMealPlanEntry = (body) => req("/meal-plan", { method: "POST", ...json(body) });
 export const deleteMealPlanEntry = (id) => req(`/meal-plan/${id}`, { method: "DELETE" });
 
+export const generateWeekRecipes = (weekStart) =>
+  req("/ai/generate-week-recipes", { method: "POST", ...json({ week_start: weekStart }) });
+
 // Prep Tasks
 export const getPrepTasks = (weekStart) => req(`/prep-tasks?week_start=${weekStart}`);
 export const createPrepTask = (body) => req("/prep-tasks", { method: "POST", ...json(body) });

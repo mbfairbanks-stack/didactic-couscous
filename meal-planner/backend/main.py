@@ -114,6 +114,10 @@ class GeneratePrepListRequest(BaseModel):
     week_start: date
 
 
+class GenerateWeekRecipesRequest(BaseModel):
+    week_start: date
+
+
 class RefreshMealSlotRequest(BaseModel):
     week_start: date
     day: str
@@ -607,6 +611,81 @@ def get_shopping_list(week_start: date, db: Session = Depends(get_db)):
     to_buy = [v for v in needed.values() if not v["in_pantry"]]
     have = [v for v in needed.values() if v["in_pantry"]]
     return {"to_buy": to_buy, "already_have": have}
+
+
+# ---------------------------------------------------------------------------
+# AI: Generate real recipes for all unlinked meal plan entries (batch)
+# ---------------------------------------------------------------------------
+
+@app.post("/ai/generate-week-recipes")
+def generate_week_recipes(body: GenerateWeekRecipesRequest, db: Session = Depends(get_db)):
+    import anthropic
+
+    entries = db.query(models.MealPlanEntry).filter(
+        models.MealPlanEntry.week_start == body.week_start,
+        models.MealPlanEntry.recipe_id == None,
+    ).all()
+    entries = [e for e in entries if e.free_text and e.free_text != "__skip__"]
+
+    if not entries:
+        return {"generated": 0}
+
+    meal_names = list({e.free_text for e in entries})
+
+    prefs = db.get(models.HouseholdPreferences, 1)
+    servings = prefs.servings if prefs else 4
+
+    system = (
+        "You are a helpful home chef assistant specialising in classic, time-tested recipes. "
+        "Generate full recipes for a list of meal names. "
+        "Respond with ONLY a valid JSON object — no markdown, no code fences, no extra text. "
+        "Keys are the exact meal names provided. Each value has: "
+        "title (string), servings (int), prep_min (int), cook_min (int), "
+        "ingredients (array of {name, amount, unit}), instructions (string with newlines), "
+        "tags (array of strings), notes (string or null)."
+    )
+    user_msg = (
+        f"Generate classic recipes for these meals (target {servings} servings each):\n"
+        + "\n".join(f"- {m}" for m in meal_names)
+    )
+
+    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+    message = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=8000,
+        system=system,
+        messages=[{"role": "user", "content": user_msg}],
+    )
+
+    try:
+        recipes_data = json.loads(message.content[0].text)
+    except Exception:
+        raise HTTPException(500, "Could not parse recipes from AI response")
+
+    saved = 0
+    for meal_name, rd in recipes_data.items():
+        recipe = models.Recipe(
+            title=rd.get("title", meal_name),
+            servings=rd.get("servings", servings),
+            prep_min=rd.get("prep_min", 0),
+            cook_min=rd.get("cook_min", 0),
+            ingredients=rd.get("ingredients", []),
+            instructions=rd.get("instructions", ""),
+            tags=rd.get("tags", []),
+            notes=rd.get("notes"),
+            source="ai",
+        )
+        db.add(recipe)
+        db.flush()
+        lower = meal_name.lower()
+        for entry in entries:
+            if entry.free_text and entry.free_text.lower() == lower:
+                entry.recipe_id = recipe.id
+                entry.free_text = None
+        saved += 1
+
+    db.commit()
+    return {"generated": saved}
 
 
 # ---------------------------------------------------------------------------
