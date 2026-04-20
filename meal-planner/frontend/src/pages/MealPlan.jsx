@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { getMealPlan, setMealPlanEntry, deleteMealPlanEntry, getRecipes, getPreferences, streamGenerateMealPlan } from "../api";
+import { getMealPlan, setMealPlanEntry, deleteMealPlanEntry, getRecipes, getPreferences, streamGenerateMealPlan, streamRefreshMealSlot } from "../api";
 import { format, addDays, addWeeks, subWeeks } from "date-fns";
 import { Link } from "react-router-dom";
 
@@ -131,6 +131,8 @@ export default function MealPlan() {
   const [mobileSheet, setMobileSheet] = useState(null); // {day, meal_type} for mobile
   const [error, setError] = useState(null);
 
+  const [refreshingSlot, setRefreshingSlot] = useState(null); // "Day-MealType"
+
   const [showAI, setShowAI] = useState(false);
   const [aiNotes, setAiNotes] = useState("");
   const [usePantry, setUsePantry] = useState(false);
@@ -203,6 +205,26 @@ export default function MealPlan() {
   const nextWeek = () => setWeekStart(addWeeks(weekStart, 1));
   const thisWeek = () => setWeekStart(getMonday(new Date()));
 
+  const handleRefreshSlot = (day, mealType) => {
+    const key = `${day}-${mealType}`;
+    setRefreshingSlot(key);
+    let text = "";
+    streamRefreshMealSlot(
+      { week_start: weekKey, day, meal_type: mealType },
+      (chunk) => { text += chunk; },
+      async () => {
+        const name = text.trim();
+        if (name) {
+          const matched = matchRecipe(name, recipes);
+          await setMealPlanEntry({ week_start: weekKey, day, meal_type: mealType, recipe_id: matched?.id ?? null, free_text: matched ? null : name });
+          load();
+        }
+        setRefreshingSlot(null);
+      },
+      (err) => { setError(err); setRefreshingSlot(null); }
+    );
+  };
+
   const isFavEntry = (entry) => entry?.recipe_id && recipes.find((r) => r.id === entry.recipe_id)?.is_favorite;
 
   const entryClass = (entry) => entry
@@ -226,10 +248,16 @@ export default function MealPlan() {
           </div>
           <button onClick={thisWeek} className="text-xs text-green-600 hover:underline">Today</button>
         </div>
-        <button onClick={() => setShowAI(!showAI)}
-          className="bg-purple-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-sm font-medium hover:bg-purple-700">
-          AI Generate
-        </button>
+        <div className="flex items-center gap-2">
+          <Link to={`/shopping-list?week=${weekKey}`}
+            className="bg-green-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-sm font-medium hover:bg-green-700">
+            Publish
+          </Link>
+          <button onClick={() => setShowAI(!showAI)}
+            className="bg-purple-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-sm font-medium hover:bg-purple-700">
+            AI Generate
+          </button>
+        </div>
       </div>
 
       {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
@@ -321,25 +349,38 @@ export default function MealPlan() {
               {MEAL_TYPES.map((mealType) => {
                 const entry = getEntry(selectedDay, mealType);
                 const isFav = isFavEntry(entry);
+                const slotKey = `${selectedDay}-${mealType}`;
+                const isRefreshing = refreshingSlot === slotKey;
                 return (
-                  <button
+                  <div
                     key={mealType}
-                    onClick={() => setMobileSheet({ day: selectedDay, meal_type: mealType })}
-                    className={`w-full flex items-center justify-between rounded-xl border px-4 py-3.5 text-left transition-colors ${entryClass(entry)}`}
+                    className={`w-full flex items-center rounded-xl border px-4 py-3.5 transition-colors ${entryClass(entry)}`}
                   >
-                    <div>
+                    <div className="flex-1 text-left cursor-pointer" onClick={() => setMobileSheet({ day: selectedDay, meal_type: mealType })}>
                       <p className="text-xs font-semibold uppercase tracking-wider opacity-60 mb-0.5">{mealType}</p>
                       {entry ? (
                         <p className="text-sm font-medium flex items-center gap-1.5">
                           {isFav && <span className="text-yellow-400">★</span>}
-                          {entry.label}
+                          {isRefreshing ? <span className="text-gray-400 italic">Getting suggestion…</span> : entry.label}
                         </p>
                       ) : (
                         <p className="text-sm text-gray-400">Tap to add</p>
                       )}
                     </div>
-                    <span className="text-gray-300 text-lg ml-2">›</span>
-                  </button>
+                    <div className="flex items-center gap-2 ml-2 shrink-0">
+                      {entry && (
+                        <button
+                          onClick={() => handleRefreshSlot(selectedDay, mealType)}
+                          disabled={refreshingSlot !== null}
+                          title="Suggest different meal"
+                          className={`text-lg leading-none transition-colors disabled:opacity-30 ${isRefreshing ? "text-purple-400 animate-spin" : "text-gray-300 hover:text-purple-500"}`}
+                        >
+                          ↻
+                        </button>
+                      )}
+                      <span className="text-gray-300 text-lg cursor-pointer" onClick={() => setMobileSheet({ day: selectedDay, meal_type: mealType })}>›</span>
+                    </div>
+                  </div>
                 );
               })}
             </div>
@@ -369,9 +410,11 @@ export default function MealPlan() {
                       const entry = getEntry(day, mealType);
                       const isActive = activeCell?.day === day && activeCell?.meal_type === mealType;
                       const isFav = isFavEntry(entry);
+                      const slotKey = `${day}-${mealType}`;
+                      const isRefreshing = refreshingSlot === slotKey;
                       return (
                         <td key={day} className="px-1 py-1 align-top">
-                          <div className="relative">
+                          <div className="relative group">
                             <button
                               onClick={() => setActiveCell(isActive ? null : { day, meal_type: mealType })}
                               className={`w-full min-h-[52px] text-left rounded-lg border px-2 py-1.5 text-xs transition-colors ${entryClass(entry)} hover:opacity-80 ${isActive ? "ring-2 ring-green-400" : ""}`}
@@ -379,10 +422,20 @@ export default function MealPlan() {
                               {entry ? (
                                 <span className="flex items-start gap-1">
                                   {isFav && <span className="text-yellow-400 shrink-0">★</span>}
-                                  {entry.label}
+                                  {isRefreshing ? <span className="text-gray-400 italic">…</span> : entry.label}
                                 </span>
                               ) : <span className="text-gray-300">+</span>}
                             </button>
+                            {entry && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleRefreshSlot(day, mealType); }}
+                                disabled={refreshingSlot !== null}
+                                title="Suggest different meal"
+                                className={`absolute top-0.5 right-0.5 text-xs leading-none p-0.5 rounded transition-all disabled:opacity-20 ${isRefreshing ? "opacity-100 text-purple-400" : "opacity-0 group-hover:opacity-100 text-gray-400 hover:text-purple-500"}`}
+                              >
+                                ↻
+                              </button>
+                            )}
                             {isActive && (
                               <CellMenu
                                 recipes={recipes}

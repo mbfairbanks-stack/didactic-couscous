@@ -100,6 +100,9 @@ export const streamGenerateRecipe = (body, onChunk, onDone, onError) =>
 export const streamGenerateMealPlan = (body, onChunk, onDone, onError) =>
   streamSSE("/ai/generate-meal-plan", body, onChunk, onDone, onError);
 
+export const streamRefreshMealSlot = (body, onChunk, onDone, onError) =>
+  streamSSE("/ai/refresh-meal-slot", body, onChunk, onDone, onError);
+
 export const streamGeneratePrepList = (body, onChunk, onDone, onError) =>
   streamSSE("/ai/generate-prep-list", body, onChunk, onDone, onError);
 

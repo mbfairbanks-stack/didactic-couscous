@@ -114,6 +114,13 @@ class GeneratePrepListRequest(BaseModel):
     week_start: date
 
 
+class RefreshMealSlotRequest(BaseModel):
+    week_start: date
+    day: str
+    meal_type: str
+    preferences: Optional[str] = None
+
+
 class ImportRecipeURLRequest(BaseModel):
     url: str
 
@@ -590,6 +597,72 @@ def get_shopping_list(week_start: date, db: Session = Depends(get_db)):
     to_buy = [v for v in needed.values() if not v["in_pantry"]]
     have = [v for v in needed.values() if v["in_pantry"]]
     return {"to_buy": to_buy, "already_have": have}
+
+
+# ---------------------------------------------------------------------------
+# AI: Refresh single meal slot (streaming)
+# ---------------------------------------------------------------------------
+
+@app.post("/ai/refresh-meal-slot")
+def refresh_meal_slot(body: RefreshMealSlotRequest, db: Session = Depends(get_db)):
+    import anthropic
+
+    entries = (
+        db.query(models.MealPlanEntry)
+        .filter(models.MealPlanEntry.week_start == body.week_start)
+        .all()
+    )
+    existing = []
+    for e in entries:
+        if e.day == body.day and e.meal_type == body.meal_type:
+            continue
+        label = e.free_text
+        if e.recipe_id:
+            r = db.get(models.Recipe, e.recipe_id)
+            if r:
+                label = r.title
+        if label:
+            existing.append(f"{e.day} {e.meal_type}: {label}")
+
+    saved_prefs = db.get(models.HouseholdPreferences, 1)
+    pref_lines = []
+    if saved_prefs:
+        if saved_prefs.dietary_restrictions:
+            pref_lines.append(f"Dietary restrictions: {saved_prefs.dietary_restrictions}")
+        if saved_prefs.cuisine_preferences:
+            pref_lines.append(f"Cuisine preferences: {saved_prefs.cuisine_preferences}")
+        if saved_prefs.avoid:
+            pref_lines.append(f"Avoid: {saved_prefs.avoid}")
+    if body.preferences:
+        pref_lines.append(body.preferences)
+
+    context_text = "\n".join(existing) if existing else "No other meals planned yet."
+    prefs_text = "\n".join(pref_lines) if pref_lines else "No specific preferences."
+
+    system = (
+        "You are a helpful meal planning assistant. Suggest ONE classic, home-cooked meal for a specific slot. "
+        "Respond with ONLY the meal name — no punctuation, no explanation, no quotes, no extra text. "
+        "Keep it concise (under 8 words). Suggest something different from the existing plan."
+    )
+    user_msg = (
+        f"Suggest a {body.meal_type} for {body.day}.\n\n"
+        f"Already planned this week (avoid duplicates):\n{context_text}\n\n"
+        f"Household preferences:\n{prefs_text}"
+    )
+
+    def stream():
+        client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+        with client.messages.stream(
+            model="claude-sonnet-4-6",
+            max_tokens=64,
+            system=system,
+            messages=[{"role": "user", "content": user_msg}],
+        ) as s:
+            for text in s.text_stream:
+                yield f"data: {json.dumps({'text': text})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
 
 
 RECIPE_JSON_SYSTEM = (

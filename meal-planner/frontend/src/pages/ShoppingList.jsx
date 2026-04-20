@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { getShoppingList } from "../api";
 import { format, addWeeks, subWeeks } from "date-fns";
 
@@ -16,7 +17,11 @@ function toYMD(d) {
 }
 
 export default function ShoppingList() {
-  const [weekStart, setWeekStart] = useState(getMonday(new Date()));
+  const [searchParams] = useSearchParams();
+  const [weekStart, setWeekStart] = useState(() => {
+    const w = searchParams.get("week");
+    return w ? getMonday(new Date(w + "T00:00:00")) : getMonday(new Date());
+  });
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
