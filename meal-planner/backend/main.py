@@ -580,6 +580,26 @@ def generate_prep_list(body: GeneratePrepListRequest, db: Session = Depends(get_
 # Shopping list: diff meal plan vs pantry
 # ---------------------------------------------------------------------------
 
+def _parse_amount(val) -> float:
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        s = str(val).strip()
+        if "/" in s:
+            parts = s.split("/")
+            try:
+                return float(parts[0]) / float(parts[1])
+            except Exception:
+                pass
+        return 0.0
+
+
+def _fmt_amount(total: float) -> str:
+    if total <= 0:
+        return ""
+    return str(int(total)) if total == int(total) else str(round(total, 2))
+
+
 @app.get("/shopping-list")
 def get_shopping_list(week_start: date, db: Session = Depends(get_db)):
     entries = (
@@ -589,7 +609,8 @@ def get_shopping_list(week_start: date, db: Session = Depends(get_db)):
     )
     pantry = {item.name.lower(): item for item in db.query(models.PantryItem).all()}
 
-    needed = {}  # ingredient_name -> {amount, unit, have_in_pantry}
+    # key = (normalised_name, unit) → aggregate amounts across all recipes
+    groups: dict = {}
     for entry in entries:
         if not entry.recipe_id:
             continue
@@ -600,18 +621,20 @@ def get_shopping_list(week_start: date, db: Session = Depends(get_db)):
             name = ing.get("name", "").strip()
             if not name:
                 continue
-            key = name.lower()
-            if key not in needed:
-                needed[key] = {
-                    "name": name,
-                    "amount": ing.get("amount", ""),
-                    "unit": ing.get("unit", ""),
-                    "in_pantry": key in pantry,
-                }
+            norm = name.lower()
+            unit = str(ing.get("unit", "") or "").strip().lower()
+            key = (norm, unit)
+            amt = _parse_amount(ing.get("amount", 0))
+            if key not in groups:
+                groups[key] = {"name": name, "unit": ing.get("unit", ""), "total": 0.0, "in_pantry": norm in pantry}
+            groups[key]["total"] += amt
 
-    # Group by in_pantry
-    to_buy = [v for v in needed.values() if not v["in_pantry"]]
-    have = [v for v in needed.values() if v["in_pantry"]]
+    result = [
+        {"name": g["name"], "amount": _fmt_amount(g["total"]), "unit": g["unit"], "in_pantry": g["in_pantry"]}
+        for g in groups.values()
+    ]
+    to_buy = sorted([v for v in result if not v["in_pantry"]], key=lambda x: x["name"].lower())
+    have   = sorted([v for v in result if v["in_pantry"]],     key=lambda x: x["name"].lower())
     return {"to_buy": to_buy, "already_have": have}
 
 
@@ -644,7 +667,12 @@ def generate_week_recipes(body: GenerateWeekRecipesRequest, db: Session = Depend
         "Keys are the exact meal names provided. Each value has: "
         "title (string), servings (int), prep_min (int), cook_min (int), "
         "ingredients (array of {name, amount, unit}), instructions (string with newlines), "
-        "tags (array of strings), notes (string or null)."
+        "tags (array of strings), notes (string or null). "
+        "IMPORTANT: Use simple, standardised ingredient names so they consolidate on a shopping list. "
+        "Examples: 'olive oil' not 'extra-virgin olive oil', 'onion' not 'yellow onion', "
+        "'garlic' not 'garlic cloves', 'butter' not 'unsalted butter', "
+        "'chicken breast' not 'boneless skinless chicken breast'. "
+        "Amounts must be plain numbers or simple fractions (e.g. 0.5 not '1/2')."
     )
     user_msg = (
         f"Generate classic recipes for these meals (target {servings} servings each):\n"
