@@ -119,6 +119,7 @@ class RefreshMealSlotRequest(BaseModel):
     day: str
     meal_type: str
     preferences: Optional[str] = None
+    easy: bool = False
 
 
 class ImportRecipeURLRequest(BaseModel):
@@ -648,11 +649,19 @@ def refresh_meal_slot(body: RefreshMealSlotRequest, db: Session = Depends(get_db
     context_text = "\n".join(existing) if existing else "No other meals planned yet."
     prefs_text = "\n".join(pref_lines) if pref_lines else "No specific preferences."
 
-    system = (
-        "You are a helpful meal planning assistant. Suggest ONE classic, home-cooked meal for a specific slot. "
-        "Respond with ONLY the meal name — no punctuation, no explanation, no quotes, no extra text. "
-        "Keep it concise (under 8 words). Suggest something different from the existing plan."
-    )
+    if body.easy:
+        system = (
+            "You are a helpful meal planning assistant. Suggest ONE very quick and easy meal "
+            "(30 minutes or less, minimal ingredients, minimal cleanup — think weeknight simple). "
+            "Respond with ONLY the meal name — no punctuation, no explanation, no quotes, no extra text. "
+            "Keep it concise (under 8 words)."
+        )
+    else:
+        system = (
+            "You are a helpful meal planning assistant. Suggest ONE classic, home-cooked meal for a specific slot. "
+            "Respond with ONLY the meal name — no punctuation, no explanation, no quotes, no extra text. "
+            "Keep it concise (under 8 words). Suggest something different from the existing plan."
+        )
     user_msg = (
         f"Suggest a {body.meal_type} for {body.day}.\n\n"
         f"Already planned this week (avoid duplicates):\n{context_text}\n\n"

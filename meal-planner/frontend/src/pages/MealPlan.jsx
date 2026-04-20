@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const MEAL_TYPES = ["Breakfast", "Lunch", "Dinner", "Snack"];
+const SKIP = "__skip__";
 
 function getMonday(d) {
   const dt = new Date(d);
@@ -29,7 +30,7 @@ function matchRecipe(text, recipes) {
 }
 
 // Shared recipe picker content used by both desktop dropdown and mobile sheet
-function RecipePickerContent({ recipes, onSelect, onClear }) {
+function RecipePickerContent({ recipes, onSelect, onClear, onSkip }) {
   const [search, setSearch] = useState("");
   const favorites = recipes.filter((r) => r.is_favorite);
   const filtered = recipes.filter((r) => r.title.toLowerCase().includes(search.toLowerCase()));
@@ -79,9 +80,12 @@ function RecipePickerContent({ recipes, onSelect, onClear }) {
           </button>
         ))}
       </div>
-      <div className="border-t p-3">
-        <button onClick={onClear} className="w-full text-left text-sm text-red-400 hover:text-red-600">
-          Clear this slot
+      <div className="border-t p-3 space-y-1">
+        <button onClick={onSkip} className="w-full text-left text-sm text-gray-500 hover:text-gray-700 py-0.5">
+          Skip this meal
+        </button>
+        <button onClick={onClear} className="w-full text-left text-sm text-red-400 hover:text-red-600 py-0.5">
+          Remove from plan
         </button>
       </div>
     </>
@@ -89,7 +93,7 @@ function RecipePickerContent({ recipes, onSelect, onClear }) {
 }
 
 // Desktop: absolute dropdown
-function CellMenu({ recipes, onSelect, onClear, onClose }) {
+function CellMenu({ recipes, onSelect, onClear, onSkip, onClose }) {
   const ref = useRef();
   useEffect(() => {
     const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
@@ -98,13 +102,13 @@ function CellMenu({ recipes, onSelect, onClear, onClose }) {
   }, [onClose]);
   return (
     <div ref={ref} className="absolute z-20 top-full left-0 mt-1 w-72 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
-      <RecipePickerContent recipes={recipes} onSelect={onSelect} onClear={onClear} />
+      <RecipePickerContent recipes={recipes} onSelect={onSelect} onClear={onClear} onSkip={onSkip} />
     </div>
   );
 }
 
 // Mobile: fixed bottom sheet
-function MobileSheet({ title, recipes, onSelect, onClear, onClose }) {
+function MobileSheet({ title, recipes, onSelect, onClear, onSkip, onClose }) {
   return (
     <>
       <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
@@ -114,7 +118,7 @@ function MobileSheet({ title, recipes, onSelect, onClear, onClose }) {
           <span className="font-semibold text-gray-800 text-sm">{title}</span>
           <button onClick={onClose} className="text-gray-400 text-xl leading-none">×</button>
         </div>
-        <RecipePickerContent recipes={recipes} onSelect={onSelect} onClear={onClear} />
+        <RecipePickerContent recipes={recipes} onSelect={onSelect} onClear={onClear} onSkip={onSkip} />
       </div>
     </>
   );
@@ -277,6 +281,35 @@ export default function MealPlan() {
     );
   };
 
+  const handleSkip = async (day, mealType) => {
+    setActiveCell(null);
+    setMobileSheet(null);
+    try {
+      await setMealPlanEntry({ week_start: weekKey, day, meal_type: mealType, recipe_id: null, free_text: SKIP });
+      load();
+    } catch (e) { setError(e.message); }
+  };
+
+  const handleEasySlot = (day, mealType) => {
+    const key = `${day}-${mealType}`;
+    setRefreshingSlot(key);
+    let text = "";
+    streamRefreshMealSlot(
+      { week_start: weekKey, day, meal_type: mealType, easy: true },
+      (chunk) => { text += chunk; },
+      async () => {
+        const name = text.trim();
+        if (name) {
+          const matched = matchRecipe(name, recipes);
+          await setMealPlanEntry({ week_start: weekKey, day, meal_type: mealType, recipe_id: matched?.id ?? null, free_text: matched ? null : name });
+          load();
+        }
+        setRefreshingSlot(null);
+      },
+      (err) => { setError(err); setRefreshingSlot(null); }
+    );
+  };
+
   const handleDrop = async (sourceDay, sourceMealType, targetDay, targetMealType) => {
     if (sourceDay === targetDay && sourceMealType === targetMealType) return;
     const sourceEntry = getEntry(sourceDay, sourceMealType);
@@ -295,12 +328,13 @@ export default function MealPlan() {
   };
 
   const isFavEntry = (entry) => entry?.recipe_id && recipes.find((r) => r.id === entry.recipe_id)?.is_favorite;
+  const isSkipped = (entry) => entry?.free_text === SKIP;
 
-  const entryClass = (entry) => entry
-    ? isFavEntry(entry)
-      ? "bg-yellow-50 border-yellow-200 text-yellow-800"
-      : "bg-green-50 border-green-200 text-green-800"
-    : "bg-white border-gray-200 text-gray-400";
+  const entryClass = (entry) => {
+    if (!entry) return "bg-white border-gray-200 text-gray-400";
+    if (isSkipped(entry)) return "bg-gray-50 border-gray-200 text-gray-400";
+    return isFavEntry(entry) ? "bg-yellow-50 border-yellow-200 text-yellow-800" : "bg-green-50 border-green-200 text-green-800";
+  };
 
   return (
     <div>
@@ -452,7 +486,9 @@ export default function MealPlan() {
                       }}
                     >
                       <p className="text-xs font-semibold uppercase tracking-wider opacity-60 mb-0.5">{mealType}</p>
-                      {entry ? (
+                      {isSkipped(entry) ? (
+                        <p className="text-sm text-gray-400 italic line-through">Skipped</p>
+                      ) : entry ? (
                         <p className="text-sm font-medium flex items-center gap-1.5">
                           {isFav && <span className="text-yellow-400">★</span>}
                           {isRefreshing ? (
@@ -466,8 +502,8 @@ export default function MealPlan() {
                       )}
                     </div>
                     {!moveMode && (
-                      <div className="flex items-center gap-2 ml-2 shrink-0">
-                        {entry && (
+                      <div className="flex items-center gap-1.5 ml-2 shrink-0">
+                        {entry && !isSkipped(entry) && (
                           <>
                             <button
                               onClick={() => setMoveMode({ day: selectedDay, mealType })}
@@ -477,10 +513,18 @@ export default function MealPlan() {
                               ⇄
                             </button>
                             <button
+                              onClick={() => handleEasySlot(selectedDay, mealType)}
+                              disabled={refreshingSlot !== null}
+                              title="Quick easy meal"
+                              className="text-base leading-none text-gray-300 hover:text-amber-500 transition-colors disabled:opacity-30"
+                            >
+                              ⚡
+                            </button>
+                            <button
                               onClick={() => handleRefreshSlot(selectedDay, mealType)}
                               disabled={refreshingSlot !== null}
                               title="Suggest different meal"
-                              className={`text-lg leading-none transition-colors disabled:opacity-30 ${isRefreshing ? "text-purple-400 animate-spin" : "text-gray-300 hover:text-purple-500"}`}
+                              className={`text-lg leading-none transition-colors disabled:opacity-30 ${isRefreshing ? "text-purple-400" : "text-gray-300 hover:text-purple-500"}`}
                             >
                               ↻
                             </button>
@@ -543,7 +587,9 @@ export default function MealPlan() {
                               onClick={() => setActiveCell(isActive ? null : { day, meal_type: mealType })}
                               className={`w-full min-h-[52px] text-left rounded-lg border px-2 py-1.5 text-xs transition-all ${entryClass(entry)} hover:opacity-80 ${entry ? "cursor-grab active:cursor-grabbing" : ""} ${isActive ? "ring-2 ring-green-400" : ""} ${dragTarget?.day === day && dragTarget?.mealType === mealType ? "ring-2 ring-blue-400 !bg-blue-50" : ""}`}
                             >
-                              {entry ? (
+                              {isSkipped(entry) ? (
+                                <span className="line-through text-gray-400 italic text-xs">Skipped</span>
+                              ) : entry ? (
                                 <span className="flex items-start gap-1">
                                   {isFav && <span className="text-yellow-400 shrink-0">★</span>}
                                   {isRefreshing ? (
@@ -559,21 +605,32 @@ export default function MealPlan() {
                                 </span>
                               ) : <span className="text-gray-300">+</span>}
                             </button>
-                            {entry && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleRefreshSlot(day, mealType); }}
-                                disabled={refreshingSlot !== null}
-                                title="Suggest different meal"
-                                className={`absolute top-0.5 right-0.5 text-xs leading-none p-0.5 rounded transition-all disabled:opacity-20 ${isRefreshing ? "opacity-100 text-purple-400" : "opacity-0 group-hover:opacity-100 text-gray-400 hover:text-purple-500"}`}
-                              >
-                                ↻
-                              </button>
+                            {entry && !isSkipped(entry) && (
+                              <div className={`absolute bottom-0.5 right-0.5 flex gap-0.5 transition-all ${isRefreshing ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleEasySlot(day, mealType); }}
+                                  disabled={refreshingSlot !== null}
+                                  title="Quick easy meal"
+                                  className="text-xs leading-none p-0.5 rounded text-gray-400 hover:text-amber-500 disabled:opacity-20"
+                                >
+                                  ⚡
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleRefreshSlot(day, mealType); }}
+                                  disabled={refreshingSlot !== null}
+                                  title="Suggest different meal"
+                                  className={`text-xs leading-none p-0.5 rounded disabled:opacity-20 ${isRefreshing ? "text-purple-400" : "text-gray-400 hover:text-purple-500"}`}
+                                >
+                                  ↻
+                                </button>
+                              </div>
                             )}
                             {isActive && (
                               <CellMenu
                                 recipes={recipes}
                                 onSelect={(rid, ft) => handleSelect(day, mealType, rid, ft)}
                                 onClear={() => handleClear(day, mealType)}
+                                onSkip={() => handleSkip(day, mealType)}
                                 onClose={() => setActiveCell(null)}
                               />
                             )}
@@ -596,6 +653,7 @@ export default function MealPlan() {
           recipes={recipes}
           onSelect={(rid, ft) => handleSelect(mobileSheet.day, mobileSheet.meal_type, rid, ft)}
           onClear={() => handleClear(mobileSheet.day, mobileSheet.meal_type)}
+          onSkip={() => { handleSkip(mobileSheet.day, mobileSheet.meal_type); setMobileSheet(null); }}
           onClose={() => setMobileSheet(null)}
         />
       )}
