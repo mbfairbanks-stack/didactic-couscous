@@ -16,6 +16,40 @@ function toYMD(d) {
   return format(d, "yyyy-MM-dd");
 }
 
+function fmtNum(n) {
+  if (n === 0) return "";
+  const s = n % 1 === 0 ? String(n) : parseFloat(n.toFixed(2)).toString();
+  return s;
+}
+
+function combineItems(items) {
+  const map = new Map();
+  for (const item of items) {
+    const key = item.name.toLowerCase().trim();
+    if (!map.has(key)) {
+      map.set(key, { name: item.name, entries: [] });
+    }
+    map.get(key).entries.push({
+      amount: item.amount,
+      unit: (item.unit || "").trim(),
+    });
+  }
+
+  return Array.from(map.values()).map(({ name, entries }) => {
+    const units = [...new Set(entries.map((e) => e.unit.toLowerCase()))];
+    const totalNum = entries.reduce((sum, e) => {
+      const n = parseFloat(e.amount);
+      return sum + (isNaN(n) ? 1 : n);
+    }, 0);
+
+    if (units.length === 1) {
+      return { name, amount: fmtNum(totalNum), unit: entries[0].unit };
+    }
+    // Mixed units: sum numbers, drop conflicting unit labels
+    return { name, amount: fmtNum(totalNum), unit: "" };
+  });
+}
+
 export default function ShoppingList() {
   const [searchParams] = useSearchParams();
   const [weekStart, setWeekStart] = useState(() => {
@@ -26,6 +60,7 @@ export default function ShoppingList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [checked, setChecked] = useState({});
+  const [combined, setCombined] = useState(true);
 
   const weekKey = toYMD(weekStart);
 
@@ -46,8 +81,9 @@ export default function ShoppingList() {
 
   const toggleCheck = (name) => setChecked((prev) => ({ ...prev, [name]: !prev[name] }));
 
-  const toBuy = data?.to_buy || [];
+  const rawToBuy = data?.to_buy || [];
   const alreadyHave = data?.already_have || [];
+  const toBuy = combined ? combineItems(rawToBuy) : rawToBuy;
 
   return (
     <div>
@@ -71,18 +107,30 @@ export default function ShoppingList() {
 
       {loading ? (
         <p className="text-gray-400 text-sm">Loading...</p>
-      ) : !data ? null : toBuy.length === 0 && alreadyHave.length === 0 ? (
+      ) : !data ? null : rawToBuy.length === 0 && alreadyHave.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <p className="text-lg">Nothing to buy.</p>
           <p className="text-sm mt-1">Link recipes to your meal plan to generate a shopping list.</p>
         </div>
       ) : (
         <div className="space-y-6">
-          {toBuy.length > 0 && (
+          {rawToBuy.length > 0 && (
             <div>
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                To Buy ({toBuy.length})
-              </h3>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  To Buy ({toBuy.length}{combined && rawToBuy.length !== toBuy.length ? ` combined from ${rawToBuy.length}` : ""})
+                </h3>
+                <button
+                  onClick={() => { setCombined((c) => !c); setChecked({}); }}
+                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                    combined
+                      ? "bg-green-50 border-green-300 text-green-700"
+                      : "bg-white border-gray-200 text-gray-500 hover:border-gray-300"
+                  }`}
+                >
+                  {combined ? "Combined" : "Combine"}
+                </button>
+              </div>
               <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 shadow-sm">
                 {toBuy.map((item) => (
                   <div key={item.name} className="flex items-center gap-3 px-4 py-3">
