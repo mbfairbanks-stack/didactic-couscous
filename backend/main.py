@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func, distinct, text
+from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
 from typing import Optional, List
 import datetime
@@ -30,9 +31,19 @@ if MULTI_USER:
 
 app = FastAPI(title="BudgetBot API")
 
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+_ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",")]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -105,7 +116,8 @@ class RegisterRequest(BaseModel):
 
 
 @app.post("/auth/register")
-def auth_register(body: RegisterRequest):
+@limiter.limit("5/minute")
+async def auth_register(request: Request, body: RegisterRequest):
     if not MULTI_USER:
         raise HTTPException(status_code=404)
     if len(body.username) < 3:
@@ -120,7 +132,8 @@ def auth_register(body: RegisterRequest):
 
 
 @app.post("/auth/login")
-def auth_login(body: LoginRequest):
+@limiter.limit("10/minute")
+async def auth_login(request: Request, body: LoginRequest):
     if MULTI_USER:
         username = (body.username or "").strip()
         if not username:
@@ -226,7 +239,7 @@ def list_transactions(
     category: Optional[str] = None,
     source: Optional[str] = None,
     skip: int = 0,
-    limit: int = 1000,
+    limit: int = Query(default=500, le=2000),
     db: Session = Depends(get_db),
 ):
     q = select(models.Transaction)
@@ -280,33 +293,48 @@ def export_transactions_csv(
 @app.post("/transactions/auto-categorize")
 def auto_categorize_transactions(db: Session = Depends(get_db)):
     """Auto-categorize transactions where category is null or 'Uncategorized'."""
+    # Get all uncategorized transactions
     uncategorized = db.execute(
         select(models.Transaction).where(
             (models.Transaction.category == None) | (models.Transaction.category == "Uncategorized")
         )
     ).scalars().all()
 
+    if not uncategorized:
+        return {"updated": 0, "skipped": 0}
+
+    # Get unique merchants that need categorization
+    merchants = list({txn.merchant for txn in uncategorized})
+
+    # Single query: for each merchant, find the most common category
+    from sqlalchemy import case
+    rows = db.execute(
+        select(
+            models.Transaction.merchant,
+            models.Transaction.category,
+            func.count(models.Transaction.id).label("cnt"),
+        )
+        .where(
+            models.Transaction.merchant.in_(merchants),
+            models.Transaction.category != None,
+            models.Transaction.category != "Uncategorized",
+        )
+        .group_by(models.Transaction.merchant, models.Transaction.category)
+        .order_by(func.count(models.Transaction.id).desc())
+    ).all()
+
+    # Build merchant -> best category map (first row for each merchant wins due to ORDER BY)
+    merchant_cat: dict = {}
+    for row in rows:
+        if row.merchant not in merchant_cat:
+            merchant_cat[row.merchant] = row.category
+
     updated = 0
     skipped = 0
     for txn in uncategorized:
-        # Find the most common category for this merchant in other transactions
-        rows = db.execute(
-            select(
-                models.Transaction.category,
-                func.count(models.Transaction.id).label("cnt"),
-            )
-            .where(
-                models.Transaction.merchant == txn.merchant,
-                models.Transaction.id != txn.id,
-                models.Transaction.category != None,
-                models.Transaction.category != "Uncategorized",
-            )
-            .group_by(models.Transaction.category)
-            .order_by(func.count(models.Transaction.id).desc())
-            .limit(1)
-        ).first()
-        if rows:
-            txn.category = rows.category
+        cat = merchant_cat.get(txn.merchant)
+        if cat:
+            txn.category = cat
             updated += 1
         else:
             skipped += 1
@@ -318,10 +346,17 @@ def auto_categorize_transactions(db: Session = Depends(get_db)):
 def _sync_year_month(data: dict) -> dict:
     """If a date is present, always derive year/month from it."""
     if "date" in data and data["date"]:
-        parts = str(data["date"]).split("-")
-        if len(parts) >= 2:
-            data["year"] = int(parts[0])
-            data["month"] = int(parts[1])
+        try:
+            d = data["date"]
+            if hasattr(d, "year"):
+                data["year"] = d.year
+                data["month"] = d.month
+            else:
+                parsed = datetime.date.fromisoformat(str(d))
+                data["year"] = parsed.year
+                data["month"] = parsed.month
+        except (ValueError, AttributeError):
+            pass
     return data
 
 
@@ -393,10 +428,14 @@ def create_income(body: IncomeCreate, db: Session = Depends(get_db)):
         db.refresh(existing)
         return existing
     income = models.Income(**body.model_dump())
-    db.add(income)
-    db.commit()
-    db.refresh(income)
-    return income
+    try:
+        db.add(income)
+        db.commit()
+        db.refresh(income)
+        return income
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Duplicate entry — record already exists")
 
 
 @app.put("/income/{income_id}", response_model=IncomeOut)
@@ -441,10 +480,14 @@ def list_budget_targets(
 @app.post("/budget-targets", response_model=BudgetTargetOut, status_code=201)
 def create_budget_target(body: BudgetTargetCreate, db: Session = Depends(get_db)):
     target = models.BudgetTarget(**body.model_dump())
-    db.add(target)
-    db.commit()
-    db.refresh(target)
-    return target
+    try:
+        db.add(target)
+        db.commit()
+        db.refresh(target)
+        return target
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Duplicate entry — record already exists")
 
 
 @app.put("/budget-targets/{target_id}", response_model=BudgetTargetOut)

@@ -8,3 +8,4 @@ python-multipart==0.0.12
 anthropic>=0.40.0
 python-dotenv==1.0.1
 alembic==1.13.3
+slowapi==0.1.9

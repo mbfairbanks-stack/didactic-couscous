@@ -7,11 +7,11 @@ class Transaction(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     date = Column(Date, nullable=False)
-    merchant = Column(String, nullable=False)
+    merchant = Column(String, nullable=False, index=True)
     amount = Column(Float, nullable=False)
     category = Column(String, nullable=False)
-    year = Column(Integer, nullable=False)
-    month = Column(Integer, nullable=False)
+    year = Column(Integer, nullable=False, index=True)
+    month = Column(Integer, nullable=False, index=True)
     is_fixed = Column(Boolean, default=False)
     notes = Column(String, nullable=True)
     source = Column(String, nullable=True)  # e.g. "amex", "visa", "mastercard"
@@ -22,8 +22,8 @@ class Income(Base):
     __tablename__ = "income"
 
     id = Column(Integer, primary_key=True, index=True)
-    year = Column(Integer, nullable=False)
-    month = Column(Integer, nullable=False)
+    year = Column(Integer, nullable=False, index=True)
+    month = Column(Integer, nullable=False, index=True)
     person = Column(String, nullable=False)
     income_type = Column(String, nullable=False)  # "base" or "commission"
     amount = Column(Float, nullable=False)
