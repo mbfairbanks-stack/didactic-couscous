@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  AreaChart, Area,
 } from "recharts";
 import StatCard from "../components/StatCard";
-import { getMonthlySummary, getTotals, getCategorySummary, getYears, getProjections, getBudgetTargets, getCategoryDefinitions } from "../api";
+import { getMonthlySummary, getTotals, getCategorySummary, getYears, getProjections, getBudgetTargets, getCategoryDefinitions, getNetWorthForecast } from "../api";
 import { getCategoryGroup, updateCategoryGroups } from "../constants";
 import { MONTH_LABELS, currentYear, currentMonth, fmt } from "../utils";
 
@@ -148,6 +149,92 @@ function SavingsGoalBar({ savingsRate, savingsGoal, setSavingsGoal }) {
       <div className="flex justify-between text-xs text-zinc-600 mt-1">
         <span>Current: {rate}%</span>
         <span>Goal: {goal}%</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Year-over-Year spending comparison card ──────────────────────────────────
+function YoYCard({ year, month }) {
+  const [data, setData] = useState(null);
+
+  useEffect(() => {
+    if (!year || !month) return;
+    const prevYear = year - 1;
+    Promise.all([
+      getMonthlySummary(year, month).catch(() => null),
+      getMonthlySummary(prevYear, month).catch(() => null),
+    ]).then(([curr, prev]) => {
+      setData({ curr, prev });
+    });
+  }, [year, month]);
+
+  if (!data) return null;
+
+  const currSpend = data.curr?.total_spending ?? 0;
+  const prevSpend = data.prev?.total_spending ?? 0;
+  const diff = currSpend - prevSpend;
+  const pct = prevSpend > 0 ? ((diff / prevSpend) * 100).toFixed(1) : null;
+  const isUp = diff > 0;
+  const fmt = (n) => new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD", maximumFractionDigits: 0 }).format(n);
+
+  const monthName = new Date(year, month - 1).toLocaleString("en-CA", { month: "long" });
+
+  return (
+    <div className="bg-zinc-800 rounded-xl p-4">
+      <p className="text-xs text-zinc-400 uppercase font-semibold mb-1">vs Same Month Last Year</p>
+      <p className="text-2xl font-bold text-zinc-100">{fmt(currSpend)}</p>
+      <p className="text-sm text-zinc-400 mt-1">{monthName} {year}</p>
+      <div className={`mt-2 text-sm font-medium ${isUp ? "text-red-400" : "text-green-400"}`}>
+        {isUp ? "▲" : "▼"} {fmt(Math.abs(diff))}
+        {pct && <span className="text-zinc-400 ml-1">({pct}% vs {monthName} {year - 1})</span>}
+      </div>
+      <p className="text-xs text-zinc-500 mt-1">Last year: {fmt(prevSpend)}</p>
+    </div>
+  );
+}
+
+// ── 12-Month Net Worth Forecast ──────────────────────────────────────────────
+function ForecastWidget() {
+  const [forecast, setForecast] = useState(null);
+
+  useEffect(() => {
+    getNetWorthForecast(12).catch(() => null).then(setForecast);
+  }, []);
+
+  if (!forecast) return null;
+
+  const fmt = (n) => `$${(n / 1000).toFixed(0)}k`;
+  const fmtFull = (n) => new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD", maximumFractionDigits: 0 }).format(n);
+
+  return (
+    <div className="bg-zinc-800 rounded-xl p-4 col-span-full">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs text-zinc-400 uppercase font-semibold">12-Month Net Worth Forecast</p>
+        <span className="text-xs text-zinc-500">+{fmtFull(forecast.avg_monthly_surplus)}/mo avg surplus</span>
+      </div>
+      <div className="flex items-end gap-1 h-20 mb-2">
+        {forecast.forecast.map((point, i) => {
+          const values = forecast.forecast.map((p) => p.projected_net_worth);
+          const min = Math.min(...values, forecast.current_net_worth);
+          const max = Math.max(...values, forecast.current_net_worth);
+          const range = max - min || 1;
+          const heightPct = ((point.projected_net_worth - min) / range) * 100;
+          const isPositive = forecast.avg_monthly_surplus >= 0;
+          return (
+            <div key={i} className="flex-1 flex flex-col items-center justify-end gap-1">
+              <div
+                className={`w-full rounded-t transition-all ${isPositive ? "bg-yellow-400" : "bg-red-400"}`}
+                style={{ height: `${Math.max(heightPct, 4)}%` }}
+                title={`${point.month}: ${fmtFull(point.projected_net_worth)}`}
+              />
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex justify-between text-xs text-zinc-500">
+        <span>Now: {fmtFull(forecast.current_net_worth)}</span>
+        <span>{forecast.forecast[forecast.forecast.length - 1]?.month}: {fmtFull(forecast.forecast[forecast.forecast.length - 1]?.projected_net_worth)}</span>
       </div>
     </div>
   );
@@ -342,7 +429,7 @@ export default function Dashboard() {
         })()
       )}
 
-      {/* vs Last Month + Savings Goal */}
+      {/* vs Last Month + Savings Goal + YoY */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <MoMCard current={monthTotals} last={lastMonthTotals} />
         <SavingsGoalBar
@@ -350,6 +437,7 @@ export default function Dashboard() {
           savingsGoal={savingsGoal}
           setSavingsGoal={setSavingsGoal}
         />
+        <YoYCard year={year} month={month} />
       </div>
 
       {/* Needs / Wants breakdown */}
@@ -472,6 +560,11 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* 12-Month Net Worth Forecast */}
+      <div className="grid grid-cols-1 gap-4">
+        <ForecastWidget />
+      </div>
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
