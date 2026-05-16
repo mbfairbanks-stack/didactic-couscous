@@ -8,11 +8,10 @@ const inputCls = "bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm
 function ProgressBar({ actual, budget }) {
   if (!budget) return null;
   const pct = Math.min((actual / budget) * 100, 100);
-  const over = actual > budget;
   return (
     <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden w-full">
       <div
-        className={`h-full rounded-full transition-all ${over ? "bg-red-500" : "bg-green-500"}`}
+        className={`h-full rounded-full transition-all ${pct >= 100 ? "bg-red-500" : pct >= 80 ? "bg-yellow-400" : "bg-green-500"}`}
         style={{ width: `${pct}%` }}
       />
     </div>
@@ -432,6 +431,34 @@ export default function BudgetPlanner() {
           </div>
         )}
       </div>
+
+      {/* Over-budget alert */}
+      {(() => {
+        const overBudget = allCategories.filter((row) => {
+          const budget = targetMap[row.category]?.amount;
+          return budget && row.total > budget;
+        }).map((row) => ({
+          category: row.category,
+          spent: row.total,
+          target: targetMap[row.category].amount,
+        }));
+        if (overBudget.length === 0) return null;
+        return (
+          <div className="bg-red-950 border border-red-700 rounded-xl p-4 mb-4">
+            <p className="text-red-400 font-semibold text-sm mb-2">⚠ Over Budget</p>
+            <ul className="space-y-1">
+              {overBudget.map((item) => (
+                <li key={item.category} className="text-sm flex justify-between">
+                  <span className="text-red-300">{item.category}</span>
+                  <span className="text-red-400 font-mono">
+                    ${item.spent.toLocaleString("en-CA")} / ${item.target.toLocaleString("en-CA")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })()}
 
       {/* Table grouped by Committed / Needs / Wants / Other */}
       {visibleCategories.length === 0 ? (
