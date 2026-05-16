@@ -13,6 +13,26 @@ const smallInput = `${inputCls} text-xs py-1`;
 const MATCH_RATE = 0.50;
 const ESPP_RATE = 0.10;
 
+const PAYROLL_TYPES = new Set(["base", "commission"]);
+
+const OTHER_INCOME_TYPES = [
+  { value: "rsu", label: "RSU Vest" },
+  { value: "espp_vest", label: "ESPP Purchase" },
+  { value: "bonus", label: "Bonus" },
+  { value: "e_transfer", label: "E-Transfer Received" },
+  { value: "other", label: "Other" },
+];
+
+const OTHER_TYPE_LABELS = Object.fromEntries(OTHER_INCOME_TYPES.map((t) => [t.value, t.label]));
+
+const emptyOtherEntry = () => ({
+  _key: Math.random(),
+  date: "",
+  income_type: "rsu",
+  person: "",
+  amount: "",
+});
+
 const CPI_INDEX = { 2019: 96.5, 2020: 100, 2021: 103.4, 2022: 110.4, 2023: 114.7, 2024: 117.7, 2025: 120.4, 2026: 122.8 };
 const CURRENT_CPI = 122.8;
 const realIncome = (nominal, year) => nominal * (CURRENT_CPI / (CPI_INDEX[year] ?? CURRENT_CPI));
@@ -216,6 +236,13 @@ export default function Income() {
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
 
+  // Other income
+  const [showOtherForm, setShowOtherForm] = useState(false);
+  const [otherEntries, setOtherEntries] = useState([emptyOtherEntry()]);
+  const [otherSaving, setOtherSaving] = useState(false);
+  const [otherSaved, setOtherSaved] = useState(false);
+  const [otherError, setOtherError] = useState("");
+
   // Income history
   const [historyData, setHistoryData] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -329,15 +356,55 @@ export default function Income() {
     load();
   };
 
-  // Group records by pay_date
-  const byDate = records.reduce((acc, r) => {
+  const handleOtherSave = async (e) => {
+    e.preventDefault();
+    const valid = otherEntries.filter((oe) => oe.date && oe.amount);
+    if (!valid.length) { setOtherError("Enter at least one entry with a date and amount."); return; }
+    setOtherSaving(true); setOtherError(""); setOtherSaved(false);
+    try {
+      for (const oe of valid) {
+        const d = new Date(oe.date + "T12:00:00");
+        await createIncome({
+          year: d.getFullYear(),
+          month: d.getMonth() + 1,
+          person: oe.person || p1,
+          income_type: oe.income_type,
+          amount: parseFloat(oe.amount) || 0,
+          pay_date: oe.date,
+        });
+      }
+      setOtherSaved(true);
+      setOtherEntries([emptyOtherEntry()]);
+      setShowOtherForm(false);
+      load();
+      setHistoryLoading(true);
+      Promise.all(years.map((y) => getTotals(y, null, 12).then((t) => ({ year: y, income: t.total_income ?? 0 }))))
+        .then((r) => setHistoryData(r.sort((a, b) => a.year - b.year)))
+        .finally(() => setHistoryLoading(false));
+    } catch (err) {
+      setOtherError(err.message);
+    } finally {
+      setOtherSaving(false);
+    }
+  };
+
+  const handleDeleteOther = async (record) => {
+    if (!confirm(`Delete ${OTHER_TYPE_LABELS[record.income_type] || record.income_type} entry of ${fmt(record.amount)}?`)) return;
+    await deleteIncome(record.id);
+    load();
+  };
+
+  // Split records into payroll and other
+  const payrollRecords = records.filter((r) => PAYROLL_TYPES.has(r.income_type));
+  const otherRecords = records.filter((r) => !PAYROLL_TYPES.has(r.income_type));
+
+  // Group payroll records by pay_date
+  const byDate = payrollRecords.reduce((acc, r) => {
     const key = r.pay_date || "unspecified";
     if (!acc[key]) acc[key] = [];
     acc[key].push(r);
     return acc;
   }, {});
-
-  const totalIncome = records.reduce((s, r) => s + r.amount, 0);
 
   const chartData = historyData.map((d) => ({
     year: String(d.year),
@@ -409,12 +476,12 @@ export default function Income() {
           </button>
         </form>
 
-        {/* Recorded income for month */}
-        {records.length > 0 && (
+        {/* Recorded payroll income for month */}
+        {payrollRecords.length > 0 && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
             <div className="px-4 py-3 border-b border-zinc-700 flex justify-between items-center bg-zinc-800">
-              <span className="text-xs text-zinc-500 uppercase tracking-wide">{MONTH_LABELS[month]} {year} — Recorded</span>
-              <span className="text-sm font-bold text-yellow-400">{fmt(totalIncome)}</span>
+              <span className="text-xs text-zinc-500 uppercase tracking-wide">{MONTH_LABELS[month]} {year} — Payroll</span>
+              <span className="text-sm font-bold text-yellow-400">{fmt(payrollRecords.reduce((s, r) => s + r.amount, 0))}</span>
             </div>
             {Object.entries(byDate).sort(([a], [b]) => a.localeCompare(b)).map(([dateKey, entries]) => {
               const dateTotal = entries.reduce((s, r) => s + r.amount, 0);
@@ -468,6 +535,112 @@ export default function Income() {
               );
             })}
           </div>
+        )}
+      </div>
+
+      {/* Other Income Section */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+        {/* Section header */}
+        <div className="px-4 py-3 border-b border-zinc-700 flex justify-between items-center bg-zinc-800">
+          <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Other Income</span>
+          <button
+            type="button"
+            onClick={() => { setShowOtherForm((v) => !v); setOtherSaved(false); setOtherError(""); }}
+            className="text-xs text-yellow-400 hover:text-yellow-300 border border-yellow-400/40 hover:border-yellow-300/60 px-2.5 py-1 rounded transition-colors"
+          >
+            {showOtherForm ? "Cancel" : "+ Add"}
+          </button>
+        </div>
+
+        {/* Add form */}
+        {showOtherForm && (
+          <form onSubmit={handleOtherSave} className="p-4 border-b border-zinc-800 space-y-3">
+            {otherEntries.map((oe) => (
+              <div key={oe._key} className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-end border border-zinc-800 rounded-lg p-3">
+                <div>
+                  <label className="text-xs text-zinc-500 block mb-1">Date</label>
+                  <input type="date" className={smallInput} value={oe.date}
+                    onChange={(e) => setOtherEntries((prev) => prev.map((x) => x._key === oe._key ? { ...x, date: e.target.value } : x))} />
+                </div>
+                <div>
+                  <label className="text-xs text-zinc-500 block mb-1">Type</label>
+                  <select className={`${selectCls} w-full text-xs py-1`} value={oe.income_type}
+                    onChange={(e) => setOtherEntries((prev) => prev.map((x) => x._key === oe._key ? { ...x, income_type: e.target.value } : x))}>
+                    {OTHER_INCOME_TYPES.map((t) => (
+                      <option key={t.value} value={t.value}>{t.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-zinc-500 block mb-1">Person</label>
+                  <select className={`${selectCls} w-full text-xs py-1`} value={oe.person || p1}
+                    onChange={(e) => setOtherEntries((prev) => prev.map((x) => x._key === oe._key ? { ...x, person: e.target.value } : x))}>
+                    <option value={p1}>{p1}</option>
+                    <option value={p2}>{p2}</option>
+                  </select>
+                </div>
+                <div className="flex gap-2 items-end">
+                  <div className="flex-1">
+                    <label className="text-xs text-zinc-500 block mb-1">Amount ($)</label>
+                    <input type="number" step="0.01" min="0" placeholder="0.00" className={smallInput} value={oe.amount}
+                      onChange={(e) => setOtherEntries((prev) => prev.map((x) => x._key === oe._key ? { ...x, amount: e.target.value } : x))} />
+                  </div>
+                  {otherEntries.length > 1 && (
+                    <button type="button"
+                      onClick={() => setOtherEntries((prev) => prev.filter((x) => x._key !== oe._key))}
+                      className="text-zinc-600 hover:text-red-400 text-xs px-2 pb-1 transition-colors">
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            <button type="button"
+              onClick={() => setOtherEntries((prev) => [...prev, emptyOtherEntry()])}
+              className="w-full border border-dashed border-zinc-700 text-zinc-500 hover:text-zinc-300 hover:border-zinc-500 text-xs py-2 rounded-lg transition-colors">
+              + Add Another
+            </button>
+
+            {otherError && <p className="text-red-400 text-xs">{otherError}</p>}
+            {otherSaved && <p className="text-green-400 text-xs">Other income saved.</p>}
+
+            <button type="submit" disabled={otherSaving}
+              className="w-full bg-yellow-400 text-black py-2 rounded-lg font-medium text-xs hover:bg-yellow-300 disabled:opacity-40">
+              {otherSaving ? "Saving..." : "Save Other Income"}
+            </button>
+          </form>
+        )}
+
+        {/* Other income list for selected month */}
+        {otherRecords.length > 0 ? (
+          <div>
+            {otherRecords.sort((a, b) => (a.pay_date || "").localeCompare(b.pay_date || "")).map((r) => (
+              <div key={r.id} className="px-4 py-2.5 border-b border-zinc-800 last:border-0 flex items-center justify-between gap-3 hover:bg-zinc-800/40 text-xs">
+                <span className="text-zinc-500 w-24 shrink-0">
+                  {r.pay_date ? new Date(r.pay_date + "T12:00:00").toLocaleDateString("en-CA", { month: "short", day: "numeric" }) : "—"}
+                </span>
+                <span className="text-yellow-400 font-medium flex-1">
+                  {OTHER_TYPE_LABELS[r.income_type] || r.income_type}
+                </span>
+                <span className="text-zinc-400">{resolvePerson(r.person)}</span>
+                <span className="text-zinc-100 font-medium">{fmt(r.amount)}</span>
+                <button
+                  onClick={() => handleDeleteOther(r)}
+                  className="text-zinc-600 hover:text-red-400 transition-colors ml-2">
+                  ✕
+                </button>
+              </div>
+            ))}
+            <div className="px-4 py-2 bg-zinc-800/30 flex justify-between text-xs">
+              <span className="text-zinc-500">Total other income — {MONTH_LABELS[month]} {year}</span>
+              <span className="text-yellow-400 font-bold">{fmt(otherRecords.reduce((s, r) => s + r.amount, 0))}</span>
+            </div>
+          </div>
+        ) : (
+          !showOtherForm && (
+            <p className="px-4 py-4 text-xs text-zinc-600 italic">No other income recorded for {MONTH_LABELS[month]} {year}.</p>
+          )
         )}
       </div>
 
