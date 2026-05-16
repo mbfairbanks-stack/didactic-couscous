@@ -671,136 +671,182 @@ export default function Debts() {
         </div>
       )}
 
-      {/* Debt cards */}
-      {!loading && debts.map((debt) => {
-        const { remaining, monthsLeft, totalMonthly: tm, balanceAtDue, monthlyNeeded, onTrack, pctPaid } =
-          computeDebtStats(debt);
-
-        return (
-          <div key={debt.id} className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-            {/* Card header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-700 bg-zinc-800">
-              <div className="flex items-center gap-3 flex-wrap">
-                <span className="text-base font-semibold text-zinc-100">{debt.name}</span>
-                {debt.creditor && (
-                  <span className="bg-zinc-700 text-zinc-300 text-xs px-2 py-0.5 rounded-full">
-                    {debt.creditor}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => openEdit(debt)}
-                  className="text-yellow-400 hover:text-yellow-300 text-xs font-medium"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => handleDelete(debt.id)}
-                  className="text-red-500 hover:text-red-400 text-xs font-medium"
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-
-            <div className="px-5 py-4 space-y-4">
-              {/* Progress bar */}
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <span className="text-xs text-zinc-500">Progress</span>
-                  <span className="text-xs font-medium text-yellow-400">
-                    {pctPaid.toFixed(1)}% paid off
-                  </span>
-                </div>
-                <div className="h-2 bg-zinc-700 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-yellow-400 rounded-full transition-all"
-                    style={{ width: `${pctPaid}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* LOC summary bar */}
-              {debt.debt_type === "loc" && debt.credit_limit > 0 && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <StatBox label="Credit Limit" value={fmt(debt.credit_limit)} />
-                  <StatBox label="Outstanding" value={fmt(debt.current_balance)} />
-                  <div className="bg-green-900/30 border border-green-700/30 rounded-lg px-3 py-2">
-                    <p className="text-xs text-zinc-500 mb-0.5">Available</p>
-                    <p className="text-sm font-semibold text-green-400">{fmt(Math.max(0, debt.credit_limit - debt.current_balance))}</p>
-                  </div>
-                  <div className="bg-zinc-800 rounded-lg px-3 py-2">
-                    <p className="text-xs text-zinc-500 mb-0.5">Monthly Interest</p>
-                    <p className="text-sm font-semibold text-red-400">
-                      {fmt(debt.current_balance * (debt.interest_rate / 12))}
-                      <span className="text-zinc-500 text-xs ml-1">@ {(debt.interest_rate * 100).toFixed(2)}%</span>
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* Stats grid */}
-              {debt.debt_type !== "loc" ? (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <StatBox label="Current Balance" value={fmt(debt.current_balance)} />
-                  <StatBox label="Initial Balance" value={fmt(debt.initial_balance)} />
-                  <StatBox label="Remaining (net)" value={fmt(remaining)} />
-                  <StatBox label="Savings Set Aside" value={fmt(debt.savings)} />
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  <StatBox label="Minimum Payment" value={fmt(debt.monthly_payment)} />
-                  <StatBox label="Extra Payment" value={fmt(debt.monthly_extra)} />
-                  <StatBox label="Total Monthly" value={fmt(debt.monthly_payment + debt.monthly_extra)} />
-                </div>
-              )}
-
-              {/* Due date stats */}
-              {debt.due_date && (
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 items-start">
-                  <StatBox label="Due Date" value={debt.due_date} />
-                  <StatBox
-                    label="Months Left"
-                    value={monthsLeft != null ? monthsLeft : "—"}
-                  />
-                  <StatBox
-                    label="Balance at Due"
-                    value={balanceAtDue != null ? fmt(balanceAtDue) : "—"}
-                  />
-                  <StatBox
-                    label="Monthly Needed"
-                    value={monthlyNeeded != null ? fmt(monthlyNeeded) : "—"}
-                  />
-                  <div className="bg-zinc-800 rounded-lg px-3 py-2 flex flex-col justify-center">
-                    <p className="text-xs text-zinc-500 mb-1">Status</p>
-                    {onTrack ? (
-                      <span className="inline-block bg-green-500/15 text-green-400 text-xs font-semibold px-2 py-0.5 rounded">
-                        On Track
-                      </span>
-                    ) : (
-                      <span className="inline-block bg-red-500/15 text-red-400 text-xs font-semibold px-2 py-0.5 rounded">
-                        At Risk
-                      </span>
+      {/* Mortgage section */}
+      {!loading && debts.some((d) => d.debt_type === "mortgage") && (
+        <div>
+          <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-3">Mortgage</h2>
+          {debts.filter((d) => d.debt_type === "mortgage").map((debt) => {
+            const { remaining, monthsLeft, balanceAtDue, monthlyNeeded, onTrack, pctPaid } = computeDebtStats(debt);
+            return (
+              <div key={debt.id} className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-700 bg-zinc-800">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className="text-base font-semibold text-zinc-100">{debt.name}</span>
+                    <span className="bg-orange-400/15 border border-orange-400/30 text-orange-400 text-xs px-2 py-0.5 rounded-full">Mortgage</span>
+                    {debt.creditor && (
+                      <span className="bg-zinc-700 text-zinc-300 text-xs px-2 py-0.5 rounded-full">{debt.creditor}</span>
                     )}
                   </div>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => openEdit(debt)} className="text-yellow-400 hover:text-yellow-300 text-xs font-medium">Edit</button>
+                    <button onClick={() => handleDelete(debt.id)} className="text-red-500 hover:text-red-400 text-xs font-medium">Delete</button>
+                  </div>
                 </div>
-              )}
+                <div className="px-5 py-4 space-y-4">
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-xs text-zinc-500">Progress</span>
+                      <span className="text-xs font-medium text-yellow-400">{pctPaid.toFixed(1)}% paid off</span>
+                    </div>
+                    <div className="h-2 bg-zinc-700 rounded-full overflow-hidden">
+                      <div className="h-full bg-yellow-400 rounded-full transition-all" style={{ width: `${pctPaid}%` }} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <StatBox label="Current Balance" value={fmt(debt.current_balance)} />
+                    <StatBox label="Initial Balance" value={fmt(debt.initial_balance)} />
+                    <StatBox label="Remaining (net)" value={fmt(remaining)} />
+                    {debt.equity != null ? (
+                      <div className="bg-green-900/30 border border-green-700/30 rounded-lg px-3 py-2">
+                        <p className="text-xs text-zinc-500 mb-0.5">Equity</p>
+                        <p className="text-sm font-semibold text-green-400">{fmt(debt.equity)}</p>
+                      </div>
+                    ) : (
+                      <StatBox label="Savings Set Aside" value={fmt(debt.savings)} />
+                    )}
+                  </div>
+                  {debt.due_date && (
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 items-start">
+                      <StatBox label="Due Date" value={debt.due_date} />
+                      <StatBox label="Months Left" value={monthsLeft != null ? monthsLeft : "—"} />
+                      <StatBox label="Balance at Due" value={balanceAtDue != null ? fmt(balanceAtDue) : "—"} />
+                      <StatBox label="Monthly Needed" value={monthlyNeeded != null ? fmt(monthlyNeeded) : "—"} />
+                      <div className="bg-zinc-800 rounded-lg px-3 py-2 flex flex-col justify-center">
+                        <p className="text-xs text-zinc-500 mb-1">Status</p>
+                        {onTrack ? (
+                          <span className="inline-block bg-green-500/15 text-green-400 text-xs font-semibold px-2 py-0.5 rounded">On Track</span>
+                        ) : (
+                          <span className="inline-block bg-red-500/15 text-red-400 text-xs font-semibold px-2 py-0.5 rounded">At Risk</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {debt.notes && (
+                    <p className="text-xs text-zinc-400 border-t border-zinc-800 pt-3">
+                      <span className="text-zinc-600 font-medium uppercase tracking-wide mr-1">Notes:</span>
+                      {debt.notes}
+                    </p>
+                  )}
+                  <PayoffChart debt={debt} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
-              {/* Notes */}
-              {debt.notes && (
-                <p className="text-xs text-zinc-400 border-t border-zinc-800 pt-3">
-                  <span className="text-zinc-600 font-medium uppercase tracking-wide mr-1">Notes:</span>
-                  {debt.notes}
-                </p>
-              )}
+      {/* Other Debts section */}
+      {!loading && debts.some((d) => d.debt_type !== "mortgage") && (
+        <div>
+          {debts.some((d) => d.debt_type === "mortgage") && (
+            <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-3">Other Debts</h2>
+          )}
+          {debts.filter((d) => d.debt_type !== "mortgage").map((debt) => {
+            const { remaining, monthsLeft, balanceAtDue, monthlyNeeded, onTrack, pctPaid } = computeDebtStats(debt);
+            return (
+              <div key={debt.id} className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-700 bg-zinc-800">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className="text-base font-semibold text-zinc-100">{debt.name}</span>
+                    {debt.creditor && (
+                      <span className="bg-zinc-700 text-zinc-300 text-xs px-2 py-0.5 rounded-full">{debt.creditor}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => openEdit(debt)} className="text-yellow-400 hover:text-yellow-300 text-xs font-medium">Edit</button>
+                    <button onClick={() => handleDelete(debt.id)} className="text-red-500 hover:text-red-400 text-xs font-medium">Delete</button>
+                  </div>
+                </div>
+                <div className="px-5 py-4 space-y-4">
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-xs text-zinc-500">Progress</span>
+                      <span className="text-xs font-medium text-yellow-400">{pctPaid.toFixed(1)}% paid off</span>
+                    </div>
+                    <div className="h-2 bg-zinc-700 rounded-full overflow-hidden">
+                      <div className="h-full bg-yellow-400 rounded-full transition-all" style={{ width: `${pctPaid}%` }} />
+                    </div>
+                  </div>
 
-              {/* Payoff Timeline + Extra Payment Simulator */}
-              <PayoffChart debt={debt} />
-            </div>
-          </div>
-        );
-      })}
+                  {/* LOC summary bar */}
+                  {debt.debt_type === "loc" && debt.credit_limit > 0 && (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <StatBox label="Credit Limit" value={fmt(debt.credit_limit)} />
+                      <StatBox label="Outstanding" value={fmt(debt.current_balance)} />
+                      <div className="bg-green-900/30 border border-green-700/30 rounded-lg px-3 py-2">
+                        <p className="text-xs text-zinc-500 mb-0.5">Available</p>
+                        <p className="text-sm font-semibold text-green-400">{fmt(Math.max(0, debt.credit_limit - debt.current_balance))}</p>
+                      </div>
+                      <div className="bg-zinc-800 rounded-lg px-3 py-2">
+                        <p className="text-xs text-zinc-500 mb-0.5">Monthly Interest</p>
+                        <p className="text-sm font-semibold text-red-400">
+                          {fmt(debt.current_balance * (debt.interest_rate / 12))}
+                          <span className="text-zinc-500 text-xs ml-1">@ {(debt.interest_rate * 100).toFixed(2)}%</span>
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Stats grid */}
+                  {debt.debt_type !== "loc" ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <StatBox label="Current Balance" value={fmt(debt.current_balance)} />
+                      <StatBox label="Initial Balance" value={fmt(debt.initial_balance)} />
+                      <StatBox label="Remaining (net)" value={fmt(remaining)} />
+                      <StatBox label="Savings Set Aside" value={fmt(debt.savings)} />
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      <StatBox label="Minimum Payment" value={fmt(debt.monthly_payment)} />
+                      <StatBox label="Extra Payment" value={fmt(debt.monthly_extra)} />
+                      <StatBox label="Total Monthly" value={fmt(debt.monthly_payment + debt.monthly_extra)} />
+                    </div>
+                  )}
+
+                  {/* Due date stats */}
+                  {debt.due_date && (
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 items-start">
+                      <StatBox label="Due Date" value={debt.due_date} />
+                      <StatBox label="Months Left" value={monthsLeft != null ? monthsLeft : "—"} />
+                      <StatBox label="Balance at Due" value={balanceAtDue != null ? fmt(balanceAtDue) : "—"} />
+                      <StatBox label="Monthly Needed" value={monthlyNeeded != null ? fmt(monthlyNeeded) : "—"} />
+                      <div className="bg-zinc-800 rounded-lg px-3 py-2 flex flex-col justify-center">
+                        <p className="text-xs text-zinc-500 mb-1">Status</p>
+                        {onTrack ? (
+                          <span className="inline-block bg-green-500/15 text-green-400 text-xs font-semibold px-2 py-0.5 rounded">On Track</span>
+                        ) : (
+                          <span className="inline-block bg-red-500/15 text-red-400 text-xs font-semibold px-2 py-0.5 rounded">At Risk</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Notes */}
+                  {debt.notes && (
+                    <p className="text-xs text-zinc-400 border-t border-zinc-800 pt-3">
+                      <span className="text-zinc-600 font-medium uppercase tracking-wide mr-1">Notes:</span>
+                      {debt.notes}
+                    </p>
+                  )}
+
+                  {/* Payoff Timeline + Extra Payment Simulator */}
+                  <PayoffChart debt={debt} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Avalanche vs Snowball Strategy Panel */}
       {!loading && debts.length >= 2 && <StrategyPanel debts={debts} />}
@@ -871,6 +917,22 @@ export default function Debts() {
                     className={`w-full ${inputCls}`}
                     {...field("credit_limit")}
                   />
+                </div>
+              )}
+
+              {form.debt_type === "mortgage" && (
+                <div>
+                  <label className="text-xs text-zinc-500 block mb-0.5">Linked Property Asset</label>
+                  <select className={`w-full ${inputCls}`} {...field("linked_asset_id")}>
+                    <option value="">— None —</option>
+                    {(() => {
+                      const propertyAssets = assets.filter((a) => a.asset_type === "property");
+                      const list = propertyAssets.length > 0 ? propertyAssets : assets;
+                      return list.map((a) => (
+                        <option key={a.id} value={String(a.id)}>{a.name}</option>
+                      ));
+                    })()}
+                  </select>
                 </div>
               )}
 
