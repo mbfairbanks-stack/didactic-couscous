@@ -239,7 +239,7 @@ def list_transactions(
     category: Optional[str] = None,
     source: Optional[str] = None,
     skip: int = 0,
-    limit: int = Query(default=500, le=2000),
+    limit: int = Query(default=500, le=10000),
     db: Session = Depends(get_db),
 ):
     q = select(models.Transaction)
