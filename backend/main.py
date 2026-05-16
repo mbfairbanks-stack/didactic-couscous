@@ -823,6 +823,12 @@ class CategoryMerge(BaseModel):
 @app.post("/category-definitions/merge")
 def merge_categories(body: CategoryMerge, db: Session = Depends(get_db)):
     """Reassign all transactions from source categories to target, then hide sources."""
+    # Validate target category exists
+    target_exists = db.execute(
+        select(models.Category).where(models.Category.name == body.target_name)
+    ).scalar_one_or_none()
+    if not target_exists:
+        raise HTTPException(404, f"Target category '{body.target_name}' does not exist")
     updated = 0
     for name in body.source_names:
         result = db.execute(
