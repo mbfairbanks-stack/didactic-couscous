@@ -307,3 +307,32 @@ export const applyBudgetTemplate = (body) =>
   req("/budget-templates/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 export const deleteBudgetTemplate = (name) =>
   req(`/budget-templates/${encodeURIComponent(name)}`, { method: "DELETE" });
+
+// Net Worth History & Snapshots
+export const snapshotNetWorth = (notes) =>
+  req(`/net-worth/snapshot${notes ? `?snapshot_notes=${encodeURIComponent(notes)}` : ""}`, { method: "POST" });
+export const getNetWorthHistory = () => req("/net-worth/history");
+export const deleteNetWorthSnapshot = (id) => req(`/net-worth/snapshot/${id}`, { method: "DELETE" });
+
+// Savings Goals
+export const getSavingsGoals = () => req("/savings-goals");
+export const createSavingsGoal = (body) =>
+  req("/savings-goals", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const updateSavingsGoal = (id, body) =>
+  req(`/savings-goals/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteSavingsGoal = (id) => req(`/savings-goals/${id}`, { method: "DELETE" });
+
+// Tax Summary
+export const getTaxSummary = (year) => req(`/tax-summary?year=${year}`);
+
+// Net Worth Forecast
+export const getNetWorthForecast = (months = 12) => req(`/forecast/networth?months=${months}`);
+
+// Recurring Bills
+export const getBills = () => req("/bills");
+export const createBill = (body) =>
+  req("/bills", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const updateBill = (id, body) =>
+  req(`/bills/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteBill = (id) => req(`/bills/${id}`, { method: "DELETE" });
+export const getUpcomingBills = () => req("/bills/upcoming");
