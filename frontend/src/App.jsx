@@ -18,6 +18,7 @@ import Login from "./pages/Login";
 import { SettingsProvider } from "./contexts/SettingsContext";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { getOnboardingStatus } from "./api";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 function OnboardingGuard({ children }) {
   const { demo } = useAuth();
@@ -60,6 +61,7 @@ function DemoBanner() {
 
 export default function App() {
   return (
+    <ErrorBoundary>
     <BrowserRouter>
       <AuthProvider>
         <AuthGuard>
@@ -96,5 +98,6 @@ export default function App() {
         </AuthGuard>
       </AuthProvider>
     </BrowserRouter>
+    </ErrorBoundary>
   );
 }
