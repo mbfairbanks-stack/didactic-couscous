@@ -1,0 +1,16 @@
+{
+  "name": "BudgetBot",
+  "short_name": "BudgetBot",
+  "description": "Personal budget tracker",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#facc15",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
