@@ -1,6 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { getTransactions, createTransaction, updateTransaction, deleteTransaction, getCategories, getYears, exportTransactionsCsv, getAnomalies, splitTransaction, getRecurringSuggestions } from "../api";
 import { MONTH_LABELS, currentYear, currentMonth, fmtCents as fmt } from "../utils";
+
+const VIRTUAL_CATEGORIES = ["E-Transfer", "Shared Expense"];
 
 const emptyForm = {
   date: new Date().toISOString().slice(0, 10),
@@ -122,7 +124,7 @@ export default function Transactions() {
 
   const allSources = [...new Set(transactions.map((t) => t.source).filter(Boolean))].sort();
 
-  const filtered = transactions
+  const filtered = useMemo(() => transactions
     .filter((t) => {
       if (search && !t.merchant?.toLowerCase().includes(search.toLowerCase()) &&
           !(t.category || "").toLowerCase().includes(search.toLowerCase())) return false;
@@ -145,7 +147,7 @@ export default function Transactions() {
       if (av < bv) return sortDir === "asc" ? -1 : 1;
       if (av > bv) return sortDir === "asc" ? 1 : -1;
       return 0;
-    });
+    }), [transactions, search, filterCategory, filterSource, amountMin, amountMax, fixedOnly, recurringOnly, colFilter, sortField, sortDir]);
 
   const total = filtered.reduce((s, t) => s + t.amount, 0);
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
@@ -255,26 +257,37 @@ export default function Transactions() {
 
   const handleBulkApplyCategory = async () => {
     if (!bulkCategory) return;
-    for (const id of selected) {
-      const txn = transactions.find((t) => t.id === id);
-      if (txn) {
-        try { await updateTransaction(id, { ...txn, category: bulkCategory }); }
-        catch (e) { setError(e.message); }
-      }
+    setError("");
+    const selectedIds = [...selected];
+    const results = await Promise.allSettled(
+      selectedIds.map((id) => {
+        const txn = transactions.find((t) => t.id === id);
+        return txn ? updateTransaction(id, { ...txn, category: bulkCategory }) : Promise.reject(new Error("Not found"));
+      })
+    );
+    const failed = results.filter((r) => r.status === "rejected").length;
+    const succeeded = results.filter((r) => r.status === "fulfilled").length;
+    if (failed > 0) {
+      setError(`${succeeded} updated, ${failed} failed. Please try again.`);
+    } else {
+      setSelected(new Set());
+      setBulkCategory("");
     }
-    setSelected(new Set());
-    setBulkCategory("");
     load();
   };
 
   const handleBulkDelete = async () => {
     const ids = [...selected];
     if (!confirm(`Delete ${ids.length} selected transaction${ids.length === 1 ? "" : "s"}?`)) return;
-    for (const id of ids) {
-      try { await deleteTransaction(id); }
-      catch (e) { setError(e.message); }
+    setError("");
+    const results = await Promise.allSettled(ids.map((id) => deleteTransaction(id)));
+    const failed = results.filter((r) => r.status === "rejected").length;
+    const succeeded = results.filter((r) => r.status === "fulfilled").length;
+    if (failed > 0) {
+      setError(`${succeeded} deleted, ${failed} failed. Please try again.`);
+    } else {
+      setSelected(new Set());
     }
-    setSelected(new Set());
     load();
   };
 
@@ -323,8 +336,13 @@ export default function Transactions() {
 
   const handleDelete = async (id) => {
     if (!confirm("Delete this transaction?")) return;
-    await deleteTransaction(id);
-    load();
+    setError("");
+    try {
+      await deleteTransaction(id);
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
   };
 
   // ── Recurring toggle ─────────────────────────────────────────────────────────
@@ -834,12 +852,11 @@ export default function Transactions() {
                 <select required className={`w-full mt-0.5 ${inputCls}`}
                   value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
                   {!form.category && <option value="">— choose category —</option>}
-                  {form.category && !allCategories.includes(form.category) && !["E-Transfer", "Shared Expense"].includes(form.category) && (
+                  {form.category && !allCategories.includes(form.category) && !VIRTUAL_CATEGORIES.includes(form.category) && (
                     <option value={form.category}>{form.category}</option>
                   )}
                   {allCategories.map((c) => <option key={c} value={c}>{c}</option>)}
-                  {!allCategories.includes("E-Transfer") && <option value="E-Transfer">E-Transfer</option>}
-                  {!allCategories.includes("Shared Expense") && <option value="Shared Expense">Shared Expense</option>}
+                  {VIRTUAL_CATEGORIES.map((cat) => !allCategories.includes(cat) && <option key={cat} value={cat}>{cat}</option>)}
                 </select>
               </div>
               <div>
