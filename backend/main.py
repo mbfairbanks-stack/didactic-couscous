@@ -924,7 +924,7 @@ def migrate_categories(db: Session = Depends(get_db)):
 class DebtCreate(BaseModel):
     name: str
     creditor: str
-    debt_type: str = "loan"         # "loan" or "loc"
+    debt_type: str = "loan"         # "loan", "loc", or "mortgage"
     credit_limit: float = 0.0       # LOC only
     interest_rate: float = 0.0      # annual rate, e.g. 0.0645
     initial_balance: float = 0.0
@@ -934,16 +934,40 @@ class DebtCreate(BaseModel):
     savings: float = 0.0
     due_date: Optional[str] = None
     notes: Optional[str] = None
+    linked_asset_id: Optional[int] = None
 
 
-class DebtOut(DebtCreate):
+class DebtOut(BaseModel):
     id: int
+    name: str
+    creditor: str
+    debt_type: str
+    credit_limit: float
+    interest_rate: float
+    initial_balance: float
+    current_balance: float
+    monthly_payment: float
+    monthly_extra: float
+    savings: float
+    due_date: Optional[str]
+    notes: Optional[str]
+    linked_asset_id: Optional[int]
+    equity: Optional[float] = None  # computed: linked asset balance - current_balance
     model_config = {"from_attributes": True}
 
 
 @app.get("/debts", response_model=list[DebtOut])
 def list_debts(db: Session = Depends(get_db)):
-    return db.execute(select(models.Debt).order_by(models.Debt.name)).scalars().all()
+    debts = db.execute(select(models.Debt).order_by(models.Debt.name)).scalars().all()
+    result = []
+    for debt in debts:
+        d = DebtOut.model_validate(debt)
+        if debt.debt_type == "mortgage" and debt.linked_asset_id:
+            asset = db.get(models.Asset, debt.linked_asset_id)
+            if asset:
+                d.equity = asset.balance - debt.current_balance
+        result.append(d)
+    return result
 
 
 @app.post("/debts", response_model=DebtOut, status_code=201)
@@ -987,6 +1011,7 @@ class AssetCreate(BaseModel):
     notes: Optional[str] = None
     sort_order: int = 0
     auto_sync: bool = False
+    liquidity: str = "liquid"  # "liquid" or "illiquid"
 
 
 class AssetOut(AssetCreate):
@@ -995,11 +1020,11 @@ class AssetOut(AssetCreate):
 
 
 ASSET_DEFAULTS = [
-    {"name": "Checking", "asset_type": "cash", "sort_order": 1, "auto_sync": False},
-    {"name": "Savings", "asset_type": "cash", "sort_order": 2, "auto_sync": False},
-    {"name": "RRSP (Payroll)", "asset_type": "rrsp", "sort_order": 3, "auto_sync": True},
-    {"name": "TFSA", "asset_type": "tfsa", "sort_order": 4, "auto_sync": False},
-    {"name": "ESPP (Block)", "asset_type": "espp", "sort_order": 5, "auto_sync": True},
+    {"name": "Checking", "asset_type": "cash", "sort_order": 1, "auto_sync": False, "liquidity": "liquid"},
+    {"name": "Savings", "asset_type": "cash", "sort_order": 2, "auto_sync": False, "liquidity": "liquid"},
+    {"name": "RRSP (Payroll)", "asset_type": "rrsp", "sort_order": 3, "auto_sync": True, "liquidity": "illiquid"},
+    {"name": "TFSA", "asset_type": "tfsa", "sort_order": 4, "auto_sync": False, "liquidity": "liquid"},
+    {"name": "ESPP (Block)", "asset_type": "espp", "sort_order": 5, "auto_sync": True, "liquidity": "liquid"},
 ]
 
 

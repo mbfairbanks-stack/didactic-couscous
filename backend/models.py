@@ -82,7 +82,7 @@ class Debt(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)           # "Brookstone (Doors)"
     creditor = Column(String, nullable=False)        # "FinanceIt"
-    debt_type = Column(String, default="loan")       # "loan" or "loc" (line of credit)
+    debt_type = Column(String, default="loan")       # "loan", "loc" (line of credit), or "mortgage"
     credit_limit = Column(Float, default=0.0)        # LOC: maximum credit available
     interest_rate = Column(Float, default=0.0)       # annual rate e.g. 0.0645 for 6.45%
     initial_balance = Column(Float, default=0.0)
@@ -92,6 +92,7 @@ class Debt(Base):
     savings = Column(Float, default=0.0)            # amount already set aside
     due_date = Column(String, nullable=True)        # "Feb 2027" free-form
     notes = Column(String, nullable=True)
+    linked_asset_id = Column(Integer, nullable=True)  # for mortgage: links to property asset
 
 
 class Asset(Base):
@@ -105,6 +106,7 @@ class Asset(Base):
     notes = Column(String, nullable=True)
     sort_order = Column(Integer, default=0)
     auto_sync = Column(Boolean, default=False)  # True = sync balance from payroll contributions
+    liquidity = Column(String, default="liquid")  # "liquid" or "illiquid"
 
 
 class SavingsContribution(Base):

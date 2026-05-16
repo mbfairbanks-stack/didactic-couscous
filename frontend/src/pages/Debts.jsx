@@ -9,7 +9,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import { getDebts, createDebt, updateDebt, deleteDebt } from "../api";
+import { getDebts, createDebt, updateDebt, deleteDebt, getAssets } from "../api";
 import { fmt } from "../utils";
 
 const inputCls =
@@ -28,6 +28,7 @@ const emptyForm = {
   savings: "",
   due_date: "",
   notes: "",
+  linked_asset_id: "",
 };
 
 function parseMonthsRemaining(dueDateStr) {
@@ -495,6 +496,7 @@ function StrategyPanel({ debts }) {
 
 export default function Debts() {
   const [debts, setDebts] = useState([]);
+  const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showModal, setShowModal] = useState(false);
@@ -505,8 +507,10 @@ export default function Debts() {
 
   const load = useCallback(() => {
     setLoading(true);
-    getDebts()
-      .then(setDebts)
+    Promise.all([
+      getDebts().then(setDebts),
+      getAssets().then(setAssets).catch(() => {}),
+    ])
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
@@ -534,6 +538,7 @@ export default function Debts() {
       savings: String(debt.savings),
       due_date: debt.due_date || "",
       notes: debt.notes || "",
+      linked_asset_id: debt.linked_asset_id != null ? String(debt.linked_asset_id) : "",
     });
     setEditId(debt.id);
     setFormError("");
@@ -567,6 +572,7 @@ export default function Debts() {
       savings: parseFloat(form.savings) || 0,
       due_date: form.due_date.trim() || null,
       notes: form.notes.trim() || null,
+      linked_asset_id: form.debt_type === "mortgage" && form.linked_asset_id ? parseInt(form.linked_asset_id) : null,
     };
     try {
       if (editId) {
@@ -826,6 +832,7 @@ export default function Debts() {
                   <select className={`w-full ${inputCls}`} {...field("debt_type")}>
                     <option value="loan">Loan</option>
                     <option value="loc">Line of Credit</option>
+                    <option value="mortgage">Mortgage</option>
                   </select>
                 </div>
               </div>

@@ -134,6 +134,8 @@ def _init_db_extras(eng, seed_demo: bool = False):
             a_cols = [c["name"] for c in inspector.get_columns("assets")]
             if "auto_sync" not in a_cols:
                 conn.execute(sa.text("ALTER TABLE assets ADD COLUMN auto_sync INTEGER NOT NULL DEFAULT 0"))
+            if "liquidity" not in a_cols:
+                conn.execute(sa.text("ALTER TABLE assets ADD COLUMN liquidity TEXT NOT NULL DEFAULT 'liquid'"))
 
         # debts extras
         if "debts" in tables:

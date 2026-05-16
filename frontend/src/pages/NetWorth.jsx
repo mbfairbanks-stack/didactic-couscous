@@ -27,7 +27,7 @@ export default function NetWorth() {
   const [editingId, setEditingId] = useState(null);
   const [editDraft, setEditDraft] = useState({});
   const [adding, setAdding] = useState(false);
-  const [newAsset, setNewAsset] = useState({ name: "", asset_type: "other", balance: "" });
+  const [newAsset, setNewAsset] = useState({ name: "", asset_type: "other", balance: "", liquidity: "liquid" });
 
   const load = useCallback(() => {
     setLoading(true);
@@ -59,13 +59,13 @@ export default function NetWorth() {
 
   const startEdit = (asset) => {
     setEditingId(asset.id);
-    setEditDraft({ name: asset.name, balance: String(asset.balance), asset_type: asset.asset_type, auto_sync: asset.auto_sync });
+    setEditDraft({ name: asset.name, balance: String(asset.balance), asset_type: asset.asset_type, auto_sync: asset.auto_sync, liquidity: asset.liquidity || "liquid" });
   };
 
   const commitEdit = async (id) => {
     try {
       const asset = assets.find((a) => a.id === id);
-      await updateAsset(id, { ...asset, name: editDraft.name, balance: parseFloat(editDraft.balance) || 0, asset_type: editDraft.asset_type, auto_sync: editDraft.auto_sync });
+      await updateAsset(id, { ...asset, name: editDraft.name, balance: parseFloat(editDraft.balance) || 0, asset_type: editDraft.asset_type, auto_sync: editDraft.auto_sync, liquidity: editDraft.liquidity });
       setEditingId(null);
       load();
     } catch (e) { setError(e.message); }
@@ -81,8 +81,8 @@ export default function NetWorth() {
   const handleAdd = async (e) => {
     e.preventDefault();
     try {
-      await createAsset({ name: newAsset.name, asset_type: newAsset.asset_type, balance: parseFloat(newAsset.balance) || 0 });
-      setNewAsset({ name: "", asset_type: "other", balance: "" });
+      await createAsset({ name: newAsset.name, asset_type: newAsset.asset_type, balance: parseFloat(newAsset.balance) || 0, liquidity: newAsset.liquidity });
+      setNewAsset({ name: "", asset_type: "other", balance: "", liquidity: "liquid" });
       setAdding(false);
       load();
     } catch (e) { setError(e.message); }
@@ -100,6 +100,16 @@ export default function NetWorth() {
   const totalLiabilities = debts.reduce((s, d) => s + (parseFloat(d.current_balance) || 0), 0);
   const netWorth = totalAssets - totalLiabilities;
 
+  const liquidAssets = assets.filter((a) => (a.liquidity || "liquid") === "liquid");
+  const illiquidAssets = assets.filter((a) => a.liquidity === "illiquid");
+  const nonMortgageDebts = debts.filter((d) => d.debt_type !== "mortgage");
+  const totalLiquidAssets = liquidAssets.reduce((s, a) => s + (parseFloat(a.balance) || 0), 0);
+  const totalNonMortgageDebts = nonMortgageDebts.reduce((s, d) => s + (parseFloat(d.current_balance) || 0), 0);
+  const liquidNetWorth = totalLiquidAssets - totalNonMortgageDebts;
+
+  // Mortgage equity cards
+  const mortgageEquities = debts.filter((d) => d.debt_type === "mortgage" && d.equity != null);
+
   // Detect stale auto-sync assets (balance = 0 but tracked data exists)
   const rrspIsStale = assets.some((a) => a.auto_sync && a.asset_type === "rrsp" && a.balance === 0) && savingsSummary?.rrsp_total_ytd > 0;
   const esppIsStale = assets.some((a) => a.auto_sync && a.asset_type === "espp" && a.balance === 0) && savingsSummary?.espp_current_value > 0;
@@ -114,6 +124,61 @@ export default function NetWorth() {
       return acc;
     }, {})
   ).map(([type, value]) => ({ name: TYPE_LABELS[type] || type, value, type }));
+
+  const renderAssetRow = (asset) => {
+    const isEditing = editingId === asset.id;
+    const colorCls = TYPE_COLORS[asset.asset_type] || "text-zinc-400";
+    const isStale = asset.auto_sync && asset.balance === 0 && (savingsSummary?.rrsp_total_ytd > 0 || savingsSummary?.espp_current_value > 0);
+    return (
+      <div key={asset.id} className={`flex items-center gap-2 px-4 py-2.5 hover:bg-zinc-800/40 ${isStale ? "bg-yellow-900/5" : ""}`}>
+        {isEditing ? (
+          <>
+            <input className={`${inputCls} flex-1`} value={editDraft.name}
+              onChange={(e) => setEditDraft({ ...editDraft, name: e.target.value })} />
+            <select className={`${inputCls} w-24`} value={editDraft.asset_type}
+              onChange={(e) => setEditDraft({ ...editDraft, asset_type: e.target.value })}>
+              {Object.entries(TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+            <select className={`${inputCls} w-24`} value={editDraft.liquidity}
+              onChange={(e) => setEditDraft({ ...editDraft, liquidity: e.target.value })}>
+              <option value="liquid">Liquid</option>
+              <option value="illiquid">Illiquid</option>
+            </select>
+            <input type="number" step="0.01" className={`${inputCls} w-28 text-right`}
+              value={editDraft.balance}
+              onChange={(e) => setEditDraft({ ...editDraft, balance: e.target.value })}
+              onKeyDown={(e) => { if (e.key === "Enter") commitEdit(asset.id); if (e.key === "Escape") setEditingId(null); }} />
+            <button onClick={() => commitEdit(asset.id)} className="text-yellow-400 text-xs hover:text-yellow-300">Save</button>
+            <button onClick={() => setEditingId(null)} className="text-zinc-600 text-xs hover:text-zinc-400">✕</button>
+          </>
+        ) : (
+          <>
+            <div className="flex-1 min-w-0">
+              <span className="text-zinc-200 text-sm">{asset.name}</span>
+              <span className={`text-xs ml-2 ${colorCls}`}>{TYPE_LABELS[asset.asset_type]}</span>
+            </div>
+            <button
+              onClick={() => toggleAutoSync(asset)}
+              title={asset.auto_sync ? "Payroll sync on — click to disable" : "Enable payroll sync for this asset"}
+              className={`text-xs px-1.5 py-0.5 rounded border transition-colors ${
+                asset.auto_sync
+                  ? "border-yellow-500/50 text-yellow-400 bg-yellow-400/10"
+                  : "border-zinc-700 text-zinc-600 hover:text-zinc-400"
+              }`}
+            >
+              {asset.auto_sync ? "payroll sync" : "manual"}
+            </button>
+            <span className={`text-sm font-semibold tabular-nums ${isStale ? "text-yellow-600" : "text-zinc-100"}`}>
+              {fmt(asset.balance, 2)}
+              {isStale && <span className="text-yellow-600 ml-1 text-xs">⚠</span>}
+            </span>
+            <button onClick={() => startEdit(asset)} className="text-zinc-600 hover:text-zinc-300 text-xs px-1">Edit</button>
+            <button onClick={() => handleDelete(asset.id)} className="text-zinc-700 hover:text-red-400 text-xs px-1">✕</button>
+          </>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -154,15 +219,27 @@ export default function NetWorth() {
         </div>
       )}
 
-      {/* Headline */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 flex flex-col items-center gap-2">
-        <p className="text-xs text-zinc-500 uppercase tracking-widest">Net Worth</p>
-        <p className={`text-5xl font-bold ${netWorth >= 0 ? "text-green-400" : "text-red-400"}`}>
-          {fmt(netWorth, 2)}
-        </p>
-        <div className="flex gap-8 mt-3 text-sm">
-          <span className="text-zinc-400">Assets: <span className="text-green-400 font-semibold">{fmt(totalAssets, 2)}</span></span>
-          <span className="text-zinc-400">Liabilities: <span className="text-red-400 font-semibold">{fmt(totalLiabilities, 2)}</span></span>
+      {/* Summary cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 flex flex-col items-center gap-2">
+          <p className="text-xs text-zinc-500 uppercase tracking-widest">Liquid Net Worth</p>
+          <p className={`text-4xl font-bold ${liquidNetWorth >= 0 ? "text-green-400" : "text-red-400"}`}>
+            {fmt(liquidNetWorth, 2)}
+          </p>
+          <div className="flex gap-6 mt-2 text-xs">
+            <span className="text-zinc-400">Liquid assets: <span className="text-green-400 font-semibold">{fmt(totalLiquidAssets, 2)}</span></span>
+            <span className="text-zinc-400">Non-mortgage debts: <span className="text-red-400 font-semibold">{fmt(totalNonMortgageDebts, 2)}</span></span>
+          </div>
+        </div>
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 flex flex-col items-center gap-2">
+          <p className="text-xs text-zinc-500 uppercase tracking-widest">Total Net Worth</p>
+          <p className={`text-4xl font-bold ${netWorth >= 0 ? "text-green-400" : "text-red-400"}`}>
+            {fmt(netWorth, 2)}
+          </p>
+          <div className="flex gap-6 mt-2 text-xs">
+            <span className="text-zinc-400">Assets: <span className="text-green-400 font-semibold">{fmt(totalAssets, 2)}</span></span>
+            <span className="text-zinc-400">Liabilities: <span className="text-red-400 font-semibold">{fmt(totalLiabilities, 2)}</span></span>
+          </div>
         </div>
       </div>
 
@@ -185,63 +262,56 @@ export default function NetWorth() {
             </div>
           ) : (
             <div className="divide-y divide-zinc-800/60">
-              {assets.map((asset) => {
-                const isEditing = editingId === asset.id;
-                const colorCls = TYPE_COLORS[asset.asset_type] || "text-zinc-400";
-                const isStale = asset.auto_sync && asset.balance === 0 && (savingsSummary?.rrsp_total_ytd > 0 || savingsSummary?.espp_current_value > 0);
-                return (
-                  <div key={asset.id} className={`flex items-center gap-2 px-4 py-2.5 hover:bg-zinc-800/40 ${isStale ? "bg-yellow-900/5" : ""}`}>
-                    {isEditing ? (
-                      <>
-                        <input className={`${inputCls} flex-1`} value={editDraft.name}
-                          onChange={(e) => setEditDraft({ ...editDraft, name: e.target.value })} />
-                        <select className={`${inputCls} w-24`} value={editDraft.asset_type}
-                          onChange={(e) => setEditDraft({ ...editDraft, asset_type: e.target.value })}>
-                          {Object.entries(TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                        </select>
-                        <input type="number" step="0.01" className={`${inputCls} w-28 text-right`}
-                          value={editDraft.balance}
-                          onChange={(e) => setEditDraft({ ...editDraft, balance: e.target.value })}
-                          onKeyDown={(e) => { if (e.key === "Enter") commitEdit(asset.id); if (e.key === "Escape") setEditingId(null); }} />
-                        <button onClick={() => commitEdit(asset.id)} className="text-yellow-400 text-xs hover:text-yellow-300">Save</button>
-                        <button onClick={() => setEditingId(null)} className="text-zinc-600 text-xs hover:text-zinc-400">✕</button>
-                      </>
-                    ) : (
-                      <>
-                        <div className="flex-1 min-w-0">
-                          <span className="text-zinc-200 text-sm">{asset.name}</span>
-                          <span className={`text-xs ml-2 ${colorCls}`}>{TYPE_LABELS[asset.asset_type]}</span>
-                        </div>
-                        <button
-                          onClick={() => toggleAutoSync(asset)}
-                          title={asset.auto_sync ? "Payroll sync on — click to disable" : "Enable payroll sync for this asset"}
-                          className={`text-xs px-1.5 py-0.5 rounded border transition-colors ${
-                            asset.auto_sync
-                              ? "border-yellow-500/50 text-yellow-400 bg-yellow-400/10"
-                              : "border-zinc-700 text-zinc-600 hover:text-zinc-400"
-                          }`}
-                        >
-                          {asset.auto_sync ? "payroll sync" : "manual"}
-                        </button>
-                        <span className={`text-sm font-semibold tabular-nums ${isStale ? "text-yellow-600" : "text-zinc-100"}`}>
-                          {fmt(asset.balance, 2)}
-                          {isStale && <span className="text-yellow-600 ml-1 text-xs">⚠</span>}
-                        </span>
-                        <button onClick={() => startEdit(asset)} className="text-zinc-600 hover:text-zinc-300 text-xs px-1">Edit</button>
-                        <button onClick={() => handleDelete(asset.id)} className="text-zinc-700 hover:text-red-400 text-xs px-1">✕</button>
-                      </>
-                    )}
+              {/* Liquid group */}
+              {liquidAssets.length > 0 && (
+                <>
+                  <div className="px-4 py-1.5 bg-zinc-800/30">
+                    <span className="text-xs font-semibold text-zinc-500 uppercase tracking-widest">Liquid</span>
                   </div>
-                );
-              })}
+                  {liquidAssets.map(renderAssetRow)}
+                </>
+              )}
+
+              {/* Illiquid group */}
+              {illiquidAssets.length > 0 && (
+                <>
+                  <div className="px-4 py-1.5 bg-zinc-800/30">
+                    <span className="text-xs font-semibold text-zinc-500 uppercase tracking-widest">Illiquid</span>
+                  </div>
+                  {illiquidAssets.map(renderAssetRow)}
+                </>
+              )}
+
+              {/* Mortgage equity cards */}
+              {mortgageEquities.length > 0 && (
+                <>
+                  <div className="px-4 py-1.5 bg-zinc-800/30">
+                    <span className="text-xs font-semibold text-zinc-500 uppercase tracking-widest">Home Equity</span>
+                  </div>
+                  {mortgageEquities.map((debt) => (
+                    <div key={`equity-${debt.id}`} className="flex items-center gap-2 px-4 py-2.5 hover:bg-zinc-800/40">
+                      <div className="flex-1 min-w-0">
+                        <span className="text-zinc-200 text-sm">{debt.name}</span>
+                        <span className="text-xs ml-2 text-orange-400">Home Equity</span>
+                      </div>
+                      <span className="text-sm font-semibold tabular-nums text-zinc-100">{fmt(debt.equity, 2)}</span>
+                    </div>
+                  ))}
+                </>
+              )}
 
               {adding && (
-                <form onSubmit={handleAdd} className="flex items-center gap-2 px-4 py-2.5 bg-zinc-800/30">
-                  <input autoFocus required placeholder="Account name" className={`${inputCls} flex-1`}
+                <form onSubmit={handleAdd} className="flex items-center gap-2 px-4 py-2.5 bg-zinc-800/30 flex-wrap">
+                  <input autoFocus required placeholder="Account name" className={`${inputCls} flex-1 min-w-32`}
                     value={newAsset.name} onChange={(e) => setNewAsset({ ...newAsset, name: e.target.value })} />
                   <select className={`${inputCls} w-24`} value={newAsset.asset_type}
                     onChange={(e) => setNewAsset({ ...newAsset, asset_type: e.target.value })}>
                     {Object.entries(TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                  <select className={`${inputCls} w-24`} value={newAsset.liquidity}
+                    onChange={(e) => setNewAsset({ ...newAsset, liquidity: e.target.value })}>
+                    <option value="liquid">Liquid</option>
+                    <option value="illiquid">Illiquid</option>
                   </select>
                   <input type="number" step="0.01" placeholder="0.00" className={`${inputCls} w-28 text-right`}
                     value={newAsset.balance} onChange={(e) => setNewAsset({ ...newAsset, balance: e.target.value })} />
