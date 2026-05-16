@@ -138,3 +138,41 @@ class EsppPurchase(Base):
     market_price = Column(Float, default=0.0)       # fair market value at purchase
     current_price = Column(Float, default=0.0)      # current stock price (manual update)
     notes = Column(String, nullable=True)
+
+
+class NetWorthSnapshot(Base):
+    __tablename__ = "net_worth_snapshots"
+    id = Column(Integer, primary_key=True, index=True)
+    snapshot_date = Column(String, nullable=False)   # "2025-01-31"
+    total_assets = Column(Float, default=0.0)
+    liquid_assets = Column(Float, default=0.0)
+    illiquid_assets = Column(Float, default=0.0)
+    total_debts = Column(Float, default=0.0)
+    net_worth = Column(Float, default=0.0)
+    liquid_net_worth = Column(Float, default=0.0)
+    notes = Column(String, nullable=True)
+
+
+class SavingsGoal(Base):
+    __tablename__ = "savings_goals"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    target_amount = Column(Float, nullable=False)
+    current_amount = Column(Float, default=0.0)
+    target_date = Column(String, nullable=True)   # "2026-12-31"
+    linked_asset_id = Column(Integer, nullable=True)
+    notes = Column(String, nullable=True)
+
+
+class RecurringBill(Base):
+    __tablename__ = "recurring_bills"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    merchant = Column(String, nullable=False)
+    amount = Column(Float, nullable=False)
+    frequency = Column(String, default="monthly")   # "monthly", "annual", "weekly"
+    due_day = Column(Integer, nullable=True)        # day of month (1-31)
+    category = Column(String, nullable=True)
+    last_seen = Column(String, nullable=True)       # "2025-01-15" last transaction date
+    is_active = Column(Boolean, default=True)
+    notes = Column(String, nullable=True)

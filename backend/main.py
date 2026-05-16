@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Query, Re
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func, distinct, text
+from sqlalchemy import select, func, distinct, text, nullslast
 from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
 from typing import Optional, List
@@ -2509,3 +2509,387 @@ def delete_insights_log(entry_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Not found")
     db.delete(entry)
     db.commit()
+
+
+# ── Net Worth Snapshots ─────────────────────────────────────────────────────
+
+class NetWorthSnapshotOut(BaseModel):
+    id: int
+    snapshot_date: str
+    total_assets: float
+    liquid_assets: float
+    illiquid_assets: float
+    total_debts: float
+    net_worth: float
+    liquid_net_worth: float
+    notes: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+@app.post("/net-worth/snapshot", response_model=NetWorthSnapshotOut, status_code=201)
+def create_net_worth_snapshot(
+    snapshot_notes: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Take a snapshot of current net worth computed from live assets/debts."""
+    assets = db.execute(select(models.Asset)).scalars().all()
+    debts = db.execute(select(models.Debt)).scalars().all()
+
+    total_assets = sum(a.balance for a in assets)
+    liquid_assets = sum(a.balance for a in assets if a.liquidity == "liquid")
+    illiquid_assets = sum(a.balance for a in assets if a.liquidity == "illiquid")
+    total_debts = sum(d.current_balance for d in debts)
+    non_mortgage_debts = sum(d.current_balance for d in debts if d.debt_type != "mortgage")
+
+    snap = models.NetWorthSnapshot(
+        snapshot_date=datetime.date.today().isoformat(),
+        total_assets=total_assets,
+        liquid_assets=liquid_assets,
+        illiquid_assets=illiquid_assets,
+        total_debts=total_debts,
+        net_worth=total_assets - total_debts,
+        liquid_net_worth=liquid_assets - non_mortgage_debts,
+        notes=snapshot_notes,
+    )
+    db.add(snap)
+    db.commit()
+    db.refresh(snap)
+    return snap
+
+
+@app.get("/net-worth/history", response_model=list[NetWorthSnapshotOut])
+def get_net_worth_history(db: Session = Depends(get_db)):
+    rows = db.execute(
+        select(models.NetWorthSnapshot).order_by(models.NetWorthSnapshot.snapshot_date)
+    ).scalars().all()
+    return rows
+
+
+@app.delete("/net-worth/snapshot/{snap_id}", status_code=204)
+def delete_net_worth_snapshot(snap_id: int, db: Session = Depends(get_db)):
+    snap = db.get(models.NetWorthSnapshot, snap_id)
+    if not snap:
+        raise HTTPException(404, "Snapshot not found")
+    db.delete(snap)
+    db.commit()
+
+
+# ── Savings Goals ───────────────────────────────────────────────────────────
+
+class SavingsGoalCreate(BaseModel):
+    name: str
+    target_amount: float
+    current_amount: float = 0.0
+    target_date: Optional[str] = None
+    linked_asset_id: Optional[int] = None
+    notes: Optional[str] = None
+
+
+class SavingsGoalOut(BaseModel):
+    id: int
+    name: str
+    target_amount: float
+    current_amount: float
+    target_date: Optional[str] = None
+    linked_asset_id: Optional[int] = None
+    notes: Optional[str] = None
+    progress_pct: float = 0.0
+
+    class Config:
+        from_attributes = True
+
+
+@app.get("/savings-goals", response_model=list[SavingsGoalOut])
+def list_savings_goals(db: Session = Depends(get_db)):
+    goals = db.execute(select(models.SavingsGoal)).scalars().all()
+    result = []
+    for g in goals:
+        current = g.current_amount
+        # If linked to an asset, use the asset's live balance
+        if g.linked_asset_id:
+            asset = db.get(models.Asset, g.linked_asset_id)
+            if asset:
+                current = asset.balance
+        pct = round((current / g.target_amount) * 100, 1) if g.target_amount > 0 else 0.0
+        result.append(SavingsGoalOut(
+            id=g.id,
+            name=g.name,
+            target_amount=g.target_amount,
+            current_amount=current,
+            target_date=g.target_date,
+            linked_asset_id=g.linked_asset_id,
+            notes=g.notes,
+            progress_pct=pct,
+        ))
+    return result
+
+
+@app.post("/savings-goals", response_model=SavingsGoalOut, status_code=201)
+def create_savings_goal(body: SavingsGoalCreate, db: Session = Depends(get_db)):
+    goal = models.SavingsGoal(**body.model_dump())
+    db.add(goal)
+    db.commit()
+    db.refresh(goal)
+    pct = round((goal.current_amount / goal.target_amount) * 100, 1) if goal.target_amount > 0 else 0.0
+    return SavingsGoalOut(**{c.name: getattr(goal, c.name) for c in models.SavingsGoal.__table__.columns}, progress_pct=pct)
+
+
+@app.put("/savings-goals/{goal_id}", response_model=SavingsGoalOut)
+def update_savings_goal(goal_id: int, body: SavingsGoalCreate, db: Session = Depends(get_db)):
+    goal = db.get(models.SavingsGoal, goal_id)
+    if not goal:
+        raise HTTPException(404, "Goal not found")
+    for k, v in body.model_dump().items():
+        setattr(goal, k, v)
+    db.commit()
+    db.refresh(goal)
+    pct = round((goal.current_amount / goal.target_amount) * 100, 1) if goal.target_amount > 0 else 0.0
+    return SavingsGoalOut(**{c.name: getattr(goal, c.name) for c in models.SavingsGoal.__table__.columns}, progress_pct=pct)
+
+
+@app.delete("/savings-goals/{goal_id}", status_code=204)
+def delete_savings_goal(goal_id: int, db: Session = Depends(get_db)):
+    goal = db.get(models.SavingsGoal, goal_id)
+    if not goal:
+        raise HTTPException(404, "Goal not found")
+    db.delete(goal)
+    db.commit()
+
+
+# ── Tax Summary ─────────────────────────────────────────────────────────────
+
+@app.get("/tax-summary")
+def get_tax_summary(year: int, db: Session = Depends(get_db)):
+    """Canadian year-end tax summary: income by person, RRSP, ESPP, donations."""
+    income_rows = db.execute(
+        select(models.Income).where(models.Income.year == year)
+    ).scalars().all()
+
+    # Group income by person
+    by_person: dict = {}
+    for row in income_rows:
+        p = row.person
+        if p not in by_person:
+            by_person[p] = {
+                "gross_income": 0.0,
+                "rrsp_employee": 0.0,
+                "rrsp_employer": 0.0,
+                "espp_deduction": 0.0,
+                "other_income": 0.0,
+            }
+        if row.income_type in ("base", "commission"):
+            by_person[p]["gross_income"] += row.amount
+            by_person[p]["rrsp_employee"] += row.rrsp_employee or 0.0
+            by_person[p]["rrsp_employer"] += row.rrsp_employer or 0.0
+            by_person[p]["espp_deduction"] += row.espp_deduction or 0.0
+        else:
+            by_person[p]["other_income"] += row.amount
+
+    # Charitable donations from transactions
+    donation_rows = db.execute(
+        select(models.Transaction).where(
+            models.Transaction.year == year,
+            models.Transaction.category == "Charitable Donations",
+        )
+    ).scalars().all()
+    total_donations = sum(t.amount for t in donation_rows)
+
+    # ESPP purchases for the year
+    espp_purchases = db.execute(
+        select(models.EsppPurchase).where(
+            models.EsppPurchase.purchase_date.like(f"{year}%")
+        )
+    ).scalars().all()
+    espp_summary = [
+        {
+            "purchase_date": e.purchase_date,
+            "total_deducted": e.total_deducted,
+            "shares_purchased": e.shares_purchased,
+            "purchase_price": e.purchase_price,
+            "market_price": e.market_price,
+            "discount_benefit": round((e.market_price - e.purchase_price) * e.shares_purchased, 2) if e.shares_purchased else 0.0,
+        }
+        for e in espp_purchases
+    ]
+
+    return {
+        "year": year,
+        "by_person": by_person,
+        "total_donations": total_donations,
+        "espp_purchases": espp_summary,
+        "total_rrsp_employee": sum(p["rrsp_employee"] for p in by_person.values()),
+        "total_rrsp_employer": sum(p["rrsp_employer"] for p in by_person.values()),
+        "total_espp_deduction": sum(p["espp_deduction"] for p in by_person.values()),
+    }
+
+
+# ── Net Worth Forecast ──────────────────────────────────────────────────────
+
+@app.get("/forecast/networth")
+def forecast_networth(months: int = Query(default=12, ge=1, le=60), db: Session = Depends(get_db)):
+    """12-month net worth projection based on recent average monthly surplus."""
+    # Get current net worth
+    assets = db.execute(select(models.Asset)).scalars().all()
+    debts = db.execute(select(models.Debt)).scalars().all()
+    current_nw = sum(a.balance for a in assets) - sum(d.current_balance for d in debts)
+
+    # Compute avg monthly surplus from last 6 months of income vs spending
+    today = datetime.date.today()
+    results = []
+    monthly_surpluses = []
+    for i in range(6, 0, -1):
+        d = today - datetime.timedelta(days=30 * i)
+        y, m = d.year, d.month
+        income_total = db.execute(
+            select(func.sum(models.Income.amount)).where(
+                models.Income.year == y, models.Income.month == m
+            )
+        ).scalar() or 0.0
+        spending_total = db.execute(
+            select(func.sum(models.Transaction.amount)).where(
+                models.Transaction.year == y,
+                models.Transaction.month == m,
+                models.Transaction.category != "Income",
+            )
+        ).scalar() or 0.0
+        if income_total > 0:
+            monthly_surpluses.append(income_total - spending_total)
+
+    avg_monthly_surplus = sum(monthly_surpluses) / len(monthly_surpluses) if monthly_surpluses else 0.0
+
+    # Project forward
+    projected_nw = current_nw
+    for i in range(1, months + 1):
+        projected_nw += avg_monthly_surplus
+        future_date = today + datetime.timedelta(days=30 * i)
+        results.append({
+            "month": future_date.strftime("%b %Y"),
+            "projected_net_worth": round(projected_nw, 2),
+        })
+
+    return {
+        "current_net_worth": round(current_nw, 2),
+        "avg_monthly_surplus": round(avg_monthly_surplus, 2),
+        "forecast": results,
+    }
+
+
+# ── Recurring Bills ─────────────────────────────────────────────────────────
+
+class RecurringBillCreate(BaseModel):
+    name: str
+    merchant: str
+    amount: float
+    frequency: str = "monthly"
+    due_day: Optional[int] = None
+    category: Optional[str] = None
+    last_seen: Optional[str] = None
+    is_active: bool = True
+    notes: Optional[str] = None
+
+
+class RecurringBillOut(BaseModel):
+    id: int
+    name: str
+    merchant: str
+    amount: float
+    frequency: str
+    due_day: Optional[int] = None
+    category: Optional[str] = None
+    last_seen: Optional[str] = None
+    is_active: bool
+    notes: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+@app.get("/bills", response_model=list[RecurringBillOut])
+def list_bills(db: Session = Depends(get_db)):
+    return db.execute(
+        select(models.RecurringBill).order_by(nullslast(models.RecurringBill.due_day), models.RecurringBill.name)
+    ).scalars().all()
+
+
+@app.post("/bills", response_model=RecurringBillOut, status_code=201)
+def create_bill(body: RecurringBillCreate, db: Session = Depends(get_db)):
+    bill = models.RecurringBill(**body.model_dump())
+    db.add(bill)
+    db.commit()
+    db.refresh(bill)
+    return bill
+
+
+@app.put("/bills/{bill_id}", response_model=RecurringBillOut)
+def update_bill(bill_id: int, body: RecurringBillCreate, db: Session = Depends(get_db)):
+    bill = db.get(models.RecurringBill, bill_id)
+    if not bill:
+        raise HTTPException(404, "Bill not found")
+    for k, v in body.model_dump().items():
+        setattr(bill, k, v)
+    db.commit()
+    db.refresh(bill)
+    return bill
+
+
+@app.delete("/bills/{bill_id}", status_code=204)
+def delete_bill(bill_id: int, db: Session = Depends(get_db)):
+    bill = db.get(models.RecurringBill, bill_id)
+    if not bill:
+        raise HTTPException(404, "Bill not found")
+    db.delete(bill)
+    db.commit()
+
+
+@app.get("/bills/upcoming")
+def get_upcoming_bills(db: Session = Depends(get_db)):
+    """Get bills with upcoming due dates this month and next month."""
+    today = datetime.date.today()
+    bills = db.execute(
+        select(models.RecurringBill).where(models.RecurringBill.is_active == True)
+    ).scalars().all()
+
+    upcoming = []
+    for bill in bills:
+        if bill.due_day:
+            # This month's due date
+            try:
+                import calendar
+                last_day = calendar.monthrange(today.year, today.month)[1]
+                due_day = min(bill.due_day, last_day)
+                this_month_due = datetime.date(today.year, today.month, due_day)
+                if this_month_due >= today:
+                    days_until = (this_month_due - today).days
+                    upcoming.append({
+                        "id": bill.id,
+                        "name": bill.name,
+                        "merchant": bill.merchant,
+                        "amount": bill.amount,
+                        "due_date": this_month_due.isoformat(),
+                        "days_until": days_until,
+                        "frequency": bill.frequency,
+                    })
+                else:
+                    # Next month
+                    next_month = today.month + 1 if today.month < 12 else 1
+                    next_year = today.year if today.month < 12 else today.year + 1
+                    last_day_next = calendar.monthrange(next_year, next_month)[1]
+                    due_day_next = min(bill.due_day, last_day_next)
+                    next_due = datetime.date(next_year, next_month, due_day_next)
+                    days_until = (next_due - today).days
+                    upcoming.append({
+                        "id": bill.id,
+                        "name": bill.name,
+                        "merchant": bill.merchant,
+                        "amount": bill.amount,
+                        "due_date": next_due.isoformat(),
+                        "days_until": days_until,
+                        "frequency": bill.frequency,
+                    })
+            except ValueError:
+                pass
+
+    upcoming.sort(key=lambda x: x["days_until"])
+    return upcoming
