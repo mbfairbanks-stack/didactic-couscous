@@ -631,7 +631,12 @@ export default function Transactions() {
                     {renderEditableCell(
                       txn,
                       "merchant",
-                      <span className="max-w-[220px] truncate block text-zinc-200">{txn.merchant}</span>,
+                      <span className="max-w-[220px] block">
+                        <span className="truncate block text-zinc-200">{txn.merchant}</span>
+                        {txn.notes && (
+                          <span className="truncate block text-zinc-500 text-xs">{txn.notes}</span>
+                        )}
+                      </span>,
                       "max-w-[240px]"
                     )}
                     {/* Inline-editable: category */}
@@ -829,15 +834,18 @@ export default function Transactions() {
                 <select required className={`w-full mt-0.5 ${inputCls}`}
                   value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
                   {!form.category && <option value="">— choose category —</option>}
-                  {form.category && !allCategories.includes(form.category) && (
+                  {form.category && !allCategories.includes(form.category) && !["E-Transfer", "Shared Expense"].includes(form.category) && (
                     <option value={form.category}>{form.category}</option>
                   )}
                   {allCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+                  {!allCategories.includes("E-Transfer") && <option value="E-Transfer">E-Transfer</option>}
+                  {!allCategories.includes("Shared Expense") && <option value="Shared Expense">Shared Expense</option>}
                 </select>
               </div>
               <div>
                 <label className="text-xs text-zinc-500">Notes (optional)</label>
                 <input type="text" className={`w-full mt-0.5 ${inputCls}`}
+                  placeholder="e.g. Split with Alex, Enbridge bill"
                   value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
               </div>
               <div className="flex items-center gap-2">
