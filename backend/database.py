@@ -143,6 +143,8 @@ def _init_db_extras(eng, seed_demo: bool = False):
             for col, default in [("debt_type", "'loan'"), ("credit_limit", "0"), ("interest_rate", "0")]:
                 if col not in d_cols:
                     conn.execute(sa.text(f"ALTER TABLE debts ADD COLUMN {col} REAL NOT NULL DEFAULT {default}"))
+            if "linked_asset_id" not in d_cols:
+                conn.execute(sa.text("ALTER TABLE debts ADD COLUMN linked_asset_id INTEGER"))
 
         conn.commit()
 
