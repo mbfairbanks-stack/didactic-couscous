@@ -1,18 +1,27 @@
 """Multi-user authentication — stores users in a separate auth.db."""
 import os
-import hashlib
+import secrets
 import sqlite3
+import bcrypt
 
 AUTH_DB_PATH = os.getenv("AUTH_DB_PATH", "/data/auth.db")
 USER_DB_DIR = os.getenv("USER_DB_DIR", "/data/users")
+TOKEN_TTL_DAYS = int(os.getenv("TOKEN_TTL_DAYS", "90"))
 
 
 def _pw_hash(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=12)).decode()
 
 
-def _make_token(username: str, pw_hash: str) -> str:
-    return hashlib.sha256(f"{username}:{pw_hash}".encode()).hexdigest()
+def _check_pw(password: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(password.encode(), hashed.encode())
+    except Exception:
+        return False
+
+
+def _make_token() -> str:
+    return secrets.token_urlsafe(32)
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -20,33 +29,54 @@ def _get_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(AUTH_DB_PATH)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS users (
-            username   TEXT PRIMARY KEY,
+            username      TEXT PRIMARY KEY,
             password_hash TEXT NOT NULL,
-            token      TEXT UNIQUE NOT NULL,
-            is_demo    INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT DEFAULT (datetime('now'))
+            token         TEXT UNIQUE NOT NULL,
+            is_demo       INTEGER NOT NULL DEFAULT 0,
+            created_at    TEXT DEFAULT (datetime('now')),
+            token_expires TEXT DEFAULT NULL
         )
     """)
+    # Migration: add token_expires column if missing
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()]
+    if "token_expires" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN token_expires TEXT DEFAULT NULL")
     conn.commit()
     return conn
 
 
+def _token_expiry() -> str:
+    import datetime
+    return (datetime.datetime.utcnow() + datetime.timedelta(days=TOKEN_TTL_DAYS)).isoformat()
+
+
 def seed_default_users(admin_password: str = "") -> None:
-    """Called at startup — seeds demo and admin accounts if missing."""
+    """Called at startup — always refreshes demo and admin credentials."""
     conn = _get_conn()
-    # Demo user — always present, password is "demo"
-    dph = _pw_hash("demo")
+    demo_password = os.getenv("DEMO_PASSWORD", "demo")
+    dph = _pw_hash(demo_password)
+    # Use INSERT OR REPLACE to always update demo/admin hashes on restart
     conn.execute(
-        "INSERT OR IGNORE INTO users (username, password_hash, token, is_demo) VALUES (?,?,?,1)",
-        ("demo", dph, _make_token("demo", dph)),
+        "INSERT OR REPLACE INTO users (username, password_hash, token, is_demo, token_expires) VALUES (?,?,?,1,?)",
+        ("demo", dph, _make_token(), _token_expiry()),
     )
-    # Admin — created from BUDGET_PASSWORD env var
     if admin_password:
         aph = _pw_hash(admin_password)
-        conn.execute(
-            "INSERT OR IGNORE INTO users (username, password_hash, token, is_demo) VALUES (?,?,?,0)",
-            ("admin", aph, _make_token("admin", aph)),
-        )
+        # Only replace if password changed — keep existing token if hash matches
+        existing = conn.execute(
+            "SELECT password_hash, token FROM users WHERE username='admin'"
+        ).fetchone()
+        if existing and _check_pw(admin_password, existing[0]):
+            # Password unchanged — refresh expiry but keep token
+            conn.execute(
+                "UPDATE users SET token_expires=? WHERE username='admin'",
+                (_token_expiry(),)
+            )
+        else:
+            conn.execute(
+                "INSERT OR REPLACE INTO users (username, password_hash, token, is_demo, token_expires) VALUES (?,?,?,0,?)",
+                ("admin", aph, _make_token(), _token_expiry()),
+            )
     conn.commit()
     conn.close()
 
@@ -54,28 +84,38 @@ def seed_default_users(admin_password: str = "") -> None:
 def authenticate(username: str, password: str):
     """Returns (token, is_demo) or raises ValueError on bad credentials."""
     conn = _get_conn()
-    ph = _pw_hash(password)
     row = conn.execute(
-        "SELECT token, is_demo FROM users WHERE username=? AND password_hash=?",
-        (username, ph),
+        "SELECT password_hash, token, is_demo FROM users WHERE username=?",
+        (username,),
     ).fetchone()
     conn.close()
-    if not row:
+    if not row or not _check_pw(password, row[0]):
         raise ValueError("Invalid credentials")
-    return row[0], bool(row[1])
+    # Refresh token expiry on login
+    conn = _get_conn()
+    new_token = _make_token()
+    conn.execute(
+        "UPDATE users SET token=?, token_expires=? WHERE username=?",
+        (new_token, _token_expiry(), username)
+    )
+    conn.commit()
+    conn.close()
+    return new_token, bool(row[2])
 
 
 def register(username: str, password: str) -> str:
     """Creates a new user. Returns the token. Raises ValueError if name taken."""
+    if len(password) < 6:
+        raise ValueError("Password must be at least 6 characters")
     if username.lower() in ("demo", "admin"):
         raise ValueError(f"Username '{username}' is reserved")
     conn = _get_conn()
     ph = _pw_hash(password)
-    token = _make_token(username, ph)
+    token = _make_token()
     try:
         conn.execute(
-            "INSERT INTO users (username, password_hash, token, is_demo) VALUES (?,?,?,0)",
-            (username, ph, token),
+            "INSERT INTO users (username, password_hash, token, is_demo, token_expires) VALUES (?,?,?,0,?)",
+            (username, ph, token, _token_expiry()),
         )
         conn.commit()
     except sqlite3.IntegrityError:
@@ -86,13 +126,23 @@ def register(username: str, password: str) -> str:
 
 
 def get_user_from_token(token: str):
-    """Returns (username, is_demo) or None if token is invalid."""
+    """Returns (username, is_demo) or None if token is invalid or expired."""
+    import datetime
     conn = _get_conn()
     row = conn.execute(
-        "SELECT username, is_demo FROM users WHERE token=?", (token,)
+        "SELECT username, is_demo, token_expires FROM users WHERE token=?", (token,)
     ).fetchone()
     conn.close()
-    return row
+    if not row:
+        return None
+    username, is_demo, expires = row
+    if expires:
+        try:
+            if datetime.datetime.fromisoformat(expires) < datetime.datetime.utcnow():
+                return None  # Token expired
+        except ValueError:
+            pass
+    return username, is_demo
 
 
 def get_user_db_path(username: str, is_demo: bool) -> str:
