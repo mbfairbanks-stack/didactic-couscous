@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import { getAssets, createAsset, updateAsset, deleteAsset, syncSavingsAssets, getDebts, getSavingsSummary } from "../api";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, AreaChart, Area, Legend } from "recharts";
+import { getAssets, createAsset, updateAsset, deleteAsset, syncSavingsAssets, getDebts, getSavingsSummary, getNetWorthHistory, snapshotNetWorth, deleteNetWorthSnapshot, getSavingsGoals, createSavingsGoal, updateSavingsGoal, deleteSavingsGoal } from "../api";
 import { fmt } from "../utils";
 import { currentYear } from "../utils";
 
@@ -28,6 +28,12 @@ export default function NetWorth() {
   const [editDraft, setEditDraft] = useState({});
   const [adding, setAdding] = useState(false);
   const [newAsset, setNewAsset] = useState({ name: "", asset_type: "other", balance: "", liquidity: "liquid" });
+  const [history, setHistory] = useState([]);
+  const [goals, setGoals] = useState([]);
+  const [goalForm, setGoalForm] = useState({ name: "", target_amount: "", current_amount: "", target_date: "", notes: "" });
+  const [editGoalId, setEditGoalId] = useState(null);
+  const [showGoalForm, setShowGoalForm] = useState(false);
+  const [snapshotting, setSnapshotting] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -41,6 +47,77 @@ export default function NetWorth() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const loadHistory = async () => {
+    try {
+      const h = await getNetWorthHistory();
+      setHistory(h);
+    } catch (e) { /* ignore */ }
+  };
+
+  const loadGoals = async () => {
+    try {
+      const g = await getSavingsGoals();
+      setGoals(g);
+    } catch (e) { /* ignore */ }
+  };
+
+  const takeSnapshot = async () => {
+    setSnapshotting(true);
+    try {
+      await snapshotNetWorth();
+      await loadHistory();
+    } finally {
+      setSnapshotting(false);
+    }
+  };
+
+  const removeSnapshot = async (id) => {
+    await deleteNetWorthSnapshot(id);
+    loadHistory();
+  };
+
+  const saveGoal = async () => {
+    const body = {
+      name: goalForm.name,
+      target_amount: parseFloat(goalForm.target_amount),
+      current_amount: parseFloat(goalForm.current_amount) || 0,
+      target_date: goalForm.target_date || null,
+      notes: goalForm.notes || null,
+    };
+    if (editGoalId) {
+      await updateSavingsGoal(editGoalId, body);
+    } else {
+      await createSavingsGoal(body);
+    }
+    setGoalForm({ name: "", target_amount: "", current_amount: "", target_date: "", notes: "" });
+    setEditGoalId(null);
+    setShowGoalForm(false);
+    loadGoals();
+  };
+
+  const startEditGoal = (g) => {
+    setEditGoalId(g.id);
+    setGoalForm({
+      name: g.name,
+      target_amount: String(g.target_amount),
+      current_amount: String(g.current_amount),
+      target_date: g.target_date || "",
+      notes: g.notes || "",
+    });
+    setShowGoalForm(true);
+  };
+
+  const removeGoal = async (id) => {
+    if (!confirm("Delete this savings goal?")) return;
+    await deleteSavingsGoal(id);
+    loadGoals();
+  };
+
+  useEffect(() => {
+    loadHistory();
+    loadGoals();
+  }, []);
 
   const handleSync = async () => {
     setSyncing(true);
@@ -241,6 +318,127 @@ export default function NetWorth() {
             <span className="text-zinc-400">Liabilities: <span className="text-red-400 font-semibold">{fmt(totalLiabilities, 2)}</span></span>
           </div>
         </div>
+      </div>
+
+      {/* Net Worth History */}
+      <div className="bg-zinc-800 rounded-xl p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-yellow-400 font-semibold">Net Worth History</h2>
+          <button
+            onClick={takeSnapshot}
+            disabled={snapshotting}
+            className="bg-yellow-400 text-zinc-900 px-3 py-1 rounded text-sm font-semibold hover:bg-yellow-300 disabled:opacity-50"
+          >
+            {snapshotting ? "Saving…" : "Take Snapshot"}
+          </button>
+        </div>
+        {history.length >= 2 ? (
+          <ResponsiveContainer width="100%" height={220}>
+            <AreaChart data={history} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="nwGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#facc15" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#facc15" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="lnwGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#60a5fa" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#60a5fa" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="snapshot_date" tick={{ fontSize: 11, fill: "#a1a1aa" }} />
+              <YAxis tick={{ fontSize: 11, fill: "#a1a1aa" }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+              <Tooltip
+                contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", borderRadius: 8 }}
+                labelStyle={{ color: "#a1a1aa" }}
+                formatter={(v, name) => [`$${v.toLocaleString("en-CA")}`, name === "net_worth" ? "Net Worth" : "Liquid NW"]}
+              />
+              <Legend formatter={(v) => v === "net_worth" ? "Net Worth" : "Liquid NW"} />
+              <Area type="monotone" dataKey="net_worth" stroke="#facc15" fill="url(#nwGrad)" strokeWidth={2} dot={false} />
+              <Area type="monotone" dataKey="liquid_net_worth" stroke="#60a5fa" fill="url(#lnwGrad)" strokeWidth={2} dot={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        ) : (
+          <p className="text-zinc-500 text-sm text-center py-4">Take at least 2 snapshots to see your net worth trajectory.</p>
+        )}
+        {history.length > 0 && (
+          <div className="space-y-1 max-h-36 overflow-y-auto">
+            {[...history].reverse().map((s) => (
+              <div key={s.id} className="flex items-center justify-between text-xs text-zinc-400">
+                <span>{s.snapshot_date}</span>
+                <span className="text-yellow-400 font-mono">${s.net_worth.toLocaleString("en-CA")}</span>
+                <button onClick={() => removeSnapshot(s.id)} className="hover:text-red-400 ml-2">✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Savings Goals */}
+      <div className="bg-zinc-800 rounded-xl p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-yellow-400 font-semibold">Savings Goals</h2>
+          <button
+            onClick={() => { setShowGoalForm(!showGoalForm); setEditGoalId(null); setGoalForm({ name: "", target_amount: "", current_amount: "", target_date: "", notes: "" }); }}
+            className="bg-yellow-400 text-zinc-900 px-3 py-1 rounded text-sm font-semibold hover:bg-yellow-300"
+          >
+            {showGoalForm ? "Cancel" : "+ Goal"}
+          </button>
+        </div>
+
+        {showGoalForm && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">Goal Name</label>
+                <input className="w-full bg-zinc-700 border border-zinc-600 rounded px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400" value={goalForm.name} onChange={(e) => setGoalForm({ ...goalForm, name: e.target.value })} placeholder="Emergency Fund" />
+              </div>
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">Target Amount ($)</label>
+                <input className="w-full bg-zinc-700 border border-zinc-600 rounded px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400" type="number" value={goalForm.target_amount} onChange={(e) => setGoalForm({ ...goalForm, target_amount: e.target.value })} placeholder="10000" />
+              </div>
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">Current Amount ($)</label>
+                <input className="w-full bg-zinc-700 border border-zinc-600 rounded px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400" type="number" value={goalForm.current_amount} onChange={(e) => setGoalForm({ ...goalForm, current_amount: e.target.value })} placeholder="0" />
+              </div>
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">Target Date</label>
+                <input className="w-full bg-zinc-700 border border-zinc-600 rounded px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400" type="date" value={goalForm.target_date} onChange={(e) => setGoalForm({ ...goalForm, target_date: e.target.value })} />
+              </div>
+            </div>
+            <button onClick={saveGoal} className="bg-yellow-400 text-zinc-900 px-6 py-2 rounded text-sm font-semibold hover:bg-yellow-300">
+              {editGoalId ? "Save Changes" : "Add Goal"}
+            </button>
+          </div>
+        )}
+
+        {goals.length === 0 && !showGoalForm ? (
+          <p className="text-zinc-500 text-sm text-center py-2">No savings goals yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {goals.map((g) => (
+              <div key={g.id} className="space-y-1">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-zinc-100 font-medium">{g.name}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-yellow-400 font-mono text-xs">${g.current_amount.toLocaleString("en-CA")} / ${g.target_amount.toLocaleString("en-CA")}</span>
+                    <button onClick={() => startEditGoal(g)} className="text-xs text-zinc-400 hover:text-yellow-400">Edit</button>
+                    <button onClick={() => removeGoal(g.id)} className="text-xs text-zinc-400 hover:text-red-400">✕</button>
+                  </div>
+                </div>
+                <div className="h-2 bg-zinc-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${Math.min(g.progress_pct, 100)}%`,
+                      background: g.progress_pct >= 100 ? "#4ade80" : "#facc15",
+                    }}
+                  />
+                </div>
+                <p className="text-xs text-zinc-500">{g.progress_pct}%{g.target_date ? ` · target ${g.target_date}` : ""}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
