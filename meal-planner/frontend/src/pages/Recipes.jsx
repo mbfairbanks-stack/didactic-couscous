@@ -14,6 +14,9 @@ const EMPTY_FORM = {
 
 const ALL_TAGS = ["quick", "vegetarian", "vegan", "gluten-free", "dairy-free", "batch-cook", "slow-cooker", "one-pan"];
 
+const mealPhotoUrl = (title) =>
+  `https://source.unsplash.com/featured/600x300/?${encodeURIComponent(title + " food dish meal")}`;
+
 function RecipeCard({ recipe, onEdit, onDelete, onToggleFavorite, pantryNames }) {
   const [expanded, setExpanded] = useState(false);
   const totalIng = recipe.ingredients?.length || 0;
@@ -27,6 +30,18 @@ function RecipeCard({ recipe, onEdit, onDelete, onToggleFavorite, pantryNames })
                          "bg-stone-50 text-stone-500 border-stone-200";
   return (
     <div className={`bg-white rounded-2xl border shadow-sm overflow-hidden ${recipe.is_favorite ? "border-amber-300" : "border-stone-200"}`}>
+      <div className="relative h-32 bg-stone-100 overflow-hidden">
+        <img
+          src={mealPhotoUrl(recipe.title)}
+          alt={recipe.title}
+          className="w-full h-full object-cover"
+          loading="lazy"
+          onError={(e) => { e.currentTarget.parentElement.classList.add("hidden"); }}
+        />
+        {recipe.is_favorite && (
+          <span className="absolute top-2 right-2 text-lg drop-shadow">★</span>
+        )}
+      </div>
       <div className="p-4">
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
@@ -65,8 +80,8 @@ function RecipeCard({ recipe, onEdit, onDelete, onToggleFavorite, pantryNames })
             >
               ★
             </button>
-            <button onClick={() => onEdit(recipe)} className="text-xs text-green-600 hover:underline px-1">Edit</button>
-            <button onClick={() => onDelete(recipe.id)} className="text-xs text-red-400 hover:underline px-1">Delete</button>
+            <button onClick={() => onEdit(recipe)} className="text-xs text-stone-500 hover:underline px-1">Edit</button>
+            <button onClick={() => onDelete(recipe.id)} className="text-xs text-red-400 hover:underline px-1">Del</button>
           </div>
         </div>
 

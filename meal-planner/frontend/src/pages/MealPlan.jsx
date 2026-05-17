@@ -7,6 +7,9 @@ const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
 const MEAL_TYPES = ["Breakfast", "Lunch", "Dinner", "Snack"];
 const SKIP = "__skip__";
 
+const mealPhotoUrl = (title) =>
+  `https://source.unsplash.com/featured/120x120/?${encodeURIComponent(title + " food dish meal")}`;
+
 function getMonday(d) {
   const dt = new Date(d);
   const day = dt.getDay();
@@ -517,6 +520,15 @@ export default function MealPlan() {
                     key={mealType}
                     className={`w-full flex items-center rounded-xl border px-4 py-3.5 transition-colors ${isMoveSrc ? "border-blue-300 bg-blue-50" : entryClass(entry)} ${moveMode && !isMoveSrc ? "border-dashed border-blue-300 cursor-pointer" : ""}`}
                   >
+                    {entry && !isSkipped(entry) && entry.recipe_id && (
+                      <img
+                        src={mealPhotoUrl(entry.label)}
+                        alt={entry.label}
+                        className="w-12 h-12 rounded-lg object-cover shrink-0 mr-3"
+                        loading="lazy"
+                        onError={(e) => { e.currentTarget.style.display = "none"; }}
+                      />
+                    )}
                     <div
                       className="flex-1 text-left cursor-pointer"
                       onClick={() => {
