@@ -10,7 +10,7 @@ import Preferences from "./pages/Preferences";
 export default function App() {
   return (
     <BrowserRouter>
-      <div className="min-h-screen flex flex-col">
+      <div className="min-h-screen flex flex-col bg-stone-50">
         <Nav />
         <main className="flex-1 p-4 sm:p-6 max-w-7xl mx-auto w-full pb-24 sm:pb-6">
           <Routes>

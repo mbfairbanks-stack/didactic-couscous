@@ -32,30 +32,37 @@ const CogIcon = () => (
 );
 
 const links = [
-  { to: "/meal-plan",     label: "Plan",    fullLabel: "Meal Plan",      icon: <CalendarIcon /> },
-  { to: "/recipes",       label: "Recipes", fullLabel: "Recipes",        icon: <BookIcon /> },
-  { to: "/pantry",        label: "Pantry",  fullLabel: "Pantry",         icon: <BoxIcon /> },
-  { to: "/prep-list",     label: "Prep",    fullLabel: "Prep List",      icon: <ClipboardIcon /> },
-  { to: "/shopping-list", label: "Shop",    fullLabel: "Shopping List",  icon: <CartIcon /> },
-  { to: "/preferences",   label: "More",    fullLabel: "Preferences",    icon: <CogIcon /> },
+  { to: "/meal-plan",     label: "Plan",    fullLabel: "Meal Plan",     icon: <CalendarIcon /> },
+  { to: "/recipes",       label: "Recipes", fullLabel: "Recipes",       icon: <BookIcon /> },
+  { to: "/pantry",        label: "Pantry",  fullLabel: "Pantry",        icon: <BoxIcon /> },
+  { to: "/prep-list",     label: "Prep",    fullLabel: "Prep List",     icon: <ClipboardIcon /> },
+  { to: "/shopping-list", label: "Shop",    fullLabel: "Shopping List", icon: <CartIcon /> },
+  { to: "/preferences",   label: "More",    fullLabel: "Preferences",   icon: <CogIcon /> },
 ];
 
 export default function Nav() {
   return (
     <>
       {/* Top header */}
-      <header className="bg-green-700 text-white shadow sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center gap-6 h-13 sm:h-14">
-          <span className="font-bold text-base sm:text-lg tracking-tight shrink-0">Wetbanks Sous Chef</span>
+      <header className="bg-stone-900 text-white shadow-md sticky top-0 z-30 safe-top">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center gap-6 h-14">
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-green-400 text-xl">🍴</span>
+            <span className="font-semibold text-base sm:text-lg tracking-tight text-white">
+              Wetbanks <span className="text-green-400">Sous Chef</span>
+            </span>
+          </div>
           {/* Desktop nav links */}
-          <nav className="hidden sm:flex gap-1">
+          <nav className="hidden sm:flex gap-1 ml-2">
             {links.map((l) => (
               <NavLink
                 key={l.to}
                 to={l.to}
                 className={({ isActive }) =>
-                  `px-3 py-1 rounded text-sm font-medium transition-colors ${
-                    isActive ? "bg-white text-green-700" : "hover:bg-green-600 text-green-100"
+                  `px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                    isActive
+                      ? "bg-green-500/20 text-green-400"
+                      : "text-stone-400 hover:text-white hover:bg-white/10"
                   }`
                 }
               >
@@ -67,20 +74,27 @@ export default function Nav() {
       </header>
 
       {/* Mobile bottom tab bar */}
-      <nav className="sm:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-gray-200 safe-bottom">
+      <nav className="sm:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur border-t border-stone-200 safe-bottom">
         <div className="flex">
           {links.map((l) => (
             <NavLink
               key={l.to}
               to={l.to}
               className={({ isActive }) =>
-                `flex flex-col items-center justify-center flex-1 py-2 gap-0.5 text-xs font-medium transition-colors ${
-                  isActive ? "text-green-700" : "text-gray-400"
+                `flex flex-col items-center justify-center flex-1 pt-2 pb-1 gap-0.5 transition-colors ${
+                  isActive ? "text-green-600" : "text-stone-400"
                 }`
               }
             >
-              {l.icon}
-              <span className="text-[10px]">{l.label}</span>
+              {({ isActive }) => (
+                <>
+                  <span className={`transition-transform ${isActive ? "scale-110" : ""}`}>
+                    {l.icon}
+                  </span>
+                  <span className="text-[10px] font-medium">{l.label}</span>
+                  <span className={`h-0.5 w-4 rounded-full transition-all ${isActive ? "bg-green-500" : "bg-transparent"}`} />
+                </>
+              )}
             </NavLink>
           ))}
         </div>

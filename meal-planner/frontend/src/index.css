@@ -3,12 +3,17 @@
 @tailwind utilities;
 
 body {
-  @apply bg-gray-50 text-gray-900;
+  @apply bg-stone-50 text-stone-900 antialiased;
 }
 
 /* iOS safe area for bottom tab bar */
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* iOS safe area for top header (black-translucent status bar) */
+.safe-top {
+  padding-top: env(safe-area-inset-top);
 }
 
 /* Hide scrollbar on day tabs row */
