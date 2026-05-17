@@ -14,28 +14,45 @@ const EMPTY_FORM = {
 
 const ALL_TAGS = ["quick", "vegetarian", "vegan", "gluten-free", "dairy-free", "batch-cook", "slow-cooker", "one-pan"];
 
-function RecipeCard({ recipe, onEdit, onDelete, onToggleFavorite }) {
+function RecipeCard({ recipe, onEdit, onDelete, onToggleFavorite, pantryNames }) {
   const [expanded, setExpanded] = useState(false);
+  const totalIng = recipe.ingredients?.length || 0;
+  const matched = (recipe.ingredients || []).filter(
+    (ing) => ing.name && pantryNames.has(ing.name.toLowerCase().trim())
+  ).length;
+  const matchRatio = totalIng > 0 ? matched / totalIng : 0;
+  const matchColor =
+    matchRatio >= 0.75 ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+    matchRatio >= 0.4  ? "bg-amber-50 text-amber-700 border-amber-200" :
+                         "bg-stone-50 text-stone-500 border-stone-200";
   return (
-    <div className={`bg-white rounded-xl border shadow-sm overflow-hidden ${recipe.is_favorite ? "border-yellow-300" : "border-gray-200"}`}>
+    <div className={`bg-white rounded-2xl border shadow-sm overflow-hidden ${recipe.is_favorite ? "border-amber-300" : "border-stone-200"}`}>
       <div className="p-4">
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             <button
               onClick={() => setExpanded(!expanded)}
-              className="font-semibold text-gray-800 text-left hover:text-green-700 w-full"
+              className="font-semibold text-stone-800 text-left hover:text-emerald-700 w-full"
             >
               {recipe.title}
             </button>
-            <div className="flex gap-3 text-xs text-gray-400 mt-1">
+            <div className="flex gap-3 text-xs text-stone-400 mt-1 flex-wrap items-center">
               {recipe.prep_min > 0 && <span>Prep {recipe.prep_min}m</span>}
               {recipe.cook_min > 0 && <span>Cook {recipe.cook_min}m</span>}
               {recipe.servings && <span>Serves {recipe.servings}</span>}
+              {recipe.times_made > 0 && (
+                <span className="text-emerald-600">Made {recipe.times_made}×</span>
+              )}
+              {totalIng > 0 && (
+                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${matchColor}`}>
+                  {matched}/{totalIng} in pantry
+                </span>
+              )}
             </div>
             {recipe.tags?.length > 0 && (
               <div className="flex gap-1 flex-wrap mt-2">
                 {recipe.tags.map((t) => (
-                  <span key={t} className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full border border-green-100">{t}</span>
+                  <span key={t} className="text-xs bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-100">{t}</span>
                 ))}
               </div>
             )}
@@ -155,12 +172,16 @@ export default function Recipes() {
   const [aiRaw, setAiRaw] = useState("");
   const [aiParsed, setAiParsed] = useState(null);
   const [aiError, setAiError] = useState(null);
+  const [pantryNames, setPantryNames] = useState(() => new Set());
   const rawRef = useRef("");
 
   const load = () => {
     setLoading(true);
-    getRecipes()
-      .then(setRecipes)
+    Promise.all([getRecipes(), getPantry().catch(() => [])])
+      .then(([recs, pantry]) => {
+        setRecipes(recs);
+        setPantryNames(new Set(pantry.map((p) => (p.name || "").toLowerCase().trim())));
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   };
@@ -599,6 +620,7 @@ export default function Recipes() {
                     onEdit={handleEdit}
                     onDelete={handleDelete}
                     onToggleFavorite={handleToggleFavorite}
+                    pantryNames={pantryNames}
                   />
                 ))}
               </div>
@@ -617,6 +639,7 @@ export default function Recipes() {
                     onEdit={handleEdit}
                     onDelete={handleDelete}
                     onToggleFavorite={handleToggleFavorite}
+                    pantryNames={pantryNames}
                   />
                 ))}
               </div>

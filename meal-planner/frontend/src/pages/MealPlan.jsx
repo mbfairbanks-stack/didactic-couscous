@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { getMealPlan, setMealPlanEntry, deleteMealPlanEntry, getRecipes, getPreferences, streamGenerateMealPlan, streamRefreshMealSlot, generateWeekRecipes } from "../api";
+import { getMealPlan, setMealPlanEntry, deleteMealPlanEntry, getRecipes, getPreferences, streamGenerateMealPlan, streamRefreshMealSlot, generateWeekRecipes, markMealCooked, unmarkMealCooked } from "../api";
 import { format, addDays, addWeeks, subWeeks } from "date-fns";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -192,7 +192,7 @@ export default function MealPlan() {
 
   const [showAI, setShowAI] = useState(false);
   const [aiNotes, setAiNotes] = useState("");
-  const [usePantry, setUsePantry] = useState(false);
+  const [usePantry, setUsePantry] = useState(true);
   const [useFavorites, setUseFavorites] = useState(true);
   const [aiStreaming, setAiStreaming] = useState(false);
   const [aiError, setAiError] = useState(null);
@@ -342,11 +342,40 @@ export default function MealPlan() {
 
   const isFavEntry = (entry) => entry?.recipe_id && recipes.find((r) => r.id === entry.recipe_id)?.is_favorite;
   const isSkipped = (entry) => entry?.free_text === SKIP;
+  const isCooked = (entry) => !!entry?.cooked_at;
 
   const entryClass = (entry) => {
-    if (!entry) return "bg-white border-gray-200 text-gray-400";
-    if (isSkipped(entry)) return "bg-gray-50 border-gray-200 text-gray-400";
-    return isFavEntry(entry) ? "bg-yellow-50 border-yellow-200 text-yellow-800" : "bg-green-50 border-green-200 text-green-800";
+    if (!entry) return "bg-white border-stone-200 text-stone-400";
+    if (isSkipped(entry)) return "bg-stone-100 border-stone-200 text-stone-400";
+    if (isCooked(entry)) return "bg-stone-100 border-stone-300 text-stone-500";
+    return isFavEntry(entry) ? "bg-amber-50 border-amber-200 text-amber-900" : "bg-emerald-50 border-emerald-200 text-emerald-900";
+  };
+
+  const handleCook = async (entry) => {
+    if (!entry?.recipe_id) return;
+    const recipe = recipes.find((r) => r.id === entry.recipe_id);
+    const title = recipe?.title || entry.label || "this meal";
+    const confirmed = window.confirm(
+      `Mark "${title}" as cooked? This will deduct its ingredients from your pantry.`
+    );
+    if (!confirmed) return;
+    try {
+      const result = await markMealCooked(entry.id);
+      const dCount = result.deducted?.length || 0;
+      const sCount = result.skipped?.length || 0;
+      if (sCount > 0) {
+        setError(`Logged ${title}. Deducted ${dCount} item${dCount === 1 ? "" : "s"} from pantry; ${sCount} could not be deducted (not in pantry or unit mismatch).`);
+      }
+      load();
+    } catch (e) { setError(e.message); }
+  };
+
+  const handleUncook = async (entry) => {
+    if (!entry) return;
+    try {
+      await unmarkMealCooked(entry.id);
+      load();
+    } catch (e) { setError(e.message); }
   };
 
   return (
@@ -503,28 +532,48 @@ export default function MealPlan() {
                     >
                       <p className="text-xs font-semibold uppercase tracking-wider opacity-60 mb-0.5">{mealType}</p>
                       {isSkipped(entry) ? (
-                        <p className="text-sm text-gray-400 italic line-through">Skipped</p>
+                        <p className="text-sm text-stone-400 italic line-through">Skipped</p>
                       ) : entry ? (
-                        <p className="text-sm font-medium flex items-center gap-1.5">
-                          {isFav && <span className="text-yellow-400">★</span>}
+                        <p className={`text-sm font-medium flex items-center gap-1.5 ${isCooked(entry) ? "line-through opacity-70" : ""}`}>
+                          {isFav && <span className="text-amber-400">★</span>}
+                          {isCooked(entry) && <span className="text-emerald-500">✓</span>}
                           {isRefreshing ? (
-                            <span className="text-gray-400 italic">Getting suggestion…</span>
+                            <span className="text-stone-400 italic">Getting suggestion…</span>
                           ) : entry.recipe_id ? (
-                            <span className="text-green-700 underline decoration-dotted">{entry.label}</span>
+                            <span className="underline decoration-dotted">{entry.label}</span>
                           ) : entry.label}
                         </p>
                       ) : (
-                        <p className="text-sm text-gray-400">{moveMode ? "Move here" : "Tap to add"}</p>
+                        <p className="text-sm text-stone-400">{moveMode ? "Move here" : "Tap to add"}</p>
                       )}
                     </div>
                     {!moveMode && (
                       <div className="flex items-center gap-1.5 ml-2 shrink-0">
-                        {entry && !isSkipped(entry) && (
+                        {entry && !isSkipped(entry) && entry.recipe_id && (
+                          isCooked(entry) ? (
+                            <button
+                              onClick={() => handleUncook(entry)}
+                              title="Un-mark cooked"
+                              className="text-base leading-none text-emerald-500 hover:text-emerald-700 transition-colors"
+                            >
+                              ✓
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleCook(entry)}
+                              title="Mark as cooked (deducts from pantry)"
+                              className="text-base leading-none text-stone-300 hover:text-emerald-500 transition-colors"
+                            >
+                              ✓
+                            </button>
+                          )
+                        )}
+                        {entry && !isSkipped(entry) && !isCooked(entry) && (
                           <>
                             <button
                               onClick={() => setMoveMode({ day: selectedDay, mealType })}
                               title="Move to another slot"
-                              className="text-base leading-none text-gray-300 hover:text-blue-500 transition-colors"
+                              className="text-base leading-none text-stone-300 hover:text-blue-500 transition-colors"
                             >
                               ⇄
                             </button>
@@ -532,7 +581,7 @@ export default function MealPlan() {
                               onClick={() => handleEasySlot(selectedDay, mealType)}
                               disabled={refreshingSlot !== null}
                               title="Quick easy meal"
-                              className="text-base leading-none text-gray-300 hover:text-amber-500 transition-colors disabled:opacity-30"
+                              className="text-base leading-none text-stone-300 hover:text-amber-500 transition-colors disabled:opacity-30"
                             >
                               ⚡
                             </button>
@@ -540,13 +589,13 @@ export default function MealPlan() {
                               onClick={() => handleRefreshSlot(selectedDay, mealType)}
                               disabled={refreshingSlot !== null}
                               title="Suggest different meal"
-                              className={`text-lg leading-none transition-colors disabled:opacity-30 ${isRefreshing ? "text-purple-400" : "text-gray-300 hover:text-purple-500"}`}
+                              className={`text-lg leading-none transition-colors disabled:opacity-30 ${isRefreshing ? "text-purple-400" : "text-stone-300 hover:text-purple-500"}`}
                             >
                               ↻
                             </button>
                           </>
                         )}
-                        <span className="text-gray-300 text-lg cursor-pointer" onClick={() => setMobileSheet({ day: selectedDay, meal_type: mealType })}>›</span>
+                        <span className="text-stone-300 text-lg cursor-pointer" onClick={() => setMobileSheet({ day: selectedDay, meal_type: mealType })}>›</span>
                       </div>
                     )}
                   </div>
@@ -604,41 +653,65 @@ export default function MealPlan() {
                               className={`w-full min-h-[52px] text-left rounded-lg border px-2 py-1.5 text-xs transition-all ${entryClass(entry)} hover:opacity-80 ${entry ? "cursor-grab active:cursor-grabbing" : ""} ${isActive ? "ring-2 ring-green-400" : ""} ${dragTarget?.day === day && dragTarget?.mealType === mealType ? "ring-2 ring-blue-400 !bg-blue-50" : ""}`}
                             >
                               {isSkipped(entry) ? (
-                                <span className="line-through text-gray-400 italic text-xs">Skipped</span>
+                                <span className="line-through text-stone-400 italic text-xs">Skipped</span>
                               ) : entry ? (
-                                <span className="flex items-start gap-1">
-                                  {isFav && <span className="text-yellow-400 shrink-0">★</span>}
+                                <span className={`flex items-start gap-1 ${isCooked(entry) ? "line-through opacity-70" : ""}`}>
+                                  {isFav && <span className="text-amber-400 shrink-0">★</span>}
+                                  {isCooked(entry) && <span className="text-emerald-500 shrink-0">✓</span>}
                                   {isRefreshing ? (
-                                    <span className="text-gray-400 italic">…</span>
+                                    <span className="text-stone-400 italic">…</span>
                                   ) : entry.recipe_id ? (
                                     <button
                                       onClick={(e) => { e.stopPropagation(); setRecipeSheet(recipes.find((r) => r.id === entry.recipe_id)); }}
-                                      className="text-green-700 hover:underline text-left leading-tight"
+                                      className="hover:underline text-left leading-tight"
                                     >
                                       {entry.label}
                                     </button>
                                   ) : entry.label}
                                 </span>
-                              ) : <span className="text-gray-300">+</span>}
+                              ) : <span className="text-stone-300">+</span>}
                             </button>
                             {entry && !isSkipped(entry) && (
                               <div className={`absolute bottom-0.5 right-0.5 flex gap-0.5 transition-all ${isRefreshing ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); handleEasySlot(day, mealType); }}
-                                  disabled={refreshingSlot !== null}
-                                  title="Quick easy meal"
-                                  className="text-xs leading-none p-0.5 rounded text-gray-400 hover:text-amber-500 disabled:opacity-20"
-                                >
-                                  ⚡
-                                </button>
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); handleRefreshSlot(day, mealType); }}
-                                  disabled={refreshingSlot !== null}
-                                  title="Suggest different meal"
-                                  className={`text-xs leading-none p-0.5 rounded disabled:opacity-20 ${isRefreshing ? "text-purple-400" : "text-gray-400 hover:text-purple-500"}`}
-                                >
-                                  ↻
-                                </button>
+                                {entry.recipe_id && (
+                                  isCooked(entry) ? (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleUncook(entry); }}
+                                      title="Un-mark cooked"
+                                      className="text-xs leading-none p-0.5 rounded text-emerald-500 hover:text-emerald-700"
+                                    >
+                                      ✓
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleCook(entry); }}
+                                      title="Mark cooked (deducts pantry)"
+                                      className="text-xs leading-none p-0.5 rounded text-stone-400 hover:text-emerald-500"
+                                    >
+                                      ✓
+                                    </button>
+                                  )
+                                )}
+                                {!isCooked(entry) && (
+                                  <>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleEasySlot(day, mealType); }}
+                                      disabled={refreshingSlot !== null}
+                                      title="Quick easy meal"
+                                      className="text-xs leading-none p-0.5 rounded text-stone-400 hover:text-amber-500 disabled:opacity-20"
+                                    >
+                                      ⚡
+                                    </button>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleRefreshSlot(day, mealType); }}
+                                      disabled={refreshingSlot !== null}
+                                      title="Suggest different meal"
+                                      className={`text-xs leading-none p-0.5 rounded disabled:opacity-20 ${isRefreshing ? "text-purple-400" : "text-stone-400 hover:text-purple-500"}`}
+                                    >
+                                      ↻
+                                    </button>
+                                  </>
+                                )}
                               </div>
                             )}
                             {isActive && (

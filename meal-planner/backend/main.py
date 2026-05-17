@@ -2,15 +2,42 @@ from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import inspect, text
 from pydantic import BaseModel
 from typing import Optional
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 import json, os, base64, re
 
 import models, database
 from database import engine, get_db
 
 models.Base.metadata.create_all(bind=engine)
+
+
+def _ensure_columns():
+    """Add new columns to existing SQLite tables without a full migration framework."""
+    additions = {
+        "recipes": [
+            ("times_made", "INTEGER DEFAULT 0"),
+            ("last_made", "DATE"),
+        ],
+        "meal_plan_entries": [
+            ("cooked_at", "DATETIME"),
+        ],
+        "household_preferences": [
+            ("onboarding_done", "BOOLEAN DEFAULT 0"),
+        ],
+    }
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table, cols in additions.items():
+            existing = {c["name"] for c in insp.get_columns(table)}
+            for name, ddl in cols:
+                if name not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+
+
+_ensure_columns()
 
 app = FastAPI(title="Wetbanks Sous Chef API")
 
@@ -135,11 +162,12 @@ class ImportRecipeTextRequest(BaseModel):
 
 
 class HouseholdPreferencesSchema(BaseModel):
-    servings: int = 4
-    dietary_restrictions: str = ""
-    cuisine_preferences: str = ""
-    avoid: str = ""
-    notes: str = ""
+    servings: Optional[int] = None
+    dietary_restrictions: Optional[str] = None
+    cuisine_preferences: Optional[str] = None
+    avoid: Optional[str] = None
+    notes: Optional[str] = None
+    onboarding_done: Optional[bool] = None
 
 
 # ---------------------------------------------------------------------------
@@ -276,6 +304,7 @@ def get_meal_plan(week_start: date, db: Session = Depends(get_db)):
             "recipe_id": e.recipe_id,
             "free_text": e.free_text,
             "label": None,
+            "cooked_at": e.cooked_at,
         }
         if e.recipe_id:
             r = db.get(models.Recipe, e.recipe_id)
@@ -318,6 +347,76 @@ def delete_meal_plan_entry(entry_id: int, db: Session = Depends(get_db)):
     if not entry:
         raise HTTPException(404, "Entry not found")
     db.delete(entry)
+    db.commit()
+
+
+@app.post("/meal-plan/{entry_id}/cook")
+def mark_meal_cooked(entry_id: int, db: Session = Depends(get_db)):
+    """Mark a meal slot as cooked: stamp the entry, bump recipe stats, deduct pantry."""
+    entry = db.get(models.MealPlanEntry, entry_id)
+    if not entry:
+        raise HTTPException(404, "Entry not found")
+    if not entry.recipe_id:
+        raise HTTPException(400, "Only meals linked to a recipe can be marked cooked")
+
+    recipe = db.get(models.Recipe, entry.recipe_id)
+    if not recipe:
+        raise HTTPException(404, "Linked recipe not found")
+
+    entry.cooked_at = datetime.utcnow()
+    recipe.times_made = (recipe.times_made or 0) + 1
+    recipe.last_made = date.today()
+
+    pantry = db.query(models.PantryItem).all()
+    by_name = {p.name.strip().lower(): p for p in pantry}
+
+    deducted = []
+    skipped = []
+    for ing in (recipe.ingredients or []):
+        name = (ing.get("name") or "").strip()
+        if not name:
+            continue
+        key = name.lower()
+        pi = by_name.get(key)
+        if not pi:
+            skipped.append({"name": name, "reason": "not in pantry"})
+            continue
+        ing_unit = (ing.get("unit") or "").strip().lower()
+        pi_unit = (pi.unit or "").strip().lower()
+        if ing_unit and pi_unit and ing_unit != pi_unit:
+            skipped.append({"name": name, "reason": f"unit mismatch ({ing_unit} vs {pi_unit})"})
+            continue
+        amt = _parse_amount(ing.get("amount", 0))
+        if amt <= 0:
+            skipped.append({"name": name, "reason": "no amount"})
+            continue
+        new_qty = max(0.0, (pi.quantity or 0) - amt)
+        pi.quantity = new_qty
+        deducted.append({"name": name, "deducted": amt, "remaining": new_qty})
+
+    db.commit()
+    db.refresh(entry)
+    return {
+        "entry_id": entry.id,
+        "cooked_at": entry.cooked_at,
+        "recipe_title": recipe.title,
+        "times_made": recipe.times_made,
+        "deducted": deducted,
+        "skipped": skipped,
+    }
+
+
+@app.post("/meal-plan/{entry_id}/uncook", status_code=204)
+def unmark_meal_cooked(entry_id: int, db: Session = Depends(get_db)):
+    """Undo a cooked mark. Note: does NOT restore pantry quantities."""
+    entry = db.get(models.MealPlanEntry, entry_id)
+    if not entry:
+        raise HTTPException(404, "Entry not found")
+    if entry.cooked_at and entry.recipe_id:
+        recipe = db.get(models.Recipe, entry.recipe_id)
+        if recipe and (recipe.times_made or 0) > 0:
+            recipe.times_made -= 1
+    entry.cooked_at = None
     db.commit()
 
 
@@ -386,7 +485,7 @@ def update_preferences(body: HouseholdPreferencesSchema, db: Session = Depends(g
     if not prefs:
         prefs = models.HouseholdPreferences(id=1)
         db.add(prefs)
-    for k, v in body.model_dump().items():
+    for k, v in body.model_dump(exclude_none=True).items():
         setattr(prefs, k, v)
     db.commit()
     db.refresh(prefs)
@@ -477,22 +576,54 @@ def generate_meal_plan(body: GenerateMealPlanRequest, db: Session = Depends(get_
                 "Use their exact title as-is so they can be matched back to the recipe library."
             )
 
-    # Build pantry block
+    # Build cooked history block — what the household has actually enjoyed
+    cooked_recipes = (
+        db.query(models.Recipe)
+        .filter(models.Recipe.times_made > 0)
+        .order_by(models.Recipe.times_made.desc())
+        .limit(12)
+        .all()
+    )
+    history_context = ""
+    if cooked_recipes:
+        hist_list = "\n".join(
+            f"  - {r.title} (made {r.times_made}x)" for r in cooked_recipes
+        )
+        history_context = (
+            f"\n\nPreviously enjoyed by this household (lean toward these — they liked them):\n{hist_list}\n"
+            "Schedule a few of these (using their EXACT titles) when they fit the week."
+        )
+
+    # Build pantry block — pantry-first when use_pantry is on
     pantry_context = ""
     if body.use_pantry:
         items = db.query(models.PantryItem).all()
         if items:
-            pantry_list = ", ".join(f"{i.name} ({i.quantity} {i.unit})" for i in items)
+            today = date.today()
+            soon = today + timedelta(days=7)
+            expiring = [i for i in items if i.expiry_date and i.expiry_date <= soon]
+            pantry_list = ", ".join(f"{i.name} ({i.quantity} {i.unit})".strip() for i in items)
+            expiring_block = ""
+            if expiring:
+                exp_list = ", ".join(
+                    f"{i.name} (expires {i.expiry_date.isoformat()})" for i in expiring
+                )
+                expiring_block = (
+                    f"\nITEMS EXPIRING WITHIN 7 DAYS — prioritise using these first:\n  {exp_list}\n"
+                )
             pantry_context = (
-                f"\n\nCurrent pantry inventory (for reference only):\n{pantry_list}\n"
-                "Use these ingredients when they fit naturally into a meal the household would enjoy, "
-                "but do NOT force pantry items into every slot — plan what sounds good and let the "
-                "shopping list handle any gaps."
+                f"\n\nCurrent pantry/fridge/freezer inventory:\n{pantry_list}\n"
+                f"{expiring_block}"
+                "Plan the week to MAXIMISE use of what's already on hand. Lead with dishes that "
+                "draw heavily on this inventory before suggesting meals that require many new purchases. "
+                "Items expiring soon should appear in earlier-week meals."
             )
 
     system = (
         "You are a helpful meal planning assistant specialising in classic, time-tested home cooking. "
         "Only suggest traditional, well-established meals — no trendy, fusion, or novelty dishes. "
+        "Your top priority is to USE WHAT THE HOUSEHOLD ALREADY HAS, then their proven favourites, "
+        "then fresh suggestions that fit their preferences. "
         "Respond with ONLY a valid JSON object — no markdown, no code fences. "
         "The JSON must be an object with keys for each day of the week (Monday through Sunday). "
         "Each day is an object with keys: Breakfast, Lunch, Dinner, Snack. "
@@ -503,6 +634,7 @@ def generate_meal_plan(body: GenerateMealPlanRequest, db: Session = Depends(get_
         f"Create a weekly meal plan for the week of {body.week_start}.\n\n"
         f"Household preferences:\n{prefs_text}"
         f"{favorites_context}"
+        f"{history_context}"
         f"{pantry_context}"
     )
 
@@ -514,8 +646,8 @@ def generate_meal_plan(body: GenerateMealPlanRequest, db: Session = Depends(get_
             system=system,
             messages=[{"role": "user", "content": user_msg}],
         ) as s:
-            for text in s.text_stream:
-                yield f"data: {json.dumps({'text': text})}\n\n"
+            for chunk in s.text_stream:
+                yield f"data: {json.dumps({'text': chunk})}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(stream(), media_type="text/event-stream")
@@ -943,3 +1075,72 @@ def import_recipe_url(body: ImportRecipeURLRequest):
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+
+# ---------------------------------------------------------------------------
+# AI: Parse grocery receipt image into pantry items
+# ---------------------------------------------------------------------------
+
+@app.post("/ai/parse-receipt")
+async def parse_receipt(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    import anthropic
+
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(400, "Empty file")
+
+    mime = file.content_type or "image/jpeg"
+    if not mime.startswith("image/"):
+        raise HTTPException(400, "File must be an image (jpg/png/heic)")
+
+    b64 = base64.standard_b64encode(contents).decode("ascii")
+
+    system = (
+        "You extract grocery items from receipt photos for a kitchen pantry app. "
+        "Respond with ONLY a valid JSON array — no markdown, no code fences, no commentary. "
+        "Each element: {name (clean, lowercase singular noun), quantity (number, default 1), "
+        "unit (string, '' if a count), category (one of: Produce, Dairy, Meat, Pantry, Freezer, Beverages, Other)}. "
+        "Normalise names so they consolidate with existing pantry items "
+        "(e.g. 'GV WHL MILK 2L' → 'milk', 'BAN' → 'banana', 'CHKN BRST' → 'chicken breast'). "
+        "Skip tax, totals, store info, loyalty rewards, bag fees, and anything that isn't food/drink/household pantry. "
+        "If quantity isn't clear, use 1. If unit isn't clear, leave as ''."
+    )
+
+    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+    message = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=2000,
+        system=system,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}},
+                {"type": "text", "text": "Parse this grocery receipt into pantry items."},
+            ],
+        }],
+    )
+    raw = message.content[0].text
+    start = raw.find("[")
+    end = raw.rfind("]") + 1
+    if start == -1 or end == 0:
+        raise HTTPException(500, "Could not parse receipt response")
+    try:
+        items = json.loads(raw[start:end])
+    except Exception as e:
+        raise HTTPException(500, f"Invalid JSON from receipt parser: {e}")
+
+    cleaned = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        name = (it.get("name") or "").strip().lower()
+        if not name:
+            continue
+        cleaned.append({
+            "name": name,
+            "quantity": float(it.get("quantity") or 1),
+            "unit": (it.get("unit") or "").strip(),
+            "category": it.get("category") or "Other",
+        })
+    return {"items": cleaned}

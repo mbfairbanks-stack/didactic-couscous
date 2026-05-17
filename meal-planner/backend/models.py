@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Date, Boolean, Text, JSON
+from sqlalchemy import Column, Integer, String, Float, Date, DateTime, Boolean, Text, JSON
 from database import Base
 
 
@@ -16,6 +16,8 @@ class Recipe(Base):
     is_favorite = Column(Boolean, default=False)
     source = Column(String, nullable=True)      # "ai" | "manual"
     notes = Column(Text, nullable=True)
+    times_made = Column(Integer, default=0)
+    last_made = Column(Date, nullable=True)
 
 
 class PantryItem(Base):
@@ -39,6 +41,7 @@ class MealPlanEntry(Base):
     meal_type = Column(String, nullable=False)   # Breakfast, Lunch, Dinner, Snack
     recipe_id = Column(Integer, nullable=True)   # FK to recipes (optional)
     free_text = Column(String, nullable=True)    # free-form meal name
+    cooked_at = Column(DateTime, nullable=True)  # set when the meal was marked cooked
 
 
 class PrepTask(Base):
@@ -61,3 +64,4 @@ class HouseholdPreferences(Base):
     cuisine_preferences = Column(Text, default="")   # e.g. "Mexican, Italian, Asian"
     avoid = Column(Text, default="")                 # ingredients/meals to avoid
     notes = Column(Text, default="")                 # any other preferences
+    onboarding_done = Column(Boolean, default=False)

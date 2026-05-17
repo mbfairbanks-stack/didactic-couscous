@@ -39,9 +39,23 @@ export const deletePantryItem = (id) => req(`/pantry/${id}`, { method: "DELETE" 
 export const getMealPlan = (weekStart) => req(`/meal-plan?week_start=${weekStart}`);
 export const setMealPlanEntry = (body) => req("/meal-plan", { method: "POST", ...json(body) });
 export const deleteMealPlanEntry = (id) => req(`/meal-plan/${id}`, { method: "DELETE" });
+export const markMealCooked = (id) => req(`/meal-plan/${id}/cook`, { method: "POST" });
+export const unmarkMealCooked = (id) => req(`/meal-plan/${id}/uncook`, { method: "POST" });
 
 export const generateWeekRecipes = (weekStart) =>
   req("/ai/generate-week-recipes", { method: "POST", ...json({ week_start: weekStart }) });
+
+// Receipt parsing (returns { items: [...] })
+export async function parseReceipt(file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch(`/api/ai/parse-receipt`, { method: "POST", body: fd });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Receipt upload failed");
+  }
+  return res.json();
+}
 
 // Prep Tasks
 export const getPrepTasks = (weekStart) => req(`/prep-tasks?week_start=${weekStart}`);

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getPantry, createPantryItem, bulkCreatePantryItems, updatePantryItem, deletePantryItem } from "../api";
+import { getPantry, createPantryItem, bulkCreatePantryItems, updatePantryItem, deletePantryItem, parseReceipt } from "../api";
 
 const UNITS = ["lbs", "lb", "kg", "g", "oz", "cups", "cup", "cans", "can", "bottles", "bottle",
   "bags", "bag", "boxes", "box", "l", "ml", "tsp", "tbsp", "dozen", "pcs", "bunch", "jar", "jars", "loaf", "loaves"];
@@ -98,6 +98,10 @@ export default function Pantry() {
   const [bulkSaving, setBulkSaving] = useState(false);
   const [filterCategory, setFilterCategory] = useState("All");
   const [search, setSearch] = useState("");
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  const [receiptParsing, setReceiptParsing] = useState(false);
+  const [receiptItems, setReceiptItems] = useState([]);
+  const [receiptError, setReceiptError] = useState(null);
 
   const load = () => {
     setLoading(true);
@@ -182,6 +186,49 @@ export default function Pantry() {
 
   const removePreviewItem = (i) => setBulkPreview(bulkPreview.filter((_, idx) => idx !== i));
 
+  const handleReceiptFile = async (file) => {
+    if (!file) return;
+    setReceiptParsing(true);
+    setReceiptError(null);
+    setReceiptItems([]);
+    try {
+      const res = await parseReceipt(file);
+      setReceiptItems(res.items || []);
+    } catch (e) {
+      setReceiptError(e.message);
+    } finally {
+      setReceiptParsing(false);
+    }
+  };
+
+  const updateReceiptItem = (i, field, val) => {
+    const next = [...receiptItems];
+    next[i] = { ...next[i], [field]: val };
+    setReceiptItems(next);
+  };
+
+  const removeReceiptItem = (i) => setReceiptItems(receiptItems.filter((_, idx) => idx !== i));
+
+  const handleReceiptSave = async () => {
+    if (!receiptItems.length) return;
+    const payload = receiptItems.map((it) => ({
+      name: it.name,
+      quantity: parseFloat(it.quantity) || 1,
+      unit: it.unit || "",
+      category: it.category || "Other",
+      expiry_date: null,
+      notes: null,
+    }));
+    try {
+      await bulkCreatePantryItems(payload);
+      setReceiptOpen(false);
+      setReceiptItems([]);
+      load();
+    } catch (e) {
+      setReceiptError(e.message);
+    }
+  };
+
   const filtered = items.filter((item) => {
     const matchCat = filterCategory === "All" || item.category === filterCategory;
     const matchSearch = item.name.toLowerCase().includes(search.toLowerCase());
@@ -199,7 +246,13 @@ export default function Pantry() {
     <div>
       <div className="flex items-center justify-between mb-4 sm:mb-6 flex-wrap gap-2">
         <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Pantry</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={() => { setReceiptOpen(true); setReceiptItems([]); setReceiptError(null); setShowForm(false); setShowBulk(false); }}
+            className="border border-emerald-600 text-emerald-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-emerald-50"
+          >
+            📷 Receipt
+          </button>
           <button
             onClick={() => { setShowBulk(!showBulk); setShowForm(false); setBulkPreview([]); setBulkText(""); }}
             className="border border-green-600 text-green-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-green-50"
@@ -214,6 +267,80 @@ export default function Pantry() {
           </button>
         </div>
       </div>
+
+      {receiptOpen && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setReceiptOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b">
+              <h3 className="font-semibold text-stone-800">Upload Grocery Receipt</h3>
+              <button onClick={() => setReceiptOpen(false)} className="text-stone-400 text-2xl leading-none">×</button>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1">
+              {!receiptItems.length && !receiptParsing && (
+                <>
+                  <p className="text-sm text-stone-500 mb-3">Snap a photo of your receipt. We'll extract the items so you can review before adding to your pantry.</p>
+                  <label className="block">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={(e) => handleReceiptFile(e.target.files?.[0])}
+                      className="block w-full text-sm text-stone-600 file:mr-3 file:px-4 file:py-2 file:rounded-lg file:border file:border-emerald-300 file:bg-emerald-50 file:text-emerald-700 file:font-medium hover:file:bg-emerald-100"
+                    />
+                  </label>
+                  {receiptError && <p className="text-red-500 text-sm mt-3">{receiptError}</p>}
+                </>
+              )}
+              {receiptParsing && <p className="text-stone-500 text-sm">Parsing receipt with AI…</p>}
+              {!receiptParsing && receiptItems.length > 0 && (
+                <>
+                  <p className="text-xs text-stone-500 mb-2 uppercase tracking-wider font-semibold">Review ({receiptItems.length} items)</p>
+                  <div className="space-y-1.5">
+                    {receiptItems.map((it, i) => (
+                      <div key={i} className="flex gap-1.5 items-center">
+                        <input
+                          value={it.name}
+                          onChange={(e) => updateReceiptItem(i, "name", e.target.value)}
+                          className="flex-1 border border-stone-200 rounded px-2 py-1 text-sm"
+                        />
+                        <input
+                          value={it.quantity}
+                          onChange={(e) => updateReceiptItem(i, "quantity", e.target.value)}
+                          className="w-14 border border-stone-200 rounded px-2 py-1 text-sm"
+                        />
+                        <input
+                          value={it.unit}
+                          onChange={(e) => updateReceiptItem(i, "unit", e.target.value)}
+                          placeholder="unit"
+                          className="w-16 border border-stone-200 rounded px-2 py-1 text-sm"
+                        />
+                        <select
+                          value={it.category}
+                          onChange={(e) => updateReceiptItem(i, "category", e.target.value)}
+                          className="border border-stone-200 rounded px-1 py-1 text-xs"
+                        >
+                          {["Produce","Dairy","Meat","Pantry","Freezer","Beverages","Other"].map((c) => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                        </select>
+                        <button onClick={() => removeReceiptItem(i)} className="text-red-400 hover:text-red-600 text-sm px-1">×</button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+            {receiptItems.length > 0 && (
+              <div className="border-t px-4 py-3 flex justify-end gap-2">
+                <button onClick={() => setReceiptItems([])} className="text-sm text-stone-500 hover:text-stone-700 px-3 py-2">Start over</button>
+                <button onClick={handleReceiptSave} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700">
+                  Add {receiptItems.length} items
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Bulk Add Panel */}
       {showBulk && (
