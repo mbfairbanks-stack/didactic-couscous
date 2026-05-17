@@ -14,8 +14,36 @@ const EMPTY_FORM = {
 
 const ALL_TAGS = ["quick", "vegetarian", "vegan", "gluten-free", "dairy-free", "batch-cook", "slow-cooker", "one-pan"];
 
-const mealPhotoUrl = (title) =>
-  `https://loremflickr.com/600/300/${encodeURIComponent(title)},food,meal/all`;
+const RECIPE_THEMES = [
+  { kw: ["pasta","spaghetti","linguine","penne","fettuccine","rigatoni","noodle","tagliatelle"], emoji:"🍝", grad:"from-orange-100 to-amber-200" },
+  { kw: ["salad","slaw","coleslaw"], emoji:"🥗", grad:"from-green-100 to-emerald-200" },
+  { kw: ["soup","stew","chowder","broth","bisque","minestrone"], emoji:"🍲", grad:"from-amber-100 to-orange-200" },
+  { kw: ["curry","masala","korma","tikka","dahl","dal","lentil"], emoji:"🍛", grad:"from-yellow-100 to-orange-200" },
+  { kw: ["chicken","poultry","wing","thigh","drumstick"], emoji:"🍗", grad:"from-yellow-100 to-amber-200" },
+  { kw: ["beef","steak","burger","mince","brisket","meatball","bolognese"], emoji:"🥩", grad:"from-red-100 to-rose-200" },
+  { kw: ["pork","bacon","ham","sausage","chorizo","ribs"], emoji:"🥓", grad:"from-rose-100 to-red-200" },
+  { kw: ["fish","salmon","tuna","cod","trout","seafood","shrimp","prawn","crab","lobster"], emoji:"🐟", grad:"from-blue-100 to-cyan-200" },
+  { kw: ["pizza"], emoji:"🍕", grad:"from-red-100 to-orange-200" },
+  { kw: ["taco","burrito","quesadilla","enchilada","fajita"], emoji:"🌮", grad:"from-yellow-100 to-green-200" },
+  { kw: ["cake","cookie","brownie","muffin","dessert","chocolate","pudding","tart"], emoji:"🍰", grad:"from-pink-100 to-rose-200" },
+  { kw: ["bread","toast","sandwich","wrap","panini","baguette"], emoji:"🥪", grad:"from-amber-100 to-yellow-200" },
+  { kw: ["egg","omelette","frittata","quiche","scrambled","poached"], emoji:"🍳", grad:"from-yellow-100 to-amber-200" },
+  { kw: ["rice","fried rice","risotto","pilaf","paella","biryani"], emoji:"🍚", grad:"from-slate-100 to-gray-200" },
+  { kw: ["stir fry","stir-fry","wok","bok choy"], emoji:"🥘", grad:"from-emerald-100 to-teal-200" },
+  { kw: ["feta","cheese","halloumi","brie","parmesan","mozzarella"], emoji:"🧀", grad:"from-yellow-100 to-amber-200" },
+  { kw: ["tomato"], emoji:"🍅", grad:"from-red-100 to-orange-200" },
+  { kw: ["mushroom"], emoji:"🍄", grad:"from-stone-100 to-amber-100" },
+  { kw: ["avocado","guacamole"], emoji:"🥑", grad:"from-green-100 to-lime-200" },
+  { kw: ["pancake","waffle","crepe","french toast"], emoji:"🥞", grad:"from-amber-50 to-yellow-200" },
+];
+
+function recipeTheme(title) {
+  const lower = title.toLowerCase();
+  for (const t of RECIPE_THEMES) {
+    if (t.kw.some((k) => lower.includes(k))) return t;
+  }
+  return { emoji: "🍽️", grad: "from-stone-100 to-stone-200" };
+}
 
 function RecipeCard({ recipe, onEdit, onDelete, onToggleFavorite, pantryNames }) {
   const [expanded, setExpanded] = useState(false);
@@ -30,18 +58,14 @@ function RecipeCard({ recipe, onEdit, onDelete, onToggleFavorite, pantryNames })
                          "bg-stone-50 text-stone-500 border-stone-200";
   return (
     <div className={`bg-white rounded-2xl border shadow-sm overflow-hidden ${recipe.is_favorite ? "border-amber-300" : "border-stone-200"}`}>
-      <div className="relative h-32 bg-stone-100 overflow-hidden">
-        <img
-          src={mealPhotoUrl(recipe.title)}
-          alt={recipe.title}
-          className="w-full h-full object-cover"
-          loading="lazy"
-          onError={(e) => { e.currentTarget.parentElement.classList.add("hidden"); }}
-        />
-        {recipe.is_favorite && (
-          <span className="absolute top-2 right-2 text-lg drop-shadow">★</span>
-        )}
-      </div>
+      {(() => { const t = recipeTheme(recipe.title); return (
+        <div className={`h-28 bg-gradient-to-br ${t.grad} flex items-center justify-center relative`}>
+          <span className="text-5xl">{t.emoji}</span>
+          {recipe.is_favorite && (
+            <span className="absolute top-2 right-2 text-yellow-400 text-lg drop-shadow">★</span>
+          )}
+        </div>
+      ); })()}
       <div className="p-4">
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">

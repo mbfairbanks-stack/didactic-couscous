@@ -7,8 +7,32 @@ const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
 const MEAL_TYPES = ["Breakfast", "Lunch", "Dinner", "Snack"];
 const SKIP = "__skip__";
 
-const mealPhotoUrl = (title) =>
-  `https://loremflickr.com/120/120/${encodeURIComponent(title)},food,meal/all`;
+const RECIPE_THEMES = [
+  { kw: ["pasta","spaghetti","linguine","penne","fettuccine","rigatoni","noodle"], emoji:"🍝" },
+  { kw: ["salad","slaw"], emoji:"🥗" },
+  { kw: ["soup","stew","chowder","broth","bisque"], emoji:"🍲" },
+  { kw: ["curry","masala","korma","tikka","dahl","dal","lentil"], emoji:"🍛" },
+  { kw: ["chicken","poultry","wing","thigh","drumstick"], emoji:"🍗" },
+  { kw: ["beef","steak","burger","mince","brisket","meatball","bolognese"], emoji:"🥩" },
+  { kw: ["pork","bacon","ham","sausage","chorizo"], emoji:"🥓" },
+  { kw: ["fish","salmon","tuna","cod","trout","seafood","shrimp","prawn"], emoji:"🐟" },
+  { kw: ["pizza"], emoji:"🍕" },
+  { kw: ["taco","burrito","quesadilla","enchilada"], emoji:"🌮" },
+  { kw: ["cake","cookie","brownie","dessert","chocolate","pudding"], emoji:"🍰" },
+  { kw: ["bread","toast","sandwich","wrap"], emoji:"🥪" },
+  { kw: ["egg","omelette","frittata","quiche","scrambled"], emoji:"🍳" },
+  { kw: ["rice","risotto","pilaf","paella","biryani"], emoji:"🍚" },
+  { kw: ["pancake","waffle","crepe"], emoji:"🥞" },
+  { kw: ["avocado","guacamole"], emoji:"🥑" },
+];
+
+function mealEmoji(title) {
+  const lower = (title || "").toLowerCase();
+  for (const t of RECIPE_THEMES) {
+    if (t.kw.some((k) => lower.includes(k))) return t.emoji;
+  }
+  return "🍽️";
+}
 
 function getMonday(d) {
   const dt = new Date(d);
@@ -521,13 +545,7 @@ export default function MealPlan() {
                     className={`w-full flex items-center rounded-xl border px-4 py-3.5 transition-colors ${isMoveSrc ? "border-blue-300 bg-blue-50" : entryClass(entry)} ${moveMode && !isMoveSrc ? "border-dashed border-blue-300 cursor-pointer" : ""}`}
                   >
                     {entry && !isSkipped(entry) && entry.recipe_id && (
-                      <img
-                        src={mealPhotoUrl(entry.label)}
-                        alt={entry.label}
-                        className="w-12 h-12 rounded-lg object-cover shrink-0 mr-3"
-                        loading="lazy"
-                        onError={(e) => { e.currentTarget.style.display = "none"; }}
-                      />
+                      <span className="text-2xl shrink-0 mr-3 leading-none">{mealEmoji(entry.label)}</span>
                     )}
                     <div
                       className="flex-1 text-left cursor-pointer"
