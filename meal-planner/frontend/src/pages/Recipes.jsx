@@ -59,10 +59,10 @@ function RecipeCard({ recipe, onEdit, onDelete, onToggleFavorite, pantryNames })
   return (
     <div className={`bg-white rounded-2xl border shadow-sm overflow-hidden ${recipe.is_favorite ? "border-amber-300" : "border-stone-200"}`}>
       {(() => { const t = recipeTheme(recipe.title); return (
-        <div className={`h-28 bg-gradient-to-br ${t.grad} flex items-center justify-center relative`}>
-          <span className="text-5xl">{t.emoji}</span>
+        <div className={`h-12 bg-gradient-to-r ${t.grad} flex items-center px-4 gap-2 relative`}>
+          <span className="text-xl">{t.emoji}</span>
           {recipe.is_favorite && (
-            <span className="absolute top-2 right-2 text-yellow-400 text-lg drop-shadow">★</span>
+            <span className="absolute right-3 text-yellow-400 text-sm drop-shadow">★</span>
           )}
         </div>
       ); })()}
