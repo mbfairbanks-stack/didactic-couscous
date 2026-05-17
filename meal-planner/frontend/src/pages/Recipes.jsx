@@ -15,7 +15,7 @@ const EMPTY_FORM = {
 const ALL_TAGS = ["quick", "vegetarian", "vegan", "gluten-free", "dairy-free", "batch-cook", "slow-cooker", "one-pan"];
 
 const mealPhotoUrl = (title) =>
-  `https://source.unsplash.com/featured/600x300/?${encodeURIComponent(title + " food dish meal")}`;
+  `https://loremflickr.com/600/300/${encodeURIComponent(title)},food,meal/all`;
 
 function RecipeCard({ recipe, onEdit, onDelete, onToggleFavorite, pantryNames }) {
   const [expanded, setExpanded] = useState(false);
@@ -627,7 +627,7 @@ export default function Recipes() {
           {favorites.length > 0 && (
             <div>
               <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Favorites</h3>
-              <div className="grid sm:grid-cols-2 gap-3">
+              <div className="grid sm:grid-cols-2 gap-3 items-start">
                 {favorites.map((r) => (
                   <RecipeCard
                     key={r.id}
@@ -646,7 +646,7 @@ export default function Recipes() {
               {favorites.length > 0 && (
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">All Recipes</h3>
               )}
-              <div className="grid sm:grid-cols-2 gap-3">
+              <div className="grid sm:grid-cols-2 gap-3 items-start">
                 {rest.map((r) => (
                   <RecipeCard
                     key={r.id}

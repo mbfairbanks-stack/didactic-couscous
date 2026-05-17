@@ -8,7 +8,7 @@ const MEAL_TYPES = ["Breakfast", "Lunch", "Dinner", "Snack"];
 const SKIP = "__skip__";
 
 const mealPhotoUrl = (title) =>
-  `https://source.unsplash.com/featured/120x120/?${encodeURIComponent(title + " food dish meal")}`;
+  `https://loremflickr.com/120/120/${encodeURIComponent(title)},food,meal/all`;
 
 function getMonday(d) {
   const dt = new Date(d);
