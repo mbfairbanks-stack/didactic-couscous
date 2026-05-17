@@ -653,8 +653,8 @@ export default function MealPlan() {
           </div>
 
           {/* ── DESKTOP VIEW ── */}
-          <div className="hidden sm:block overflow-x-auto">
-            <table className="w-full border-collapse min-w-[700px] table-fixed">
+          <div className="hidden sm:block">
+            <table className="w-full border-collapse table-fixed">
               <thead>
                 <tr>
                   <th className="w-24 pb-2 pr-2" />
