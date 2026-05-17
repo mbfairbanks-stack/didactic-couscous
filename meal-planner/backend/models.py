@@ -65,3 +65,4 @@ class HouseholdPreferences(Base):
     avoid = Column(Text, default="")                 # ingredients/meals to avoid
     notes = Column(Text, default="")                 # any other preferences
     onboarding_done = Column(Boolean, default=False)
+    week_start_day = Column(String, default="Monday")
