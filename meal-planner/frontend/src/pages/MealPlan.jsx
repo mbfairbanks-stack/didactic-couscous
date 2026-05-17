@@ -3,7 +3,6 @@ import { getMealPlan, setMealPlanEntry, deleteMealPlanEntry, getRecipes, getPref
 import { format, addDays, addWeeks, subWeeks } from "date-fns";
 import { Link, useNavigate } from "react-router-dom";
 
-const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const MEAL_TYPES = ["Breakfast", "Lunch", "Dinner", "Snack"];
 const SKIP = "__skip__";
 
@@ -34,20 +33,32 @@ function mealEmoji(title) {
   return "🍽️";
 }
 
-function getMonday(d) {
+const ALL_DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+
+function getWeekStart(d, startDay = "Monday") {
   const dt = new Date(d);
-  const day = dt.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  dt.setDate(dt.getDate() + diff);
+  const jsDay = dt.getDay(); // 0=Sun … 6=Sat
+  const startIdx = ALL_DAYS.indexOf(startDay); // 0=Mon … 6=Sun in our array
+  // Convert our array index to JS day index (Mon=1 … Sat=6, Sun=0)
+  const startJs = startIdx === 6 ? 0 : startIdx + 1;
+  let diff = jsDay - startJs;
+  if (diff < 0) diff += 7;
+  dt.setDate(dt.getDate() - diff);
   dt.setHours(0, 0, 0, 0);
   return dt;
 }
 
 function toYMD(d) { return format(d, "yyyy-MM-dd"); }
 
+function getDaysFrom(startDay) {
+  const idx = ALL_DAYS.indexOf(startDay);
+  if (idx <= 0) return ALL_DAYS;
+  return [...ALL_DAYS.slice(idx), ...ALL_DAYS.slice(0, idx)];
+}
+
 function getTodayDayName() {
-  const js = new Date().getDay(); // 0=Sun
-  return DAYS[js === 0 ? 6 : js - 1];
+  const js = new Date().getDay();
+  return ALL_DAYS[js === 0 ? 6 : js - 1];
 }
 
 function matchRecipe(text, recipes) {
@@ -202,7 +213,8 @@ function RecipeSheet({ recipe, onClose }) {
 
 export default function MealPlan() {
   const navigate = useNavigate();
-  const [weekStart, setWeekStart] = useState(getMonday(new Date()));
+  const [weekStartDay, setWeekStartDay] = useState("Monday");
+  const [weekStart, setWeekStart] = useState(getWeekStart(new Date(), "Monday"));
   const [selectedDay, setSelectedDay] = useState(getTodayDayName());
   const [entries, setEntries] = useState([]);
   const [recipes, setRecipes] = useState([]);
@@ -231,7 +243,12 @@ export default function MealPlan() {
   const load = () => {
     setLoading(true);
     Promise.all([getMealPlan(weekKey), getRecipes(), getPreferences()])
-      .then(([plan, recs, prefs]) => { setEntries(plan); setRecipes(recs); setPreferences(prefs); })
+      .then(([plan, recs, prefs]) => {
+        setEntries(plan); setRecipes(recs); setPreferences(prefs);
+        const sday = prefs?.week_start_day || "Monday";
+        setWeekStartDay(sday);
+        setWeekStart((prev) => getWeekStart(prev, sday));
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   };
@@ -286,9 +303,10 @@ export default function MealPlan() {
   };
 
   const favorites = recipes.filter((r) => r.is_favorite);
+  const DAYS = getDaysFrom(weekStartDay);
   const prevWeek = () => setWeekStart(subWeeks(weekStart, 1));
   const nextWeek = () => setWeekStart(addWeeks(weekStart, 1));
-  const thisWeek = () => setWeekStart(getMonday(new Date()));
+  const thisWeek = () => setWeekStart(getWeekStart(new Date(), weekStartDay));
 
   const handleRefreshSlot = (day, mealType) => {
     const key = `${day}-${mealType}`;

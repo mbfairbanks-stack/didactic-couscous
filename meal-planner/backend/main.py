@@ -26,6 +26,7 @@ def _ensure_columns():
         ],
         "household_preferences": [
             ("onboarding_done", "BOOLEAN DEFAULT 0"),
+            ("week_start_day", "VARCHAR DEFAULT 'Monday'"),
         ],
     }
     insp = inspect(engine)
@@ -168,6 +169,7 @@ class HouseholdPreferencesSchema(BaseModel):
     avoid: Optional[str] = None
     notes: Optional[str] = None
     onboarding_done: Optional[bool] = None
+    week_start_day: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------

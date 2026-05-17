@@ -7,6 +7,7 @@ const EMPTY = {
   cuisine_preferences: "",
   avoid: "",
   notes: "",
+  week_start_day: "Monday",
 };
 
 export default function Preferences() {
@@ -24,6 +25,7 @@ export default function Preferences() {
         cuisine_preferences: p.cuisine_preferences ?? "",
         avoid: p.avoid ?? "",
         notes: p.notes ?? "",
+        week_start_day: p.week_start_day ?? "Monday",
       }))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -118,6 +120,19 @@ export default function Preferences() {
             hint: "Anything else — budget, time constraints, cooking skill, etc.",
             placeholder: "e.g. prefer quick weeknight dinners (under 45 min), batch cook on Sundays",
           })}
+
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1">Week starts on</label>
+            <select
+              value={form.week_start_day}
+              onChange={(e) => setForm({ ...form, week_start_day: e.target.value })}
+              className="border rounded-lg px-3 py-2 text-sm w-48"
+            >
+              {["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"].map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+          </div>
 
           <div className="flex items-center gap-3 pt-2">
             <button
