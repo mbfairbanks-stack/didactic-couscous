@@ -654,7 +654,7 @@ export default function MealPlan() {
 
           {/* ── DESKTOP VIEW ── */}
           <div className="hidden sm:block overflow-x-auto">
-            <table className="w-full border-collapse min-w-[700px]">
+            <table className="w-full border-collapse min-w-[700px] table-fixed">
               <thead>
                 <tr>
                   <th className="w-24 pb-2 pr-2" />
@@ -698,12 +698,12 @@ export default function MealPlan() {
                           >
                             <button
                               onClick={() => setActiveCell(isActive ? null : { day, meal_type: mealType })}
-                              className={`w-full min-h-[52px] text-left rounded-lg border px-2 py-1.5 text-xs transition-all ${entryClass(entry)} hover:opacity-80 ${entry ? "cursor-grab active:cursor-grabbing" : ""} ${isActive ? "ring-2 ring-green-400" : ""} ${dragTarget?.day === day && dragTarget?.mealType === mealType ? "ring-2 ring-blue-400 !bg-blue-50" : ""}`}
+                              className={`w-full min-h-[52px] text-left rounded-lg border px-2 py-1.5 text-xs transition-all overflow-hidden ${entryClass(entry)} hover:opacity-80 ${entry ? "cursor-grab active:cursor-grabbing" : ""} ${isActive ? "ring-2 ring-green-400" : ""} ${dragTarget?.day === day && dragTarget?.mealType === mealType ? "ring-2 ring-blue-400 !bg-blue-50" : ""}`}
                             >
                               {isSkipped(entry) ? (
                                 <span className="line-through text-stone-400 italic text-xs">Skipped</span>
                               ) : entry ? (
-                                <span className={`flex items-start gap-1 ${isCooked(entry) ? "line-through opacity-70" : ""}`}>
+                                <span className={`flex items-start gap-1 min-w-0 ${isCooked(entry) ? "line-through opacity-70" : ""}`}>
                                   {isFav && <span className="text-amber-400 shrink-0">★</span>}
                                   {isCooked(entry) && <span className="text-emerald-500 shrink-0">✓</span>}
                                   {isRefreshing ? (
@@ -711,7 +711,7 @@ export default function MealPlan() {
                                   ) : entry.recipe_id ? (
                                     <button
                                       onClick={(e) => { e.stopPropagation(); setRecipeSheet(recipes.find((r) => r.id === entry.recipe_id)); }}
-                                      className="hover:underline text-left leading-tight"
+                                      className="hover:underline text-left leading-tight truncate block max-w-full"
                                     >
                                       {entry.label}
                                     </button>
