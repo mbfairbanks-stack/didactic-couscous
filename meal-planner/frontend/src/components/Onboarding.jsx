@@ -4,21 +4,24 @@ import { bulkCreatePantryItems, updatePreferences } from "../api";
 const STEPS = [
   {
     key: "Pantry",
-    title: "Pantry staples",
-    blurb: "Dry goods, oils, spices, canned items — anything that lives in cupboards.",
-    placeholder: "olive oil 500ml\nrice 2kg\nblack beans 2 cans\npasta 500g\nsalt\npepper\nflour 1kg",
+    title: "Pantry",
+    icon: "📦",
+    blurb: "Dry goods, oils, spices, canned items.",
+    placeholder: "olive oil 500 ml\nrice 2 kg\nblack beans 2 cans\npasta 500 g\nsalt\npepper",
   },
   {
     key: "Dairy",
     title: "Fridge",
-    blurb: "Dairy, eggs, condiments, fresh produce, leftovers.",
-    placeholder: "milk 2L\neggs 12\nbutter 250g\nyogurt\ncheddar 200g\nlettuce 1 head\ntomatoes 4",
+    icon: "🧊",
+    blurb: "Dairy, eggs, condiments, fresh produce.",
+    placeholder: "milk 2 L\neggs 12\nbutter 250 g\nyogurt\ncheddar 200 g\ntomato 4",
   },
   {
     key: "Freezer",
     title: "Freezer",
-    blurb: "Meats, frozen veg, batch-cooked meals.",
-    placeholder: "chicken breast 1kg\nground beef 500g\nfrozen peas 500g\nfrozen berries 400g",
+    icon: "❄️",
+    blurb: "Meats, frozen veg, batch meals.",
+    placeholder: "chicken breast 1 kg\nground beef 500 g\nfrozen peas 500 g",
   },
 ];
 
@@ -50,6 +53,9 @@ export default function Onboarding({ onDone }) {
   const [error, setError] = useState(null);
 
   const step = STEPS[stepIdx];
+  const itemCount = (i) =>
+    texts[i].split("\n").map((l) => l.trim()).filter(Boolean).length;
+  const totalItems = itemCount(0) + itemCount(1) + itemCount(2);
 
   const setText = (val) => {
     const next = [...texts];
@@ -66,21 +72,11 @@ export default function Onboarding({ onDone }) {
         ...parseLines(texts[1], "Dairy"),
         ...parseLines(texts[2], "Freezer"),
       ];
-      if (all.length > 0) {
-        await bulkCreatePantryItems(all);
-      }
-      await updatePreferences({
-        servings: 4,
-        dietary_restrictions: "",
-        cuisine_preferences: "",
-        avoid: "",
-        notes: "",
-        onboarding_done: true,
-      });
+      if (all.length > 0) await bulkCreatePantryItems(all);
+      await updatePreferences({ onboarding_done: true });
       onDone();
     } catch (e) {
       setError(e.message);
-    } finally {
       setSaving(false);
     }
   };
@@ -88,14 +84,7 @@ export default function Onboarding({ onDone }) {
   const skip = async () => {
     setSaving(true);
     try {
-      await updatePreferences({
-        servings: 4,
-        dietary_restrictions: "",
-        cuisine_preferences: "",
-        avoid: "",
-        notes: "",
-        onboarding_done: true,
-      });
+      await updatePreferences({ onboarding_done: true });
       onDone();
     } catch (e) {
       setError(e.message);
@@ -104,57 +93,113 @@ export default function Onboarding({ onDone }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-stone-900/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[92vh] overflow-hidden flex flex-col">
-        <div className="px-6 pt-6 pb-3">
-          <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider">Welcome</p>
-          <h2 className="text-xl font-bold text-stone-800 mt-0.5">Let's stock your kitchen</h2>
-          <p className="text-sm text-stone-500 mt-1">
-            Tell us what you already have so meal plans use it up first. Paste a list — one item per line.
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="onboarding-title"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/70 backdrop-blur-sm"
+    >
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[92vh] overflow-hidden flex flex-col">
+        {/* Hero */}
+        <div className="bg-gradient-to-br from-emerald-600 to-emerald-700 px-6 pt-7 pb-5 text-white">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-white/15 flex items-center justify-center text-2xl backdrop-blur-sm">
+              🍳
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-widest text-emerald-100">Welcome</p>
+              <h2 id="onboarding-title" className="text-xl font-bold leading-tight">
+                Let's stock your kitchen
+              </h2>
+            </div>
+          </div>
+          <p className="text-sm text-emerald-50/90 mt-3 leading-relaxed">
+            Tell Sous Chef what you already have — meal plans use it first.
           </p>
-          <div className="flex gap-1 mt-3">
-            {STEPS.map((s, i) => (
+        </div>
+
+        {/* Stepper */}
+        <div className="flex border-b border-stone-100 bg-stone-50/50">
+          {STEPS.map((s, i) => {
+            const active = i === stepIdx;
+            const filled = itemCount(i) > 0;
+            return (
               <button
                 key={s.key}
                 onClick={() => setStepIdx(i)}
-                className={`flex-1 text-xs font-medium pb-2 border-b-2 transition-colors ${
-                  i === stepIdx ? "border-emerald-600 text-emerald-700" : "border-stone-200 text-stone-400 hover:text-stone-600"
+                className={`flex-1 px-2 py-3 text-center transition-colors ${
+                  active ? "bg-white" : "hover:bg-stone-50"
                 }`}
               >
-                {i + 1}. {s.title}
+                <div className="flex items-center justify-center gap-1.5">
+                  <span className={`text-base ${active ? "" : "opacity-50"}`}>{s.icon}</span>
+                  <span className={`text-xs font-semibold ${active ? "text-stone-800" : "text-stone-400"}`}>
+                    {s.title}
+                  </span>
+                  {filled && (
+                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full">
+                      {itemCount(i)}
+                    </span>
+                  )}
+                </div>
+                <div className={`h-0.5 mt-2 rounded-full transition-colors ${active ? "bg-emerald-500" : "bg-transparent"}`} />
               </button>
-            ))}
-          </div>
+            );
+          })}
         </div>
-        <div className="px-6 py-3 flex-1 overflow-y-auto">
-          <p className="text-sm text-stone-600 mb-2">{step.blurb}</p>
+
+        {/* Body */}
+        <div className="px-6 py-5 flex-1 overflow-y-auto">
+          <p className="text-sm text-stone-600 mb-3">{step.blurb}</p>
           <textarea
             value={texts[stepIdx]}
             onChange={(e) => setText(e.target.value)}
             placeholder={step.placeholder}
-            rows={10}
-            className="w-full border border-stone-200 rounded-xl p-3 text-sm font-mono focus:outline-none focus:border-emerald-400"
+            rows={9}
+            spellCheck={false}
+            className="w-full border border-stone-200 rounded-xl p-3 text-sm font-mono focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 placeholder:text-stone-300"
           />
-          <p className="text-xs text-stone-400 mt-1">
-            Tip: <code>name amount unit</code> per line (e.g. "olive oil 500 ml"). Just a name works too.
+          <p className="text-xs text-stone-400 mt-2">
+            One per line · format: <code className="bg-stone-100 px-1 rounded">name amount unit</code>
           </p>
         </div>
-        {error && <p className="text-red-500 text-sm px-6 pb-2">{error}</p>}
-        <div className="border-t px-6 py-3 flex items-center justify-between bg-stone-50">
-          <button onClick={skip} className="text-sm text-stone-500 hover:text-stone-700">Skip for now</button>
-          <div className="flex gap-2">
+
+        {error && (
+          <p className="text-red-500 text-sm px-6 pb-2">{error}</p>
+        )}
+
+        {/* Footer */}
+        <div className="border-t border-stone-100 px-5 py-3 flex items-center justify-between bg-stone-50/50">
+          <button
+            onClick={skip}
+            disabled={saving}
+            className="text-sm text-stone-500 hover:text-stone-700 px-2 py-2 disabled:opacity-50"
+          >
+            Skip for now
+          </button>
+          <div className="flex items-center gap-1.5">
             {stepIdx > 0 && (
-              <button onClick={() => setStepIdx(stepIdx - 1)} className="text-sm text-stone-600 hover:text-stone-800 px-3 py-2">
-                Back
+              <button
+                onClick={() => setStepIdx(stepIdx - 1)}
+                className="text-sm font-medium text-stone-700 hover:bg-stone-100 px-3 py-2 rounded-lg"
+              >
+                ← Back
               </button>
             )}
             {stepIdx < STEPS.length - 1 ? (
-              <button onClick={() => setStepIdx(stepIdx + 1)} className="bg-stone-800 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-stone-900">
-                Next
+              <button
+                onClick={() => setStepIdx(stepIdx + 1)}
+                className="bg-stone-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-stone-800"
+              >
+                Next →
               </button>
             ) : (
-              <button onClick={finish} disabled={saving} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-60">
-                {saving ? "Saving…" : "Finish"}
+              <button
+                onClick={finish}
+                disabled={saving}
+                className="bg-emerald-600 text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-60 shadow-sm shadow-emerald-600/30"
+              >
+                {saving ? "Saving…" : totalItems > 0 ? `Add ${totalItems} items` : "Finish"}
               </button>
             )}
           </div>
