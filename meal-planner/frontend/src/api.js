@@ -45,17 +45,19 @@ export const unmarkMealCooked = (id) => req(`/meal-plan/${id}/uncook`, { method:
 export const generateWeekRecipes = (weekStart) =>
   req("/ai/generate-week-recipes", { method: "POST", ...json({ week_start: weekStart }) });
 
-// Receipt parsing (returns { items: [...] })
-export async function parseReceipt(file) {
+// Photo/receipt parsing (returns { items: [...] })
+async function uploadImageForItems(url, file) {
   const fd = new FormData();
   fd.append("file", file);
-  const res = await fetch(`/api/ai/parse-receipt`, { method: "POST", body: fd });
+  const res = await fetch(url, { method: "POST", body: fd });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || "Receipt upload failed");
+    throw new Error(err.detail || "Upload failed");
   }
   return res.json();
 }
+export const parseReceipt = (file) => uploadImageForItems(`/api/ai/parse-receipt`, file);
+export const scanPantryPhoto = (file) => uploadImageForItems(`/api/ai/scan-pantry-photo`, file);
 
 // Prep Tasks
 export const getPrepTasks = (weekStart) => req(`/prep-tasks?week_start=${weekStart}`);

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getPantry, createPantryItem, bulkCreatePantryItems, updatePantryItem, deletePantryItem, parseReceipt } from "../api";
+import { getPantry, createPantryItem, bulkCreatePantryItems, updatePantryItem, deletePantryItem, parseReceipt, scanPantryPhoto } from "../api";
 
 const UNITS = ["lbs", "lb", "kg", "g", "oz", "cups", "cup", "cans", "can", "bottles", "bottle",
   "bags", "bag", "boxes", "box", "l", "ml", "tsp", "tbsp", "dozen", "pcs", "bunch", "jar", "jars", "loaf", "loaves"];
@@ -98,10 +98,11 @@ export default function Pantry() {
   const [bulkSaving, setBulkSaving] = useState(false);
   const [filterCategory, setFilterCategory] = useState("All");
   const [search, setSearch] = useState("");
-  const [receiptOpen, setReceiptOpen] = useState(false);
-  const [receiptParsing, setReceiptParsing] = useState(false);
-  const [receiptItems, setReceiptItems] = useState([]);
-  const [receiptError, setReceiptError] = useState(null);
+  const [photoOpen, setPhotoOpen] = useState(false);
+  const [photoMode, setPhotoMode] = useState(null); // "receipt" | "scan" | null
+  const [photoParsing, setPhotoParsing] = useState(false);
+  const [photoItems, setPhotoItems] = useState([]);
+  const [photoError, setPhotoError] = useState(null);
 
   const load = () => {
     setLoading(true);
@@ -186,32 +187,33 @@ export default function Pantry() {
 
   const removePreviewItem = (i) => setBulkPreview(bulkPreview.filter((_, idx) => idx !== i));
 
-  const handleReceiptFile = async (file) => {
-    if (!file) return;
-    setReceiptParsing(true);
-    setReceiptError(null);
-    setReceiptItems([]);
+  const handlePhotoFile = async (file) => {
+    if (!file || !photoMode) return;
+    setPhotoParsing(true);
+    setPhotoError(null);
+    setPhotoItems([]);
     try {
-      const res = await parseReceipt(file);
-      setReceiptItems(res.items || []);
+      const fn = photoMode === "receipt" ? parseReceipt : scanPantryPhoto;
+      const res = await fn(file);
+      setPhotoItems(res.items || []);
     } catch (e) {
-      setReceiptError(e.message);
+      setPhotoError(e.message);
     } finally {
-      setReceiptParsing(false);
+      setPhotoParsing(false);
     }
   };
 
-  const updateReceiptItem = (i, field, val) => {
-    const next = [...receiptItems];
+  const updatePhotoItem = (i, field, val) => {
+    const next = [...photoItems];
     next[i] = { ...next[i], [field]: val };
-    setReceiptItems(next);
+    setPhotoItems(next);
   };
 
-  const removeReceiptItem = (i) => setReceiptItems(receiptItems.filter((_, idx) => idx !== i));
+  const removePhotoItem = (i) => setPhotoItems(photoItems.filter((_, idx) => idx !== i));
 
-  const handleReceiptSave = async () => {
-    if (!receiptItems.length) return;
-    const payload = receiptItems.map((it) => ({
+  const handlePhotoSave = async () => {
+    if (!photoItems.length) return;
+    const payload = photoItems.map((it) => ({
       name: it.name,
       quantity: parseFloat(it.quantity) || 1,
       unit: it.unit || "",
@@ -221,12 +223,20 @@ export default function Pantry() {
     }));
     try {
       await bulkCreatePantryItems(payload);
-      setReceiptOpen(false);
-      setReceiptItems([]);
+      setPhotoOpen(false);
+      setPhotoMode(null);
+      setPhotoItems([]);
       load();
     } catch (e) {
-      setReceiptError(e.message);
+      setPhotoError(e.message);
     }
+  };
+
+  const closePhoto = () => {
+    setPhotoOpen(false);
+    setPhotoMode(null);
+    setPhotoItems([]);
+    setPhotoError(null);
   };
 
   const filtered = items.filter((item) => {
@@ -248,10 +258,10 @@ export default function Pantry() {
         <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Pantry</h1>
         <div className="flex gap-2 flex-wrap">
           <button
-            onClick={() => { setReceiptOpen(true); setReceiptItems([]); setReceiptError(null); setShowForm(false); setShowBulk(false); }}
+            onClick={() => { setPhotoOpen(true); setPhotoMode(null); setPhotoItems([]); setPhotoError(null); setShowForm(false); setShowBulk(false); }}
             className="border border-emerald-600 text-emerald-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-emerald-50"
           >
-            📷 Receipt
+            📷 Photo
           </button>
           <button
             onClick={() => { setShowBulk(!showBulk); setShowForm(false); setBulkPreview([]); setBulkText(""); }}
@@ -268,73 +278,105 @@ export default function Pantry() {
         </div>
       </div>
 
-      {receiptOpen && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setReceiptOpen(false)}>
+      {photoOpen && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={closePhoto}>
           <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-4 py-3 border-b">
-              <h3 className="font-semibold text-stone-800">Upload Grocery Receipt</h3>
-              <button onClick={() => setReceiptOpen(false)} className="text-stone-400 text-2xl leading-none">×</button>
+              <h3 className="font-semibold text-stone-800">
+                {photoMode === "receipt" ? "Upload Receipt" : photoMode === "scan" ? "Scan Pantry / Fridge" : "Add via Photo"}
+              </h3>
+              <button onClick={closePhoto} className="text-stone-400 text-2xl leading-none">×</button>
             </div>
             <div className="p-4 overflow-y-auto flex-1">
-              {!receiptItems.length && !receiptParsing && (
+              {!photoMode && (
                 <>
-                  <p className="text-sm text-stone-500 mb-3">Snap a photo of your receipt. We'll extract the items so you can review before adding to your pantry.</p>
+                  <p className="text-sm text-stone-500 mb-4">What kind of photo are you uploading?</p>
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => setPhotoMode("scan")}
+                      className="w-full text-left p-4 rounded-xl border border-stone-200 hover:border-emerald-400 hover:bg-emerald-50 transition-colors"
+                    >
+                      <p className="font-semibold text-stone-800">📸 Pantry / Fridge photo</p>
+                      <p className="text-xs text-stone-500 mt-0.5">Snap your shelf, fridge, or freezer. AI lists what it sees.</p>
+                    </button>
+                    <button
+                      onClick={() => setPhotoMode("receipt")}
+                      className="w-full text-left p-4 rounded-xl border border-stone-200 hover:border-emerald-400 hover:bg-emerald-50 transition-colors"
+                    >
+                      <p className="font-semibold text-stone-800">🧾 Grocery receipt</p>
+                      <p className="text-xs text-stone-500 mt-0.5">Snap your receipt to log what you bought.</p>
+                    </button>
+                  </div>
+                </>
+              )}
+              {photoMode && !photoItems.length && !photoParsing && (
+                <>
+                  <p className="text-sm text-stone-500 mb-3">
+                    {photoMode === "receipt"
+                      ? "Snap a photo of your receipt — we'll extract the line items."
+                      : "Point your camera at your pantry, fridge, or freezer. Items get easier to identify when packaging labels face the camera."}
+                  </p>
                   <label className="block">
                     <input
                       type="file"
                       accept="image/*"
                       capture="environment"
-                      onChange={(e) => handleReceiptFile(e.target.files?.[0])}
+                      onChange={(e) => handlePhotoFile(e.target.files?.[0])}
                       className="block w-full text-sm text-stone-600 file:mr-3 file:px-4 file:py-2 file:rounded-lg file:border file:border-emerald-300 file:bg-emerald-50 file:text-emerald-700 file:font-medium hover:file:bg-emerald-100"
                     />
                   </label>
-                  {receiptError && <p className="text-red-500 text-sm mt-3">{receiptError}</p>}
+                  <button onClick={() => setPhotoMode(null)} className="text-xs text-stone-500 hover:text-stone-700 mt-3">← Change type</button>
+                  {photoError && <p className="text-red-500 text-sm mt-3">{photoError}</p>}
                 </>
               )}
-              {receiptParsing && <p className="text-stone-500 text-sm">Parsing receipt with AI…</p>}
-              {!receiptParsing && receiptItems.length > 0 && (
+              {photoParsing && (
+                <p className="text-stone-500 text-sm">
+                  {photoMode === "receipt" ? "Parsing receipt" : "Identifying items"} with AI…
+                </p>
+              )}
+              {!photoParsing && photoItems.length > 0 && (
                 <>
-                  <p className="text-xs text-stone-500 mb-2 uppercase tracking-wider font-semibold">Review ({receiptItems.length} items)</p>
+                  <p className="text-xs text-stone-500 mb-2 uppercase tracking-wider font-semibold">Review ({photoItems.length} items)</p>
                   <div className="space-y-1.5">
-                    {receiptItems.map((it, i) => (
+                    {photoItems.map((it, i) => (
                       <div key={i} className="flex gap-1.5 items-center">
                         <input
                           value={it.name}
-                          onChange={(e) => updateReceiptItem(i, "name", e.target.value)}
+                          onChange={(e) => updatePhotoItem(i, "name", e.target.value)}
                           className="flex-1 border border-stone-200 rounded px-2 py-1 text-sm"
                         />
                         <input
                           value={it.quantity}
-                          onChange={(e) => updateReceiptItem(i, "quantity", e.target.value)}
+                          onChange={(e) => updatePhotoItem(i, "quantity", e.target.value)}
                           className="w-14 border border-stone-200 rounded px-2 py-1 text-sm"
                         />
                         <input
                           value={it.unit}
-                          onChange={(e) => updateReceiptItem(i, "unit", e.target.value)}
+                          onChange={(e) => updatePhotoItem(i, "unit", e.target.value)}
                           placeholder="unit"
                           className="w-16 border border-stone-200 rounded px-2 py-1 text-sm"
                         />
                         <select
                           value={it.category}
-                          onChange={(e) => updateReceiptItem(i, "category", e.target.value)}
+                          onChange={(e) => updatePhotoItem(i, "category", e.target.value)}
                           className="border border-stone-200 rounded px-1 py-1 text-xs"
                         >
                           {["Produce","Dairy","Meat","Pantry","Freezer","Beverages","Other"].map((c) => (
                             <option key={c} value={c}>{c}</option>
                           ))}
                         </select>
-                        <button onClick={() => removeReceiptItem(i)} className="text-red-400 hover:text-red-600 text-sm px-1">×</button>
+                        <button onClick={() => removePhotoItem(i)} className="text-red-400 hover:text-red-600 text-sm px-1">×</button>
                       </div>
                     ))}
                   </div>
                 </>
               )}
             </div>
-            {receiptItems.length > 0 && (
+            {photoItems.length > 0 && (
               <div className="border-t px-4 py-3 flex justify-end gap-2">
-                <button onClick={() => setReceiptItems([])} className="text-sm text-stone-500 hover:text-stone-700 px-3 py-2">Start over</button>
-                <button onClick={handleReceiptSave} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700">
-                  Add {receiptItems.length} items
+                <button onClick={() => setPhotoItems([])} className="text-sm text-stone-500 hover:text-stone-700 px-3 py-2">Start over</button>
+                <button onClick={handlePhotoSave} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700">
+                  Add {photoItems.length} items
                 </button>
               </div>
             )}

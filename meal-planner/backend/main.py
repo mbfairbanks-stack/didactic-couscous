@@ -1144,3 +1144,69 @@ async def parse_receipt(file: UploadFile = File(...), db: Session = Depends(get_
             "category": it.get("category") or "Other",
         })
     return {"items": cleaned}
+
+
+@app.post("/ai/scan-pantry-photo")
+async def scan_pantry_photo(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Identify visible food items in a pantry/fridge/freezer photo."""
+    import anthropic
+
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(400, "Empty file")
+    mime = file.content_type or "image/jpeg"
+    if not mime.startswith("image/"):
+        raise HTTPException(400, "File must be an image")
+    b64 = base64.standard_b64encode(contents).decode("ascii")
+
+    system = (
+        "You identify food and pantry items visible in a photo of a kitchen pantry, fridge, freezer, "
+        "shelf, or counter. Respond with ONLY a valid JSON array — no markdown, no code fences. "
+        "Each element: {name (clean, lowercase singular noun like 'milk' or 'olive oil'), "
+        "quantity (number — count of visible items, default 1), "
+        "unit (string — leave '' for countable items like jars/cans/bottles unless the label clearly shows a volume), "
+        "category (one of: Produce, Dairy, Meat, Pantry, Freezer, Beverages, Other)}. "
+        "Identify by package label when visible, otherwise by appearance. "
+        "Normalise names ('extra virgin olive oil' → 'olive oil', 'roma tomatoes' → 'tomato'). "
+        "Count duplicates as quantity (e.g. 3 visible cans of beans → one entry, quantity 3). "
+        "Skip kitchen tools, dishes, and anything that isn't food or drink. "
+        "If you can't identify an item with reasonable confidence, omit it rather than guessing."
+    )
+
+    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+    message = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=2000,
+        system=system,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}},
+                {"type": "text", "text": "List the food and pantry items visible in this photo."},
+            ],
+        }],
+    )
+    raw = message.content[0].text
+    start = raw.find("[")
+    end = raw.rfind("]") + 1
+    if start == -1 or end == 0:
+        raise HTTPException(500, "Could not parse photo response")
+    try:
+        items = json.loads(raw[start:end])
+    except Exception as e:
+        raise HTTPException(500, f"Invalid JSON from photo parser: {e}")
+
+    cleaned = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        name = (it.get("name") or "").strip().lower()
+        if not name:
+            continue
+        cleaned.append({
+            "name": name,
+            "quantity": float(it.get("quantity") or 1),
+            "unit": (it.get("unit") or "").strip(),
+            "category": it.get("category") or "Other",
+        })
+    return {"items": cleaned}
