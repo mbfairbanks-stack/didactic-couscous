@@ -100,6 +100,7 @@ export default function Pantry() {
   const [search, setSearch] = useState("");
   const [photoOpen, setPhotoOpen] = useState(false);
   const [photoMode, setPhotoMode] = useState(null); // "receipt" | "scan" | null
+  const [produceMode, setProduceMode] = useState(false);
   const [photoParsing, setPhotoParsing] = useState(false);
   const [photoItems, setPhotoItems] = useState([]);
   const [photoError, setPhotoError] = useState(null);
@@ -205,7 +206,8 @@ export default function Pantry() {
     try {
       const fn = photoMode === "receipt" ? parseReceipt : scanPantryPhoto;
       const res = await fn(file);
-      setPhotoItems(res.items || []);
+      const parsed = res.items || [];
+      setPhotoItems(produceMode ? parsed.map((it) => ({ ...it, category: "Produce" })) : parsed);
     } catch (e) {
       setPhotoError(e.message);
     } finally {
@@ -245,6 +247,7 @@ export default function Pantry() {
   const closePhoto = () => {
     setPhotoOpen(false);
     setPhotoMode(null);
+    setProduceMode(false);
     setPhotoItems([]);
     setPhotoError(null);
   };
@@ -276,7 +279,13 @@ export default function Pantry() {
             </button>
           )}
           <button
-            onClick={() => { setPhotoOpen(true); setPhotoMode(null); setPhotoItems([]); setPhotoError(null); setShowForm(false); setShowBulk(false); }}
+            onClick={() => { setPhotoOpen(true); setPhotoMode("scan"); setProduceMode(true); setPhotoItems([]); setPhotoError(null); setShowForm(false); setShowBulk(false); }}
+            className="border border-violet-400 text-violet-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-violet-50"
+          >
+            🥦 Weekly Box
+          </button>
+          <button
+            onClick={() => { setPhotoOpen(true); setPhotoMode(null); setProduceMode(false); setPhotoItems([]); setPhotoError(null); setShowForm(false); setShowBulk(false); }}
             className="border border-emerald-600 text-emerald-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-emerald-50"
           >
             📷 Photo
@@ -300,9 +309,12 @@ export default function Pantry() {
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={closePhoto}>
           <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-4 py-3 border-b">
-              <h3 className="font-semibold text-stone-800">
-                {photoMode === "receipt" ? "Upload Receipt" : photoMode === "scan" ? "Scan Pantry / Fridge" : "Add via Photo"}
-              </h3>
+              <div>
+                <h3 className="font-semibold text-stone-800">
+                  {produceMode ? "Weekly Produce Box" : photoMode === "receipt" ? "Upload Receipt" : photoMode === "scan" ? "Scan Pantry / Fridge" : "Add via Photo"}
+                </h3>
+                {produceMode && <p className="text-xs text-violet-600 mt-0.5">All items added as Produce</p>}
+              </div>
               <button onClick={closePhoto} className="text-stone-400 text-2xl leading-none">×</button>
             </div>
             <div className="p-4 overflow-y-auto flex-1">
@@ -330,7 +342,9 @@ export default function Pantry() {
               {photoMode && !photoItems.length && !photoParsing && (
                 <>
                   <p className="text-sm text-stone-500 mb-3">
-                    {photoMode === "receipt"
+                    {produceMode
+                      ? "Upload a photo or screenshot of your Odd Bunch box — AI will identify the produce and add it all under the Produce category."
+                      : photoMode === "receipt"
                       ? "Snap a photo of your receipt — we'll extract the line items."
                       : "Point your camera at your pantry, fridge, or freezer. Items get easier to identify when packaging labels face the camera."}
                   </p>
