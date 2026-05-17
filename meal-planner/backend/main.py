@@ -277,6 +277,12 @@ def delete_pantry_item(item_id: int, db: Session = Depends(get_db)):
     db.commit()
 
 
+@app.delete("/pantry", status_code=204)
+def clear_all_pantry(db: Session = Depends(get_db)):
+    db.query(models.PantryItem).delete()
+    db.commit()
+
+
 @app.get("/pantry/categories")
 def pantry_categories():
     return ["Produce", "Dairy", "Meat", "Pantry", "Freezer", "Beverages", "Other"]

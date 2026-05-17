@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getPantry, createPantryItem, bulkCreatePantryItems, updatePantryItem, deletePantryItem, parseReceipt, scanPantryPhoto } from "../api";
+import { getPantry, createPantryItem, bulkCreatePantryItems, updatePantryItem, deletePantryItem, clearAllPantryItems, parseReceipt, scanPantryPhoto } from "../api";
 
 const UNITS = ["lbs", "lb", "kg", "g", "oz", "cups", "cup", "cans", "can", "bottles", "bottle",
   "bags", "bag", "boxes", "box", "l", "ml", "tsp", "tbsp", "dozen", "pcs", "bunch", "jar", "jars", "loaf", "loaves"];
@@ -155,6 +155,16 @@ export default function Pantry() {
     load();
   };
 
+  const handleClearAll = async () => {
+    if (!confirm(`Clear all ${items.length} pantry items? This cannot be undone.`)) return;
+    try {
+      await clearAllPantryItems();
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
   const handleCancel = () => {
     setForm(EMPTY_FORM);
     setEditingId(null);
@@ -257,6 +267,14 @@ export default function Pantry() {
       <div className="flex items-center justify-between mb-4 sm:mb-6 flex-wrap gap-2">
         <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Pantry</h1>
         <div className="flex gap-2 flex-wrap">
+          {items.length > 0 && (
+            <button
+              onClick={handleClearAll}
+              className="border border-red-300 text-red-500 px-3 py-2 rounded-lg text-sm font-medium hover:bg-red-50"
+            >
+              Clear All
+            </button>
+          )}
           <button
             onClick={() => { setPhotoOpen(true); setPhotoMode(null); setPhotoItems([]); setPhotoError(null); setShowForm(false); setShowBulk(false); }}
             className="border border-emerald-600 text-emerald-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-emerald-50"
