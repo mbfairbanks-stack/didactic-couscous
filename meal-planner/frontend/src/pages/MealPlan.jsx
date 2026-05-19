@@ -484,7 +484,7 @@ export default function MealPlan() {
           {favorites.length > 0 ? (
             <p className="text-xs text-purple-700">
               <span className="text-yellow-400">★</span>{" "}
-              <span className="font-medium">{favorites.length} favourite{favorites.length !== 1 ? "s" : ""}</span> will be scheduled:{" "}
+              <span className="font-medium">{favorites.length} favourite{favorites.length !== 1 ? "s" : ""}</span> will inspire the plan:{" "}
               {favorites.slice(0, 2).map((r) => r.title).join(", ")}{favorites.length > 2 ? ` +${favorites.length - 2} more` : ""}
             </p>
           ) : (
