@@ -579,9 +579,11 @@ def generate_meal_plan(body: GenerateMealPlanRequest, db: Session = Depends(get_
                 for r in favorites
             )
             favorites_context = (
-                f"\n\nFavourite recipes to work into the plan (use their EXACT titles):\n{fav_list}\n"
-                "Try to schedule 3-5 of these favourites across the week, primarily for Dinner. "
-                "Use their exact title as-is so they can be matched back to the recipe library."
+                f"\n\nThis household has starred these recipes as favourites:\n{fav_list}\n"
+                "Use these as inspiration — draw on their flavours, cuisines, and ingredients when "
+                "creating the week's meals. Occasionally include one or two of them directly (using "
+                "the EXACT title so they can be matched), but mostly let them guide the style and "
+                "variety of the plan rather than dominating it."
             )
 
     # Build cooked history block — what the household has actually enjoyed
@@ -630,8 +632,8 @@ def generate_meal_plan(body: GenerateMealPlanRequest, db: Session = Depends(get_
     system = (
         "You are a helpful meal planning assistant specialising in classic, time-tested home cooking. "
         "Only suggest traditional, well-established meals — no trendy, fusion, or novelty dishes. "
-        "Your top priority is to USE WHAT THE HOUSEHOLD ALREADY HAS, then their proven favourites, "
-        "then fresh suggestions that fit their preferences. "
+        "Your top priority is to USE WHAT THE HOUSEHOLD ALREADY HAS, then fresh suggestions that fit "
+        "their preferences and are inspired by (but not limited to) their favourite recipes. "
         "Respond with ONLY a valid JSON object — no markdown, no code fences. "
         "The JSON must be an object with keys for each day of the week (Monday through Sunday). "
         "Each day is an object with keys: Breakfast, Lunch, Dinner, Snack. "
