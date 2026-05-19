@@ -348,6 +348,19 @@ export default function MealPlan() {
     } catch (e) { setError(e.message); }
   };
 
+  const handleSkipDay = async (day) => {
+    try {
+      await Promise.all(
+        MEAL_TYPES.map((mt) =>
+          setMealPlanEntry({ week_start: weekKey, day, meal_type: mt, recipe_id: null, free_text: SKIP })
+        )
+      );
+      load();
+    } catch (e) { setError(e.message); }
+  };
+
+  const isDaySkipped = (day) => MEAL_TYPES.every((mt) => isSkipped(getEntry(day, mt)));
+
   const handleEasySlot = (day, mealType) => {
     const key = `${day}-${mealType}`;
     setRefreshingSlot(key);
@@ -550,7 +563,16 @@ export default function MealPlan() {
             )}
 
             {/* Meals for selected day */}
-            <div className="mt-3 space-y-2">
+            <div className="mt-3 flex items-center justify-between mb-1">
+              <span className="text-xs font-semibold text-stone-500 uppercase tracking-wider">{selectedDay}</span>
+              <button
+                onClick={() => handleSkipDay(selectedDay)}
+                className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${isDaySkipped(selectedDay) ? "bg-stone-100 border-stone-300 text-stone-500" : "border-stone-200 text-stone-400 hover:border-stone-400 hover:text-stone-600"}`}
+              >
+                {isDaySkipped(selectedDay) ? "Clear day" : "Skip day"}
+              </button>
+            </div>
+            <div className="space-y-2">
               {MEAL_TYPES.map((mealType) => {
                 const entry = getEntry(selectedDay, mealType);
                 const isFav = isFavEntry(entry);
@@ -662,6 +684,13 @@ export default function MealPlan() {
                     <th key={day} className="text-center text-xs font-semibold text-gray-600 pb-2 px-1">
                       <div>{day.slice(0, 3)}</div>
                       <div className="text-gray-400 font-normal">{format(addDays(weekStart, i), "M/d")}</div>
+                      <button
+                        onClick={() => handleSkipDay(day)}
+                        title={isDaySkipped(day) ? "Clear day" : "Skip day"}
+                        className={`mt-1 text-[10px] px-1.5 py-0.5 rounded transition-colors ${isDaySkipped(day) ? "bg-stone-200 text-stone-500 hover:bg-stone-300" : "text-stone-300 hover:text-stone-500 hover:bg-stone-100"}`}
+                      >
+                        {isDaySkipped(day) ? "clear" : "skip"}
+                      </button>
                     </th>
                   ))}
                 </tr>
