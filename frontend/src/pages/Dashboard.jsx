@@ -4,7 +4,7 @@ import {
   AreaChart, Area,
 } from "recharts";
 import StatCard from "../components/StatCard";
-import { getMonthlySummary, getTotals, getCategorySummary, getYears, getProjections, getBudgetTargets, getCategoryDefinitions, getNetWorthForecast } from "../api";
+import { getMonthlySummary, getTotals, getCategorySummary, getYears, getProjections, getBudgetTargets, getCategoryDefinitions, getNetWorthForecast, getDebts, getTransactions } from "../api";
 import { getCategoryGroup, updateCategoryGroups } from "../constants";
 import { MONTH_LABELS, currentYear, currentMonth, fmt } from "../utils";
 
@@ -195,6 +195,90 @@ function YoYCard({ year, month }) {
 }
 
 // ── 12-Month Net Worth Forecast ──────────────────────────────────────────────
+function DebtPaymentsWidget({ year, month }) {
+  const [debts, setDebts] = useState([]);
+  const [paidMap, setPaidMap] = useState({});  // { debtId: amountPaidThisMonth }
+
+  useEffect(() => {
+    if (!year || !month) return;
+    Promise.all([
+      getDebts().catch(() => []),
+      getTransactions({ year, month, limit: 2000 }).catch(() => []),
+    ]).then(([ds, txns]) => {
+      setDebts(ds.filter((d) => d.current_balance > 0 || (d.computed_balance ?? 0) > 0));
+      const map = {};
+      for (const t of txns) {
+        if (t.linked_debt_id && t.debt_direction !== "charge") {
+          map[t.linked_debt_id] = (map[t.linked_debt_id] || 0) + t.amount;
+        }
+      }
+      setPaidMap(map);
+    });
+  }, [year, month]);
+
+  if (debts.length === 0) return null;
+
+  const totalPlanned = debts.reduce((s, d) => s + d.monthly_payment + d.monthly_extra, 0);
+  const totalPaid = Object.values(paidMap).reduce((s, v) => s + v, 0);
+  const monthName = new Date(year, month - 1).toLocaleString("en-CA", { month: "long" });
+
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-widest">Debt Payments — {monthName}</p>
+        <div className="text-right">
+          <span className="text-xs text-zinc-500">Paid </span>
+          <span className="text-sm font-mono font-semibold text-yellow-400">{fmt(totalPaid)}</span>
+          <span className="text-xs text-zinc-500"> / {fmt(totalPlanned)}</span>
+        </div>
+      </div>
+      <div className="space-y-3">
+        {debts.map((d) => {
+          const planned = d.monthly_payment + d.monthly_extra;
+          const paid = paidMap[d.id] || 0;
+          const balance = d.computed_balance ?? d.current_balance;
+          const pct = planned > 0 ? Math.min((paid / planned) * 100, 100) : 0;
+          const overpaid = paid > planned && planned > 0;
+          const linked = d.id in paidMap;
+          return (
+            <div key={d.id}>
+              <div className="flex items-center justify-between text-sm mb-1">
+                <div>
+                  <span className="text-zinc-100 font-medium">{d.name}</span>
+                  <span className="text-zinc-500 text-xs ml-2">{fmt(balance)} remaining</span>
+                </div>
+                <div className="text-right">
+                  {linked ? (
+                    <span className={overpaid ? "text-green-400 font-mono text-xs" : "text-zinc-300 font-mono text-xs"}>
+                      {fmt(paid)}
+                      {planned > 0 && <span className="text-zinc-500"> / {fmt(planned)}</span>}
+                    </span>
+                  ) : (
+                    <span className="text-zinc-500 text-xs">
+                      {planned > 0 ? `${fmt(d.monthly_payment)} min${d.monthly_extra > 0 ? ` + ${fmt(d.monthly_extra)} extra` : ""}` : "—"}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {planned > 0 && (
+                <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${overpaid ? "bg-green-400" : pct >= 100 ? "bg-green-500" : pct > 0 ? "bg-yellow-400" : "bg-zinc-700"}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {totalPaid === 0 && (
+        <p className="text-xs text-zinc-600 mt-3 text-center">Tag transactions as debt payments to track progress here.</p>
+      )}
+    </div>
+  );
+}
+
 function ForecastWidget() {
   const [forecast, setForecast] = useState(null);
 
@@ -561,8 +645,9 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* 12-Month Net Worth Forecast */}
-      <div className="grid grid-cols-1 gap-4">
+      {/* Debt Payments + 12-Month Forecast */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <DebtPaymentsWidget year={year} month={month} />
         <ForecastWidget />
       </div>
 
