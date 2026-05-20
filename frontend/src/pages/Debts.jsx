@@ -849,7 +849,7 @@ export default function Debts() {
                   {/* Stats grid */}
                   {debt.debt_type !== "loc" ? (
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <StatBox label="Current Balance" value={fmt(debt.current_balance)} />
+                      <StatBox label={balanceLabel} value={fmt(displayBalance)} />
                       <StatBox label="Initial Balance" value={fmt(debt.initial_balance)} />
                       <StatBox label="Remaining (net)" value={fmt(remaining)} />
                       <StatBox label="Savings Set Aside" value={fmt(debt.savings)} />
@@ -890,6 +890,34 @@ export default function Debts() {
 
                   {/* Payoff Timeline + Extra Payment Simulator */}
                   <PayoffChart debt={debt} />
+                  <button
+                    onClick={() => loadDebtTxns(debt.id)}
+                    className="text-xs text-blue-400 hover:text-blue-300 mt-1"
+                  >
+                    {expandedDebt === debt.id ? "Hide" : "View"} Payment History
+                  </button>
+                  {expandedDebt === debt.id && debtTxns[debt.id] && (
+                    <div className="mt-3 border-t border-zinc-700 pt-3">
+                      <p className="text-xs font-semibold text-zinc-400 uppercase mb-2">Linked Transactions</p>
+                      {debtTxns[debt.id].length === 0 ? (
+                        <p className="text-xs text-zinc-500">No transactions linked yet. Tag transactions as debt payments in the Transactions page.</p>
+                      ) : (
+                        <div className="space-y-1 max-h-48 overflow-y-auto">
+                          {debtTxns[debt.id].map((t) => (
+                            <div key={t.id} className="flex items-center justify-between text-xs">
+                              <div>
+                                <span className="text-zinc-300">{t.merchant}</span>
+                                <span className="text-zinc-500 ml-2">{t.date}</span>
+                              </div>
+                              <span className={t.debt_direction === "charge" ? "text-red-400 font-mono" : "text-green-400 font-mono"}>
+                                {t.debt_direction === "charge" ? "+" : "-"}${t.amount.toLocaleString("en-CA")}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             );
