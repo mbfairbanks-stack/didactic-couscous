@@ -182,6 +182,8 @@ class TransactionCreate(BaseModel):
     is_recurring: Optional[bool] = False
     notes: Optional[str] = None
     source: Optional[str] = None
+    linked_debt_id: Optional[int] = None
+    debt_direction: Optional[str] = None  # "payment" or "charge"
 
 
 class TransactionUpdate(BaseModel):
@@ -192,6 +194,8 @@ class TransactionUpdate(BaseModel):
     is_fixed: Optional[bool] = None
     is_recurring: Optional[bool] = None
     notes: Optional[str] = None
+    linked_debt_id: Optional[int] = None
+    debt_direction: Optional[str] = None
 
 
 class TransactionOut(TransactionCreate):
@@ -970,6 +974,62 @@ def migrate_categories(db: Session = Depends(get_db)):
 # Debts
 # ---------------------------------------------------------------------------
 
+def _compute_debt_balance(
+    initial_balance: float,
+    annual_rate: float,
+    initial_date_str: Optional[str],
+    linked_txns: list,
+) -> Optional[float]:
+    """Walk month-by-month from initial_date, applying interest and linked transactions."""
+    if not initial_date_str:
+        return None
+    try:
+        start = datetime.date.fromisoformat(initial_date_str)
+    except ValueError:
+        return None
+
+    monthly_rate = annual_rate / 12.0
+    balance = float(initial_balance)
+    today = datetime.date.today()
+
+    # Sort transactions by date
+    sorted_txns = sorted(linked_txns, key=lambda t: t.date)
+    tx_idx = 0
+
+    # Walk month by month from the start month through the current month
+    year, month = start.year, start.month
+    while (year, month) <= (today.year, today.month):
+        # End of this calendar month
+        if month == 12:
+            next_year, next_month = year + 1, 1
+        else:
+            next_year, next_month = year, month + 1
+
+        month_start = datetime.date(year, month, 1)
+        month_end = datetime.date(next_year, next_month, 1)
+
+        # Apply monthly interest (skip first partial month if start_date is mid-month)
+        if monthly_rate > 0:
+            balance += balance * monthly_rate
+
+        # Apply transactions in this calendar month
+        while tx_idx < len(sorted_txns):
+            t = sorted_txns[tx_idx]
+            t_date = t.date if isinstance(t.date, datetime.date) else datetime.date.fromisoformat(str(t.date))
+            if t_date >= month_end:
+                break
+            if t_date >= month_start and t_date >= start:
+                if t.debt_direction == "charge":
+                    balance += t.amount
+                else:  # "payment" or None defaults to payment
+                    balance -= t.amount
+            tx_idx += 1
+
+        year, month = next_year, next_month
+
+    return round(max(balance, 0.0), 2)
+
+
 class DebtCreate(BaseModel):
     name: str
     creditor: str
@@ -984,6 +1044,7 @@ class DebtCreate(BaseModel):
     due_date: Optional[str] = None
     notes: Optional[str] = None
     linked_asset_id: Optional[int] = None
+    initial_date: Optional[str] = None
 
 
 class DebtOut(BaseModel):
@@ -1001,7 +1062,9 @@ class DebtOut(BaseModel):
     due_date: Optional[str]
     notes: Optional[str]
     linked_asset_id: Optional[int]
+    initial_date: Optional[str] = None
     equity: Optional[float] = None  # computed: linked asset balance - current_balance
+    computed_balance: Optional[float] = None
     model_config = {"from_attributes": True}
 
 
@@ -1015,6 +1078,18 @@ def list_debts(db: Session = Depends(get_db)):
             asset = db.get(models.Asset, debt.linked_asset_id)
             if asset:
                 d.equity = asset.balance - debt.current_balance
+        # Compute balance from linked transactions if initial_date is set
+        if debt.initial_date:
+            linked_txns = db.execute(
+                select(models.Transaction).where(models.Transaction.linked_debt_id == debt.id)
+            ).scalars().all()
+            d.computed_balance = _compute_debt_balance(
+                debt.initial_balance, debt.interest_rate, debt.initial_date, linked_txns
+            )
+            if d.computed_balance is not None and debt.debt_type == "mortgage" and debt.linked_asset_id:
+                asset = db.get(models.Asset, debt.linked_asset_id)
+                if asset:
+                    d.equity = asset.balance - d.computed_balance
         result.append(d)
     return result
 
@@ -1047,6 +1122,33 @@ def delete_debt(debt_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Debt not found")
     db.delete(debt)
     db.commit()
+
+
+@app.get("/debts/{debt_id}/transactions")
+def get_debt_transactions(debt_id: int, db: Session = Depends(get_db)):
+    """Return all transactions linked to a debt, with running balance."""
+    debt = db.get(models.Debt, debt_id)
+    if not debt:
+        raise HTTPException(404, "Debt not found")
+
+    txns = db.execute(
+        select(models.Transaction)
+        .where(models.Transaction.linked_debt_id == debt_id)
+        .order_by(models.Transaction.date)
+    ).scalars().all()
+
+    return [
+        {
+            "id": t.id,
+            "date": t.date.isoformat() if hasattr(t.date, "isoformat") else str(t.date),
+            "merchant": t.merchant,
+            "amount": t.amount,
+            "debt_direction": t.debt_direction or "payment",
+            "category": t.category,
+            "notes": t.notes,
+        }
+        for t in txns
+    ]
 
 
 # ---------------------------------------------------------------------------

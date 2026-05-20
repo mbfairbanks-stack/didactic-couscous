@@ -112,6 +112,10 @@ def _init_db_extras(eng, seed_demo: bool = False):
             t_cols = [c["name"] for c in inspector.get_columns("transactions")]
             if "is_recurring" not in t_cols:
                 conn.execute(sa.text("ALTER TABLE transactions ADD COLUMN is_recurring INTEGER NOT NULL DEFAULT 0"))
+            if "linked_debt_id" not in t_cols:
+                conn.execute(sa.text("ALTER TABLE transactions ADD COLUMN linked_debt_id INTEGER"))
+            if "debt_direction" not in t_cols:
+                conn.execute(sa.text("ALTER TABLE transactions ADD COLUMN debt_direction TEXT"))
             conn.execute(sa.text("UPDATE transactions SET is_recurring = 0 WHERE is_recurring IS NULL"))
             conn.execute(sa.text("UPDATE transactions SET is_fixed = 0 WHERE is_fixed IS NULL"))
             conn.execute(sa.text("""
@@ -145,6 +149,8 @@ def _init_db_extras(eng, seed_demo: bool = False):
                     conn.execute(sa.text(f"ALTER TABLE debts ADD COLUMN {col} REAL NOT NULL DEFAULT {default}"))
             if "linked_asset_id" not in d_cols:
                 conn.execute(sa.text("ALTER TABLE debts ADD COLUMN linked_asset_id INTEGER"))
+            if "initial_date" not in d_cols:
+                conn.execute(sa.text("ALTER TABLE debts ADD COLUMN initial_date TEXT"))
 
         conn.commit()
 

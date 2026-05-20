@@ -16,6 +16,8 @@ class Transaction(Base):
     notes = Column(String, nullable=True)
     source = Column(String, nullable=True)  # e.g. "amex", "visa", "mastercard"
     is_recurring = Column(Boolean, default=False)
+    linked_debt_id = Column(Integer, nullable=True)   # links to debts.id
+    debt_direction = Column(String, nullable=True)    # "payment" or "charge"
 
 
 class Income(Base):
@@ -93,6 +95,7 @@ class Debt(Base):
     due_date = Column(String, nullable=True)        # "Feb 2027" free-form
     notes = Column(String, nullable=True)
     linked_asset_id = Column(Integer, nullable=True)  # for mortgage: links to property asset
+    initial_date = Column(String, nullable=True)   # "2024-01-01" — when initial_balance was recorded
 
 
 class Asset(Base):
