@@ -341,6 +341,7 @@ export default function Dashboard() {
     const stored = localStorage.getItem("savingsGoal");
     return stored !== null ? Number(stored) : 20;
   });
+  const [statView, setStatView] = useState("month");
 
   useEffect(() => {
     getYears().then((y) => setYears(y.length ? y : [currentYear])).catch(() => {});
@@ -420,28 +421,45 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Year stats */}
+      {/* Stats */}
       <div>
-        <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3 flex items-center gap-2 before:content-[''] before:block before:w-1 before:h-3 before:bg-yellow-400/60 before:rounded-full">{year} Year to Date (Jan – {MONTH_LABELS[month]})</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <StatCard label="Total Income" value={fmt(totals.total_income)} color="green" />
-          <StatCard label="Total Expenses" value={fmt(totals.total_expenses)} color="red" />
-          <StatCard label="Balance" value={fmt(totals.balance)} color={totals.balance >= 0 ? "yellow" : "red"} />
-          <StatCard label="Savings Rate" value={`${totals.savings_rate ?? 0}%`} color="purple" />
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide flex items-center gap-2 before:content-[''] before:block before:w-1 before:h-3 before:bg-yellow-400/60 before:rounded-full">
+            {statView === "month" ? `${MONTH_LABELS[month]} ${year}` : `${year} Year to Date`}
+          </h2>
+          <div className="flex rounded-lg overflow-hidden border border-zinc-700 text-xs">
+            <button
+              onClick={() => setStatView("month")}
+              className={`px-3 py-1 transition-colors ${statView === "month" ? "bg-yellow-400 text-zinc-900 font-semibold" : "text-zinc-400 hover:text-zinc-200"}`}
+            >
+              This Month
+            </button>
+            <button
+              onClick={() => setStatView("ytd")}
+              className={`px-3 py-1 transition-colors ${statView === "ytd" ? "bg-yellow-400 text-zinc-900 font-semibold" : "text-zinc-400 hover:text-zinc-200"}`}
+            >
+              Year to Date
+            </button>
+          </div>
         </div>
-      </div>
-
-      {/* Month stats */}
-      <div>
-        <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3 flex items-center gap-2 before:content-[''] before:block before:w-1 before:h-3 before:bg-yellow-400/60 before:rounded-full">
-          {MONTH_LABELS[month]} {year}
-        </h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <StatCard label="Income" value={fmt(monthTotals.total_income)} color="green" />
-          <StatCard label="Expenses" value={fmt(monthTotals.total_expenses)} color="red" />
-          <StatCard label="Balance" value={fmt(monthTotals.balance)} color={monthTotals.balance >= 0 ? "yellow" : "red"} />
-          <StatCard label="Savings Rate" value={`${monthTotals.savings_rate ?? 0}%`} color="purple" />
+          {statView === "month" ? (
+            <>
+              <StatCard label="Income" value={fmt(monthTotals.total_income)} color="green" />
+              <StatCard label="Expenses" value={fmt(monthTotals.total_expenses)} color="red" />
+              <StatCard label="Balance" value={fmt(monthTotals.balance)} color={monthTotals.balance >= 0 ? "yellow" : "red"} />
+              <StatCard label="Savings Rate" value={`${monthTotals.savings_rate ?? 0}%`} color="purple" />
+            </>
+          ) : (
+            <>
+              <StatCard label="Total Income" value={fmt(totals.total_income)} color="green" />
+              <StatCard label="Total Expenses" value={fmt(totals.total_expenses)} color="red" />
+              <StatCard label="Balance" value={fmt(totals.balance)} color={totals.balance >= 0 ? "yellow" : "red"} />
+              <StatCard label="Savings Rate" value={`${totals.savings_rate ?? 0}%`} color="purple" />
+            </>
+          )}
         </div>
+        {/* Committed / Discretionary */}
         {(() => {
           const committed = categories.filter((c) => getCategoryGroup(c.category) === "Committed");
           if (!committed.length) return null;
@@ -514,7 +532,7 @@ export default function Dashboard() {
       )}
 
       {/* vs Last Month + Savings Goal + YoY */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <MoMCard current={monthTotals} last={lastMonthTotals} />
         <SavingsGoalBar
           savingsRate={monthTotals.savings_rate}
@@ -522,6 +540,12 @@ export default function Dashboard() {
           setSavingsGoal={setSavingsGoal}
         />
         <YoYCard year={year} month={month} />
+      </div>
+
+      {/* Debt Payments + 12-Month Forecast */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <DebtPaymentsWidget year={year} month={month} />
+        <ForecastWidget />
       </div>
 
       {/* Needs / Wants breakdown */}
@@ -592,64 +616,63 @@ export default function Dashboard() {
 
       {/* Projections */}
       {projections && (
-        <div className="space-y-3">
-          <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">
-            Projections — based on historical averages
-          </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <StatCard label="Avg Monthly Income" value={fmt(projections.avg_monthly_income)} color="green" />
-            <StatCard label="Avg Monthly Expenses" value={fmt(projections.avg_monthly_expenses)} color="red" />
-            <StatCard label="Fixed Monthly Costs" value={fmt(projections.fixed_monthly_total)} color="yellow" />
-            <StatCard label="Projected Year Balance" value={fmt(projections.projected_year_balance)}
-              color={projections.projected_year_balance >= 0 ? "purple" : "red"} />
-          </div>
+        <details className="group">
+          <summary className="flex items-center justify-between cursor-pointer list-none text-xs font-semibold text-zinc-500 uppercase tracking-wide hover:text-zinc-300 transition-colors">
+            <span className="flex items-center gap-2 before:content-[''] before:block before:w-1 before:h-3 before:bg-yellow-400/60 before:rounded-full">
+              Projections
+            </span>
+            <span className="text-yellow-400 font-bold normal-case text-sm">{fmt(projections.projected_year_balance)} projected</span>
+          </summary>
+          <div className="mt-4 space-y-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <StatCard label="Avg Monthly Income" value={fmt(projections.avg_monthly_income)} color="green" />
+              <StatCard label="Avg Monthly Expenses" value={fmt(projections.avg_monthly_expenses)} color="red" />
+              <StatCard label="Fixed Monthly Costs" value={fmt(projections.fixed_monthly_total)} color="yellow" />
+              <StatCard label="Projected Year Balance" value={fmt(projections.projected_year_balance)}
+                color={projections.projected_year_balance >= 0 ? "purple" : "red"} />
+            </div>
 
-          {/* Fixed expense breakdown — collapsed by default */}
-          {projections.fixed_categories?.length > 0 && (
-            <details className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
-              <summary className="text-xs font-semibold text-zinc-500 uppercase tracking-wide cursor-pointer hover:text-zinc-300 flex items-center justify-between">
-                <span>Fixed Monthly Expenses</span>
-                <span className="text-yellow-400 font-bold normal-case text-sm">{fmt(projections.fixed_monthly_total)}</span>
-              </summary>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-8 gap-y-2 mt-4">
-                {projections.fixed_categories.map((c) => (
-                  <div key={c.category} className="flex justify-between text-sm">
-                    <span className="text-zinc-400 truncate mr-2">{c.category}</span>
-                    <span className="text-yellow-400 font-medium whitespace-nowrap">{fmt(c.avg_monthly)}</span>
-                  </div>
-                ))}
-              </div>
-            </details>
-          )}
+            {/* Fixed expense breakdown — collapsed by default */}
+            {projections.fixed_categories?.length > 0 && (
+              <details className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+                <summary className="text-xs font-semibold text-zinc-500 uppercase tracking-wide cursor-pointer hover:text-zinc-300 flex items-center justify-between">
+                  <span>Fixed Monthly Expenses</span>
+                  <span className="text-yellow-400 font-bold normal-case text-sm">{fmt(projections.fixed_monthly_total)}</span>
+                </summary>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-8 gap-y-2 mt-4">
+                  {projections.fixed_categories.map((c) => (
+                    <div key={c.category} className="flex justify-between text-sm">
+                      <span className="text-zinc-400 truncate mr-2">{c.category}</span>
+                      <span className="text-yellow-400 font-medium whitespace-nowrap">{fmt(c.avg_monthly)}</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
 
-          {/* Year-end projection bar */}
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
-            <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-4">Year-End Projection</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
-              <div>
-                <p className="text-xs text-zinc-500 mb-1">Projected Income</p>
-                <p className="text-lg font-bold text-green-400">{fmt(projections.projected_year_income)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-zinc-500 mb-1">Projected Expenses</p>
-                <p className="text-lg font-bold text-red-400">{fmt(projections.projected_year_expenses)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-zinc-500 mb-1">Projected Savings</p>
-                <p className={`text-lg font-bold ${projections.projected_year_balance >= 0 ? "text-yellow-400" : "text-red-400"}`}>
-                  {fmt(projections.projected_year_balance)}
-                </p>
+            {/* Year-end projection bar */}
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+              <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-4">Year-End Projection</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
+                <div>
+                  <p className="text-xs text-zinc-500 mb-1">Projected Income</p>
+                  <p className="text-lg font-bold text-green-400">{fmt(projections.projected_year_income)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-zinc-500 mb-1">Projected Expenses</p>
+                  <p className="text-lg font-bold text-red-400">{fmt(projections.projected_year_expenses)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-zinc-500 mb-1">Projected Savings</p>
+                  <p className={`text-lg font-bold ${projections.projected_year_balance >= 0 ? "text-yellow-400" : "text-red-400"}`}>
+                    {fmt(projections.projected_year_balance)}
+                  </p>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        </details>
       )}
-
-      {/* Debt Payments + 12-Month Forecast */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <DebtPaymentsWidget year={year} month={month} />
-        <ForecastWidget />
-      </div>
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
