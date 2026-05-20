@@ -665,6 +665,95 @@ export default function Debts() {
         </div>
       )}
 
+      {/* Payment Summary Table */}
+      {!loading && debts.length > 0 && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+          <div className="px-5 py-3 border-b border-zinc-800">
+            <p className="text-xs font-semibold text-zinc-500 uppercase tracking-widest">Payment Summary</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-800">
+                  <th className="text-left px-5 py-2 text-xs text-zinc-500 font-medium">Debt</th>
+                  <th className="text-right px-3 py-2 text-xs text-zinc-500 font-medium">Balance</th>
+                  <th className="text-right px-3 py-2 text-xs text-zinc-500 font-medium">Minimum</th>
+                  <th className="text-right px-3 py-2 text-xs text-zinc-500 font-medium">Extra</th>
+                  <th className="text-right px-3 py-2 text-xs text-zinc-500 font-medium">Total</th>
+                  <th className="text-right px-3 py-2 text-xs text-zinc-500 font-medium">Needed</th>
+                  <th className="text-right px-5 py-2 text-xs text-zinc-500 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {debts.map((debt) => {
+                  const { remaining, monthsLeft, monthlyNeeded, onTrack } = computeDebtStats(debt);
+                  const displayBalance = debt.computed_balance != null ? debt.computed_balance : debt.current_balance;
+                  const total = debt.monthly_payment + debt.monthly_extra;
+                  const shortfall = monthlyNeeded != null ? monthlyNeeded - total : null;
+                  return (
+                    <tr
+                      key={debt.id}
+                      className="border-b border-zinc-800/50 last:border-0 hover:bg-zinc-800/40 cursor-pointer transition-colors"
+                      onClick={() => {
+                        const el = document.getElementById(`debt-${debt.id}`);
+                        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+                      }}
+                    >
+                      <td className="px-5 py-3">
+                        <p className="text-zinc-100 font-medium">{debt.name}</p>
+                        <p className="text-xs text-zinc-500">{debt.creditor}{debt.due_date ? ` · ${debt.due_date}` : ""}</p>
+                      </td>
+                      <td className="px-3 py-3 text-right font-mono text-zinc-200">{fmt(displayBalance)}</td>
+                      <td className="px-3 py-3 text-right font-mono text-zinc-400">{fmt(debt.monthly_payment)}</td>
+                      <td className="px-3 py-3 text-right font-mono">
+                        {debt.monthly_extra > 0
+                          ? <span className="text-yellow-400">+{fmt(debt.monthly_extra)}</span>
+                          : <span className="text-zinc-600">—</span>}
+                      </td>
+                      <td className="px-3 py-3 text-right font-mono text-zinc-100 font-semibold">{fmt(total)}</td>
+                      <td className="px-3 py-3 text-right font-mono">
+                        {monthlyNeeded != null
+                          ? <span className={onTrack ? "text-zinc-400" : "text-red-400"}>{fmt(monthlyNeeded)}</span>
+                          : <span className="text-zinc-600">—</span>}
+                      </td>
+                      <td className="px-5 py-3 text-right">
+                        {monthlyNeeded == null ? (
+                          <span className="text-zinc-500 text-xs">No due date</span>
+                        ) : onTrack ? (
+                          <span className="text-green-400 text-xs font-medium">✓ On track</span>
+                        ) : (
+                          <span className="text-red-400 text-xs font-medium">
+                            ✗ +{fmt(Math.ceil(shortfall))} needed
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-zinc-700 bg-zinc-800/40">
+                  <td className="px-5 py-3 text-xs text-zinc-500 font-semibold uppercase">Total</td>
+                  <td className="px-3 py-3 text-right font-mono font-semibold text-yellow-400">
+                    {fmt(debts.reduce((s, d) => s + (d.computed_balance != null ? d.computed_balance : d.current_balance), 0))}
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono text-zinc-400">
+                    {fmt(debts.reduce((s, d) => s + d.monthly_payment, 0))}
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono text-yellow-400">
+                    +{fmt(debts.reduce((s, d) => s + d.monthly_extra, 0))}
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono font-semibold text-zinc-100">
+                    {fmt(debts.reduce((s, d) => s + d.monthly_payment + d.monthly_extra, 0))}
+                  </td>
+                  <td colSpan={2} />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Aggregate payoff chart (2+ debts with active payments) */}
       {debts.filter((d) => d.current_balance > 0 && (d.monthly_payment + d.monthly_extra) > 0).length >= 2 && (
         <AggregatePayoffChart debts={debts} />
@@ -697,7 +786,7 @@ export default function Debts() {
             const displayBalance = debt.computed_balance != null ? debt.computed_balance : debt.current_balance;
             const balanceLabel = debt.computed_balance != null ? "Current Balance (computed)" : "Current Balance";
             return (
-              <div key={debt.id} className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4">
+              <div id={`debt-${debt.id}`} key={debt.id} className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4">
                 <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-700 bg-zinc-800">
                   <div className="flex items-center gap-3 flex-wrap">
                     <span className="text-base font-semibold text-zinc-100">{debt.name}</span>
@@ -803,7 +892,7 @@ export default function Debts() {
             const displayBalance = debt.computed_balance != null ? debt.computed_balance : debt.current_balance;
             const balanceLabel = debt.computed_balance != null ? "Current Balance (computed)" : "Current Balance";
             return (
-              <div key={debt.id} className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4">
+              <div id={`debt-${debt.id}`} key={debt.id} className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4">
                 <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-700 bg-zinc-800">
                   <div className="flex items-center gap-3 flex-wrap">
                     <span className="text-base font-semibold text-zinc-100">{debt.name}</span>
