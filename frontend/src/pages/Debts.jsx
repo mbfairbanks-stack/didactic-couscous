@@ -694,6 +694,8 @@ export default function Debts() {
           <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-3">Mortgage</h2>
           {debts.filter((d) => d.debt_type === "mortgage").map((debt) => {
             const { remaining, monthsLeft, balanceAtDue, monthlyNeeded, onTrack, pctPaid } = computeDebtStats(debt);
+            const displayBalance = debt.computed_balance != null ? debt.computed_balance : debt.current_balance;
+            const balanceLabel = debt.computed_balance != null ? "Current Balance (computed)" : "Current Balance";
             return (
               <div key={debt.id} className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4">
                 <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-700 bg-zinc-800">
@@ -720,7 +722,7 @@ export default function Debts() {
                     </div>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <StatBox label="Current Balance" value={fmt(debt.current_balance)} />
+                    <StatBox label={balanceLabel} value={fmt(displayBalance)} />
                     <StatBox label="Initial Balance" value={fmt(debt.initial_balance)} />
                     <StatBox label="Remaining (net)" value={fmt(remaining)} />
                     {debt.equity != null ? (
@@ -755,6 +757,34 @@ export default function Debts() {
                     </p>
                   )}
                   <PayoffChart debt={debt} />
+                  <button
+                    onClick={() => loadDebtTxns(debt.id)}
+                    className="text-xs text-blue-400 hover:text-blue-300 mt-1"
+                  >
+                    {expandedDebt === debt.id ? "Hide" : "View"} Payment History
+                  </button>
+                  {expandedDebt === debt.id && debtTxns[debt.id] && (
+                    <div className="mt-3 border-t border-zinc-700 pt-3">
+                      <p className="text-xs font-semibold text-zinc-400 uppercase mb-2">Linked Transactions</p>
+                      {debtTxns[debt.id].length === 0 ? (
+                        <p className="text-xs text-zinc-500">No transactions linked yet. Tag transactions as debt payments in the Transactions page.</p>
+                      ) : (
+                        <div className="space-y-1 max-h-48 overflow-y-auto">
+                          {debtTxns[debt.id].map((t) => (
+                            <div key={t.id} className="flex items-center justify-between text-xs">
+                              <div>
+                                <span className="text-zinc-300">{t.merchant}</span>
+                                <span className="text-zinc-500 ml-2">{t.date}</span>
+                              </div>
+                              <span className={t.debt_direction === "charge" ? "text-red-400 font-mono" : "text-green-400 font-mono"}>
+                                {t.debt_direction === "charge" ? "+" : "-"}${t.amount.toLocaleString("en-CA")}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -770,6 +800,8 @@ export default function Debts() {
           )}
           {debts.filter((d) => d.debt_type !== "mortgage").map((debt) => {
             const { remaining, monthsLeft, balanceAtDue, monthlyNeeded, onTrack, pctPaid } = computeDebtStats(debt);
+            const displayBalance = debt.computed_balance != null ? debt.computed_balance : debt.current_balance;
+            const balanceLabel = debt.computed_balance != null ? "Current Balance (computed)" : "Current Balance";
             return (
               <div key={debt.id} className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4">
                 <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-700 bg-zinc-800">
@@ -1038,6 +1070,17 @@ export default function Debts() {
                   className={`w-full ${inputCls}`}
                   {...field("notes")}
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">Balance As Of Date</label>
+                <input
+                  type="date"
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400"
+                  value={form.initial_date}
+                  onChange={(e) => setForm({ ...form, initial_date: e.target.value })}
+                />
+                <p className="text-xs text-zinc-500 mt-1">Date when the initial balance above was recorded</p>
               </div>
 
               <div className="flex gap-3 pt-2">
