@@ -247,16 +247,17 @@ function DebtPaymentsWidget({ year, month }) {
                   <span className="text-zinc-100 font-medium">{d.name}</span>
                   <span className="text-zinc-500 text-xs ml-2">{fmt(balance)} remaining</span>
                 </div>
-                <div className="text-right">
-                  {linked ? (
-                    <span className={overpaid ? "text-green-400 font-mono text-xs" : "text-zinc-300 font-mono text-xs"}>
-                      {fmt(paid)}
+                <div className="text-right space-y-0.5">
+                  {linked && (
+                    <div className={`font-mono text-xs ${overpaid ? "text-green-400" : "text-zinc-300"}`}>
+                      {fmt(paid)} paid
                       {planned > 0 && <span className="text-zinc-500"> / {fmt(planned)}</span>}
-                    </span>
-                  ) : (
-                    <span className="text-zinc-500 text-xs">
-                      {planned > 0 ? `${fmt(d.monthly_payment)} min${d.monthly_extra > 0 ? ` + ${fmt(d.monthly_extra)} extra` : ""}` : "—"}
-                    </span>
+                    </div>
+                  )}
+                  {planned > 0 && (
+                    <div className="text-zinc-500 text-xs">
+                      {fmt(d.monthly_payment)} min{d.monthly_extra > 0 ? ` + ${fmt(d.monthly_extra)} extra` : ""}
+                    </div>
                   )}
                 </div>
               </div>
