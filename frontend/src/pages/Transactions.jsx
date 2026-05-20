@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { getTransactions, createTransaction, updateTransaction, deleteTransaction, getCategories, getYears, exportTransactionsCsv, getAnomalies, splitTransaction, getRecurringSuggestions } from "../api";
+import { getTransactions, createTransaction, updateTransaction, deleteTransaction, getCategories, getYears, exportTransactionsCsv, getAnomalies, splitTransaction, getRecurringSuggestions, getDebts } from "../api";
 import { MONTH_LABELS, currentYear, currentMonth, fmtCents as fmt } from "../utils";
 
 const VIRTUAL_CATEGORIES = ["E-Transfer", "Shared Expense"];
@@ -14,6 +14,8 @@ const emptyForm = {
   is_fixed: false,
   notes: "",
   source: "",
+  linked_debt_id: "",
+  debt_direction: "payment",
 };
 
 const inputCls = "bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-yellow-400/50";
@@ -61,6 +63,9 @@ export default function Transactions() {
   const [splitA, setSplitA] = useState({ amount: "", category: "" });
   const [splitB, setSplitB] = useState({ amount: "", category: "" });
 
+  // Debt linking
+  const [debts, setDebts] = useState([]);
+
   // Recurring detection
   const [recurringSuggestions, setRecurringSuggestions] = useState([]);
   const [showRecurring, setShowRecurring] = useState(false);
@@ -75,6 +80,7 @@ export default function Transactions() {
     getRecurringSuggestions()
       .then((rows) => setRecurringSuggestions(rows.filter((r) => r.is_consistent)))
       .catch(() => {});
+    getDebts().then(setDebts).catch(() => {});
   }, []);
 
   // Load anomalies whenever year/month changes
@@ -302,6 +308,8 @@ export default function Transactions() {
       amount: parseFloat(form.amount),
       year: y,
       month: m,
+      linked_debt_id: form.linked_debt_id ? parseInt(form.linked_debt_id) : null,
+      debt_direction: form.linked_debt_id ? form.debt_direction : null,
     };
     try {
       if (editId) {
@@ -329,6 +337,8 @@ export default function Transactions() {
       is_fixed: txn.is_fixed,
       notes: txn.notes || "",
       source: txn.source || "",
+      linked_debt_id: txn.linked_debt_id ? String(txn.linked_debt_id) : "",
+      debt_direction: txn.debt_direction || "payment",
     });
     setEditId(txn.id);
     setShowForm(true);
@@ -650,7 +660,14 @@ export default function Transactions() {
                       txn,
                       "merchant",
                       <span className="max-w-[220px] block">
-                        <span className="truncate block text-zinc-200">{txn.merchant}</span>
+                        <span className="truncate block text-zinc-200">
+                          {txn.merchant}
+                          {txn.linked_debt_id && (
+                            <span className="text-xs text-blue-400 ml-1">
+                              · {txn.debt_direction === "charge" ? "LOC charge" : "debt payment"}
+                            </span>
+                          )}
+                        </span>
                         {txn.notes && (
                           <span className="truncate block text-zinc-500 text-xs">{txn.notes}</span>
                         )}
@@ -865,6 +882,32 @@ export default function Transactions() {
                   placeholder="e.g. Split with Alex, Enbridge bill"
                   value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
               </div>
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">Link to Debt (optional)</label>
+                <select
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400"
+                  value={form.linked_debt_id}
+                  onChange={(e) => setForm({ ...form, linked_debt_id: e.target.value })}
+                >
+                  <option value="">None</option>
+                  {debts.map((d) => (
+                    <option key={d.id} value={d.id}>{d.name} ({d.creditor})</option>
+                  ))}
+                </select>
+              </div>
+              {form.linked_debt_id && (
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">Direction</label>
+                  <select
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400"
+                    value={form.debt_direction}
+                    onChange={(e) => setForm({ ...form, debt_direction: e.target.value })}
+                  >
+                    <option value="payment">Payment (reduces balance)</option>
+                    <option value="charge">Charge (increases balance — LOC)</option>
+                  </select>
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <input type="checkbox" id="is_fixed" checked={form.is_fixed}
                   onChange={(e) => setForm({ ...form, is_fixed: e.target.checked })}

@@ -155,6 +155,7 @@ export const updateDebt = (id, body) =>
   req(`/debts/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 export const deleteDebt = (id) =>
   req(`/debts/${id}`, { method: "DELETE" });
+export const getDebtTransactions = (id) => req(`/debts/${id}/transactions`);
 
 // Merchant categories (audit)
 export const getMerchantCategories = () => req("/merchant-categories");

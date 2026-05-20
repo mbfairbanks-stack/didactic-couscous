@@ -9,7 +9,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import { getDebts, createDebt, updateDebt, deleteDebt, getAssets } from "../api";
+import { getDebts, createDebt, updateDebt, deleteDebt, getAssets, getDebtTransactions } from "../api";
 import { fmt } from "../utils";
 
 const inputCls =
@@ -29,6 +29,7 @@ const emptyForm = {
   due_date: "",
   notes: "",
   linked_asset_id: "",
+  initial_date: "",
 };
 
 function parseMonthsRemaining(dueDateStr) {
@@ -504,6 +505,8 @@ export default function Debts() {
   const [form, setForm] = useState({ ...emptyForm });
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
+  const [debtTxns, setDebtTxns] = useState({});   // { debtId: [transactions] }
+  const [expandedDebt, setExpandedDebt] = useState(null);  // id of expanded debt
 
   const load = useCallback(() => {
     setLoading(true);
@@ -516,6 +519,18 @@ export default function Debts() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const loadDebtTxns = async (debtId) => {
+    if (debtTxns[debtId]) {
+      setExpandedDebt(expandedDebt === debtId ? null : debtId);
+      return;
+    }
+    try {
+      const txns = await getDebtTransactions(debtId);
+      setDebtTxns((prev) => ({ ...prev, [debtId]: txns }));
+      setExpandedDebt(debtId);
+    } catch (e) { /* ignore */ }
+  };
 
   const openAdd = () => {
     setForm({ ...emptyForm });
@@ -539,6 +554,7 @@ export default function Debts() {
       due_date: debt.due_date || "",
       notes: debt.notes || "",
       linked_asset_id: debt.linked_asset_id != null ? String(debt.linked_asset_id) : "",
+      initial_date: debt.initial_date || "",
     });
     setEditId(debt.id);
     setFormError("");
@@ -573,6 +589,7 @@ export default function Debts() {
       due_date: form.due_date.trim() || null,
       notes: form.notes.trim() || null,
       linked_asset_id: form.debt_type === "mortgage" && form.linked_asset_id ? parseInt(form.linked_asset_id) : null,
+      initial_date: form.initial_date || null,
     };
     try {
       if (editId) {
