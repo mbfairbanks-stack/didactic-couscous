@@ -1578,7 +1578,11 @@ def parse_csv(body: ParseCsvRequest, db: Session = Depends(get_db)):
     if not raw:
         return {"rows": []}
 
-    lines = [l for l in raw.splitlines() if l.strip()]
+    lines = [l.strip() for l in raw.splitlines() if l.strip()]
+
+    # Skip a header row if present (e.g. "Date  Description  Amount")
+    if lines and re.search(r'\bdate\b', lines[0], re.IGNORECASE) and re.search(r'\bdescription\b', lines[0], re.IGNORECASE):
+        lines = lines[1:]
 
     # ── Detect AMEX multi-line paste format ──────────────────────────────────
     # Pattern: groups of 3 lines — date, merchant, $amount (repeating)
@@ -1587,14 +1591,14 @@ def parse_csv(body: ParseCsvRequest, db: Session = Depends(get_db)):
     #   COUNTRY PAWS DOGPLEX 00 LONDON
     #   $6.10
     def _is_amex_multiline(lines: list) -> bool:
-        if len(lines) < 3 or len(lines) % 3 != 0:
+        if len(lines) < 3:
             return False
-        for i in range(0, min(len(lines), 9), 3):
-            if not _parse_date(lines[i]):
-                return False
-            if not re.match(r'^\$?[\d,]+\.?\d*$', lines[i + 2].strip()):
-                return False
-        return True
+        # Check first few groups — allow remainder lines to be off
+        matches = 0
+        for i in range(0, min(len(lines) - 2, 12), 3):
+            if _parse_date(lines[i]) and re.match(r'^-?\$?[\d,]+\.?\d*$', lines[i + 2]):
+                matches += 1
+        return matches >= 1
 
     if _is_amex_multiline(lines):
         parsed = []
