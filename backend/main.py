@@ -1534,7 +1534,8 @@ def _parse_date(s: str) -> Optional[str]:
     from datetime import datetime
     for fmt in ('%m/%d/%Y', '%Y-%m-%d', '%d/%m/%Y', '%m/%d/%y', '%Y/%m/%d',
                 '%b %d, %Y', '%B %d, %Y', '%b %d %Y', '%B %d %Y',
-                '%d-%b-%Y', '%d %b %Y', '%Y%m%d'):
+                '%d-%b-%Y', '%d %b %Y', '%Y%m%d',
+                '%d %b %y', '%d %B %y'):  # e.g. "19 May 26"
         try:
             return datetime.strptime(s.strip(), fmt).strftime('%Y-%m-%d')
         except ValueError:
@@ -1577,7 +1578,43 @@ def parse_csv(body: ParseCsvRequest, db: Session = Depends(get_db)):
     if not raw:
         return {"rows": []}
 
-    lines = raw.splitlines()
+    lines = [l for l in raw.splitlines() if l.strip()]
+
+    # ── Detect AMEX multi-line paste format ──────────────────────────────────
+    # Pattern: groups of 3 lines — date, merchant, $amount (repeating)
+    # e.g.:
+    #   19 May 26
+    #   COUNTRY PAWS DOGPLEX 00 LONDON
+    #   $6.10
+    def _is_amex_multiline(lines: list) -> bool:
+        if len(lines) < 3 or len(lines) % 3 != 0:
+            return False
+        for i in range(0, min(len(lines), 9), 3):
+            if not _parse_date(lines[i]):
+                return False
+            if not re.match(r'^\$?[\d,]+\.?\d*$', lines[i + 2].strip()):
+                return False
+        return True
+
+    if _is_amex_multiline(lines):
+        parsed = []
+        for i in range(0, len(lines) - 2, 3):
+            date_str = lines[i].strip()
+            merchant = lines[i + 1].strip()
+            amt_str = lines[i + 2].strip()
+            parsed_date = _parse_date(date_str)
+            amount = _parse_amount(amt_str)
+            if not parsed_date or not merchant or not amount or amount <= 0:
+                continue
+            suggested = _lookup_category(merchant, db)
+            parsed.append({
+                "date": parsed_date,
+                "merchant": merchant,
+                "amount": round(amount, 2),
+                "suggested_category": suggested or "",
+                "confidence": "high" if suggested else "low",
+            })
+        return {"rows": parsed}
 
     # Detect headerless format: tab or comma delimited, first cell is a date
     # TD format: date,merchant,debit,credit,balance  (or tab-separated)
