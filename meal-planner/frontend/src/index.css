@@ -6,6 +6,10 @@ body {
   @apply bg-stone-50 text-stone-900 antialiased;
 }
 
+.dark body {
+  @apply bg-stone-950 text-stone-100;
+}
+
 /* iOS safe area for bottom tab bar */
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom);
