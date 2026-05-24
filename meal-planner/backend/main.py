@@ -9,6 +9,8 @@ from datetime import date, datetime, timedelta
 import json, os, base64, re
 
 import models, database
+import auth
+from auth import get_current_user
 from database import engine, get_db
 
 models.Base.metadata.create_all(bind=engine)
@@ -20,25 +22,80 @@ def _ensure_columns():
         "recipes": [
             ("times_made", "INTEGER DEFAULT 0"),
             ("last_made", "DATE"),
+            ("user_id", "INTEGER"),
+            ("is_public", "INTEGER DEFAULT 0"),
+        ],
+        "pantry_items": [
+            ("user_id", "INTEGER"),
         ],
         "meal_plan_entries": [
             ("cooked_at", "DATETIME"),
+            ("user_id", "INTEGER"),
+        ],
+        "prep_tasks": [
+            ("user_id", "INTEGER"),
         ],
         "household_preferences": [
             ("onboarding_done", "BOOLEAN DEFAULT 0"),
             ("week_start_day", "VARCHAR DEFAULT 'Monday'"),
+            ("user_id", "INTEGER"),
         ],
     }
     insp = inspect(engine)
     with engine.begin() as conn:
         for table, cols in additions.items():
-            existing = {c["name"] for c in insp.get_columns(table)}
+            try:
+                existing = {c["name"] for c in insp.get_columns(table)}
+            except Exception:
+                continue
             for name, ddl in cols:
                 if name not in existing:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
 
 
 _ensure_columns()
+
+
+def _migrate_default_user():
+    """On first run with auth: create default admin user and assign all orphaned data to it."""
+    from sqlalchemy.orm import Session as _Session
+    db = next(get_db())
+    try:
+        # Check if any users exist
+        user_count = db.query(models.User).count()
+        if user_count > 0:
+            return  # Already have users, skip
+
+        # Create default admin user
+        admin = models.User(
+            username="admin",
+            hashed_password=auth.hash_password("admin"),
+        )
+        db.add(admin)
+        db.flush()
+        admin_id = admin.id
+
+        # Assign all orphaned data to admin
+        db.query(models.Recipe).filter(models.Recipe.user_id == None).update({"user_id": admin_id})
+        db.query(models.PantryItem).filter(models.PantryItem.user_id == None).update({"user_id": admin_id})
+        db.query(models.MealPlanEntry).filter(models.MealPlanEntry.user_id == None).update({"user_id": admin_id})
+        db.query(models.PrepTask).filter(models.PrepTask.user_id == None).update({"user_id": admin_id})
+        db.query(models.HouseholdPreferences).filter(models.HouseholdPreferences.user_id == None).update({"user_id": admin_id})
+
+        db.commit()
+        print("=" * 60)
+        print("DEFAULT ADMIN USER CREATED")
+        print("  Username: admin")
+        print("  Password: admin")
+        print("  Please change your password after first login!")
+        print("=" * 60)
+    except Exception as e:
+        db.rollback()
+        print(f"Migration warning: {e}")
+    finally:
+        db.close()
+
+_migrate_default_user()
 
 app = FastAPI(title="Wetbanks Sous Chef API")
 
@@ -172,6 +229,74 @@ class HouseholdPreferencesSchema(BaseModel):
     week_start_day: Optional[str] = None
 
 
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+
+@app.post("/auth/register", status_code=201)
+def register(body: RegisterRequest, db: Session = Depends(get_db)):
+    if len(body.username.strip()) < 2:
+        raise HTTPException(400, "Username must be at least 2 characters")
+    if len(body.password) < 4:
+        raise HTTPException(400, "Password must be at least 4 characters")
+    existing = db.query(models.User).filter(models.User.username == body.username.strip().lower()).first()
+    if existing:
+        raise HTTPException(400, "Username already taken")
+    user = models.User(
+        username=body.username.strip().lower(),
+        hashed_password=auth.hash_password(body.password),
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    # Create empty preferences row
+    prefs = models.HouseholdPreferences(user_id=user.id)
+    db.add(prefs)
+    db.commit()
+    token = auth.create_access_token(user.id)
+    return {"access_token": token, "token_type": "bearer", "username": user.username, "onboarding_done": False}
+
+
+@app.post("/auth/login")
+def login(body: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.username == body.username.strip().lower()).first()
+    if not user or not auth.verify_password(body.password, user.hashed_password):
+        raise HTTPException(401, "Invalid username or password")
+    prefs = db.query(models.HouseholdPreferences).filter_by(user_id=user.id).first()
+    onboarding_done = prefs.onboarding_done if prefs else False
+    token = auth.create_access_token(user.id)
+    return {"access_token": token, "token_type": "bearer", "username": user.username, "onboarding_done": onboarding_done}
+
+
+@app.get("/auth/me")
+def get_me(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    prefs = db.query(models.HouseholdPreferences).filter_by(user_id=current_user.id).first()
+    onboarding_done = prefs.onboarding_done if prefs else False
+    return {"id": current_user.id, "username": current_user.username, "onboarding_done": onboarding_done}
+
+
+@app.put("/auth/password")
+def change_password(body: dict, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    current_pw = body.get("current_password", "")
+    new_pw = body.get("new_password", "")
+    if not auth.verify_password(current_pw, current_user.hashed_password):
+        raise HTTPException(400, "Current password is incorrect")
+    if len(new_pw) < 4:
+        raise HTTPException(400, "New password must be at least 4 characters")
+    current_user.hashed_password = auth.hash_password(new_pw)
+    db.commit()
+    return {"ok": True}
+
+
 # ---------------------------------------------------------------------------
 # Recipes
 # ---------------------------------------------------------------------------
@@ -181,8 +306,9 @@ def list_recipes(
     tag: Optional[str] = None,
     favorite: Optional[bool] = None,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
-    q = db.query(models.Recipe)
+    q = db.query(models.Recipe).filter(models.Recipe.user_id == current_user.id)
     if favorite is not None:
         q = q.filter(models.Recipe.is_favorite == favorite)
     recipes = q.order_by(models.Recipe.title).all()
@@ -192,16 +318,26 @@ def list_recipes(
 
 
 @app.get("/recipes/{recipe_id}")
-def get_recipe(recipe_id: int, db: Session = Depends(get_db)):
+def get_recipe(
+    recipe_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     r = db.get(models.Recipe, recipe_id)
     if not r:
         raise HTTPException(404, "Recipe not found")
+    if r.user_id != current_user.id:
+        raise HTTPException(403, "Not yours")
     return r
 
 
 @app.post("/recipes", status_code=201)
-def create_recipe(body: RecipeCreate, db: Session = Depends(get_db)):
-    r = models.Recipe(**body.model_dump())
+def create_recipe(
+    body: RecipeCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    r = models.Recipe(**body.model_dump(), user_id=current_user.id)
     db.add(r)
     db.commit()
     db.refresh(r)
@@ -209,10 +345,17 @@ def create_recipe(body: RecipeCreate, db: Session = Depends(get_db)):
 
 
 @app.put("/recipes/{recipe_id}")
-def update_recipe(recipe_id: int, body: RecipeUpdate, db: Session = Depends(get_db)):
+def update_recipe(
+    recipe_id: int,
+    body: RecipeUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     r = db.get(models.Recipe, recipe_id)
     if not r:
         raise HTTPException(404, "Recipe not found")
+    if r.user_id != current_user.id:
+        raise HTTPException(403, "Not yours")
     for k, v in body.model_dump(exclude_none=True).items():
         setattr(r, k, v)
     db.commit()
@@ -221,12 +364,95 @@ def update_recipe(recipe_id: int, body: RecipeUpdate, db: Session = Depends(get_
 
 
 @app.delete("/recipes/{recipe_id}", status_code=204)
-def delete_recipe(recipe_id: int, db: Session = Depends(get_db)):
+def delete_recipe(
+    recipe_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     r = db.get(models.Recipe, recipe_id)
     if not r:
         raise HTTPException(404, "Recipe not found")
+    if r.user_id != current_user.id:
+        raise HTTPException(403, "Not yours")
     db.delete(r)
     db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Community Recipes
+# ---------------------------------------------------------------------------
+
+@app.get("/community/recipes")
+def list_community_recipes(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Public recipes shared by other households."""
+    recipes = (
+        db.query(models.Recipe)
+        .filter(models.Recipe.is_public == True, models.Recipe.user_id != current_user.id)
+        .order_by(models.Recipe.title)
+        .all()
+    )
+    return recipes
+
+
+@app.post("/recipes/{recipe_id}/publish")
+def publish_recipe(
+    recipe_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Make a recipe public (share to community)."""
+    r = db.get(models.Recipe, recipe_id)
+    if not r or r.user_id != current_user.id:
+        raise HTTPException(404, "Recipe not found")
+    r.is_public = True
+    db.commit()
+    return {"ok": True, "is_public": True}
+
+
+@app.post("/recipes/{recipe_id}/unpublish")
+def unpublish_recipe(
+    recipe_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Remove a recipe from the community."""
+    r = db.get(models.Recipe, recipe_id)
+    if not r or r.user_id != current_user.id:
+        raise HTTPException(404, "Recipe not found")
+    r.is_public = False
+    db.commit()
+    return {"ok": True, "is_public": False}
+
+
+@app.post("/community/recipes/{recipe_id}/copy", status_code=201)
+def copy_community_recipe(
+    recipe_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Copy a public recipe into the current user's library."""
+    r = db.get(models.Recipe, recipe_id)
+    if not r or not r.is_public:
+        raise HTTPException(404, "Recipe not found in community")
+    copy = models.Recipe(
+        user_id=current_user.id,
+        title=r.title,
+        servings=r.servings,
+        prep_min=r.prep_min,
+        cook_min=r.cook_min,
+        ingredients=r.ingredients,
+        instructions=r.instructions,
+        tags=r.tags,
+        source="community",
+        notes=r.notes,
+    )
+    db.add(copy)
+    db.commit()
+    db.refresh(copy)
+    return copy
 
 
 # ---------------------------------------------------------------------------
@@ -234,16 +460,24 @@ def delete_recipe(recipe_id: int, db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 
 @app.get("/pantry")
-def list_pantry(category: Optional[str] = None, db: Session = Depends(get_db)):
-    q = db.query(models.PantryItem)
+def list_pantry(
+    category: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    q = db.query(models.PantryItem).filter(models.PantryItem.user_id == current_user.id)
     if category:
         q = q.filter(models.PantryItem.category == category)
     return q.order_by(models.PantryItem.category, models.PantryItem.name).all()
 
 
 @app.post("/pantry", status_code=201)
-def create_pantry_item(body: PantryItemCreate, db: Session = Depends(get_db)):
-    item = models.PantryItem(**body.model_dump())
+def create_pantry_item(
+    body: PantryItemCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    item = models.PantryItem(**body.model_dump(), user_id=current_user.id)
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -251,18 +485,29 @@ def create_pantry_item(body: PantryItemCreate, db: Session = Depends(get_db)):
 
 
 @app.post("/pantry/bulk", status_code=201)
-def bulk_create_pantry_items(body: list[PantryItemCreate], db: Session = Depends(get_db)):
+def bulk_create_pantry_items(
+    body: list[PantryItemCreate],
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     for item_data in body:
-        db.add(models.PantryItem(**item_data.model_dump()))
+        db.add(models.PantryItem(**item_data.model_dump(), user_id=current_user.id))
     db.commit()
     return {"created": len(body)}
 
 
 @app.put("/pantry/{item_id}")
-def update_pantry_item(item_id: int, body: PantryItemUpdate, db: Session = Depends(get_db)):
+def update_pantry_item(
+    item_id: int,
+    body: PantryItemUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     item = db.get(models.PantryItem, item_id)
     if not item:
         raise HTTPException(404, "Item not found")
+    if item.user_id != current_user.id:
+        raise HTTPException(403, "Not yours")
     for k, v in body.model_dump(exclude_none=True).items():
         setattr(item, k, v)
     db.commit()
@@ -271,17 +516,26 @@ def update_pantry_item(item_id: int, body: PantryItemUpdate, db: Session = Depen
 
 
 @app.delete("/pantry/{item_id}", status_code=204)
-def delete_pantry_item(item_id: int, db: Session = Depends(get_db)):
+def delete_pantry_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     item = db.get(models.PantryItem, item_id)
     if not item:
         raise HTTPException(404, "Item not found")
+    if item.user_id != current_user.id:
+        raise HTTPException(403, "Not yours")
     db.delete(item)
     db.commit()
 
 
 @app.delete("/pantry", status_code=204)
-def clear_all_pantry(db: Session = Depends(get_db)):
-    db.query(models.PantryItem).delete()
+def clear_all_pantry(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    db.query(models.PantryItem).filter(models.PantryItem.user_id == current_user.id).delete()
     db.commit()
 
 
@@ -295,10 +549,17 @@ def pantry_categories():
 # ---------------------------------------------------------------------------
 
 @app.get("/meal-plan")
-def get_meal_plan(week_start: date, db: Session = Depends(get_db)):
+def get_meal_plan(
+    week_start: date,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     entries = (
         db.query(models.MealPlanEntry)
-        .filter(models.MealPlanEntry.week_start == week_start)
+        .filter(
+            models.MealPlanEntry.week_start == week_start,
+            models.MealPlanEntry.user_id == current_user.id,
+        )
         .all()
     )
     # Enrich with recipe title if linked
@@ -316,7 +577,10 @@ def get_meal_plan(week_start: date, db: Session = Depends(get_db)):
         }
         if e.recipe_id:
             r = db.get(models.Recipe, e.recipe_id)
-            row["label"] = r.title if r else None
+            if r and r.user_id == current_user.id:
+                row["label"] = r.title
+            elif r:
+                row["label"] = r.title
         else:
             row["label"] = e.free_text
         result.append(row)
@@ -324,14 +588,19 @@ def get_meal_plan(week_start: date, db: Session = Depends(get_db)):
 
 
 @app.post("/meal-plan", status_code=201)
-def set_meal_plan_entry(body: MealPlanEntryCreate, db: Session = Depends(get_db)):
-    # Upsert: replace existing entry for same week/day/meal_type
+def set_meal_plan_entry(
+    body: MealPlanEntryCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    # Upsert: replace existing entry for same week/day/meal_type for this user
     existing = (
         db.query(models.MealPlanEntry)
         .filter(
             models.MealPlanEntry.week_start == body.week_start,
             models.MealPlanEntry.day == body.day,
             models.MealPlanEntry.meal_type == body.meal_type,
+            models.MealPlanEntry.user_id == current_user.id,
         )
         .first()
     )
@@ -342,7 +611,7 @@ def set_meal_plan_entry(body: MealPlanEntryCreate, db: Session = Depends(get_db)
         db.refresh(existing)
         return existing
 
-    entry = models.MealPlanEntry(**body.model_dump())
+    entry = models.MealPlanEntry(**body.model_dump(), user_id=current_user.id)
     db.add(entry)
     db.commit()
     db.refresh(entry)
@@ -350,29 +619,46 @@ def set_meal_plan_entry(body: MealPlanEntryCreate, db: Session = Depends(get_db)
 
 
 @app.delete("/meal-plan/{entry_id}", status_code=204)
-def delete_meal_plan_entry(entry_id: int, db: Session = Depends(get_db)):
+def delete_meal_plan_entry(
+    entry_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     entry = db.get(models.MealPlanEntry, entry_id)
     if not entry:
         raise HTTPException(404, "Entry not found")
+    if entry.user_id != current_user.id:
+        raise HTTPException(403, "Not yours")
     db.delete(entry)
     db.commit()
 
 
 @app.delete("/meal-plan", status_code=204)
-def clear_week_meal_plan(week_start: date, db: Session = Depends(get_db)):
+def clear_week_meal_plan(
+    week_start: date,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     """Delete all meal plan entries for a given week."""
     db.query(models.MealPlanEntry).filter(
-        models.MealPlanEntry.week_start == week_start
+        models.MealPlanEntry.week_start == week_start,
+        models.MealPlanEntry.user_id == current_user.id,
     ).delete()
     db.commit()
 
 
 @app.post("/meal-plan/{entry_id}/cook")
-def mark_meal_cooked(entry_id: int, db: Session = Depends(get_db)):
+def mark_meal_cooked(
+    entry_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     """Mark a meal slot as cooked: stamp the entry, bump recipe stats, deduct pantry."""
     entry = db.get(models.MealPlanEntry, entry_id)
     if not entry:
         raise HTTPException(404, "Entry not found")
+    if entry.user_id != current_user.id:
+        raise HTTPException(403, "Not yours")
     if not entry.recipe_id:
         raise HTTPException(400, "Only meals linked to a recipe can be marked cooked")
 
@@ -384,7 +670,7 @@ def mark_meal_cooked(entry_id: int, db: Session = Depends(get_db)):
     recipe.times_made = (recipe.times_made or 0) + 1
     recipe.last_made = date.today()
 
-    pantry = db.query(models.PantryItem).all()
+    pantry = db.query(models.PantryItem).filter(models.PantryItem.user_id == current_user.id).all()
     by_name = {p.name.strip().lower(): p for p in pantry}
 
     deducted = []
@@ -424,11 +710,17 @@ def mark_meal_cooked(entry_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/meal-plan/{entry_id}/uncook", status_code=204)
-def unmark_meal_cooked(entry_id: int, db: Session = Depends(get_db)):
+def unmark_meal_cooked(
+    entry_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     """Undo a cooked mark. Note: does NOT restore pantry quantities."""
     entry = db.get(models.MealPlanEntry, entry_id)
     if not entry:
         raise HTTPException(404, "Entry not found")
+    if entry.user_id != current_user.id:
+        raise HTTPException(403, "Not yours")
     if entry.cooked_at and entry.recipe_id:
         recipe = db.get(models.Recipe, entry.recipe_id)
         if recipe and (recipe.times_made or 0) > 0:
@@ -442,18 +734,29 @@ def unmark_meal_cooked(entry_id: int, db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 
 @app.get("/prep-tasks")
-def list_prep_tasks(week_start: date, db: Session = Depends(get_db)):
+def list_prep_tasks(
+    week_start: date,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     return (
         db.query(models.PrepTask)
-        .filter(models.PrepTask.week_start == week_start)
+        .filter(
+            models.PrepTask.week_start == week_start,
+            models.PrepTask.user_id == current_user.id,
+        )
         .order_by(models.PrepTask.scheduled_day, models.PrepTask.id)
         .all()
     )
 
 
 @app.post("/prep-tasks", status_code=201)
-def create_prep_task(body: PrepTaskCreate, db: Session = Depends(get_db)):
-    task = models.PrepTask(**body.model_dump())
+def create_prep_task(
+    body: PrepTaskCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    task = models.PrepTask(**body.model_dump(), user_id=current_user.id)
     db.add(task)
     db.commit()
     db.refresh(task)
@@ -461,10 +764,17 @@ def create_prep_task(body: PrepTaskCreate, db: Session = Depends(get_db)):
 
 
 @app.put("/prep-tasks/{task_id}")
-def update_prep_task(task_id: int, body: PrepTaskUpdate, db: Session = Depends(get_db)):
+def update_prep_task(
+    task_id: int,
+    body: PrepTaskUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     task = db.get(models.PrepTask, task_id)
     if not task:
         raise HTTPException(404, "Task not found")
+    if task.user_id != current_user.id:
+        raise HTTPException(403, "Not yours")
     for k, v in body.model_dump(exclude_none=True).items():
         setattr(task, k, v)
     db.commit()
@@ -473,23 +783,32 @@ def update_prep_task(task_id: int, body: PrepTaskUpdate, db: Session = Depends(g
 
 
 @app.delete("/prep-tasks/{task_id}", status_code=204)
-def delete_prep_task(task_id: int, db: Session = Depends(get_db)):
+def delete_prep_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     task = db.get(models.PrepTask, task_id)
     if not task:
         raise HTTPException(404, "Task not found")
+    if task.user_id != current_user.id:
+        raise HTTPException(403, "Not yours")
     db.delete(task)
     db.commit()
 
 
 # ---------------------------------------------------------------------------
-# Household Preferences (singleton row, id=1)
+# Household Preferences (per-user row)
 # ---------------------------------------------------------------------------
 
 @app.get("/preferences")
-def get_preferences(db: Session = Depends(get_db)):
-    prefs = db.get(models.HouseholdPreferences, 1)
+def get_preferences(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    prefs = db.query(models.HouseholdPreferences).filter_by(user_id=current_user.id).first()
     if not prefs:
-        prefs = models.HouseholdPreferences(id=1)
+        prefs = models.HouseholdPreferences(user_id=current_user.id)
         db.add(prefs)
         db.commit()
         db.refresh(prefs)
@@ -497,10 +816,14 @@ def get_preferences(db: Session = Depends(get_db)):
 
 
 @app.put("/preferences")
-def update_preferences(body: HouseholdPreferencesSchema, db: Session = Depends(get_db)):
-    prefs = db.get(models.HouseholdPreferences, 1)
+def update_preferences(
+    body: HouseholdPreferencesSchema,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    prefs = db.query(models.HouseholdPreferences).filter_by(user_id=current_user.id).first()
     if not prefs:
-        prefs = models.HouseholdPreferences(id=1)
+        prefs = models.HouseholdPreferences(user_id=current_user.id)
         db.add(prefs)
     for k, v in body.model_dump(exclude_none=True).items():
         setattr(prefs, k, v)
@@ -514,7 +837,10 @@ def update_preferences(body: HouseholdPreferencesSchema, db: Session = Depends(g
 # ---------------------------------------------------------------------------
 
 @app.post("/ai/generate-recipe")
-def generate_recipe(body: GenerateRecipeRequest):
+def generate_recipe(
+    body: GenerateRecipeRequest,
+    current_user: models.User = Depends(get_current_user),
+):
     import anthropic
 
     pantry_context = ""
@@ -555,11 +881,15 @@ def generate_recipe(body: GenerateRecipeRequest):
 # ---------------------------------------------------------------------------
 
 @app.post("/ai/generate-meal-plan")
-def generate_meal_plan(body: GenerateMealPlanRequest, db: Session = Depends(get_db)):
+def generate_meal_plan(
+    body: GenerateMealPlanRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     import anthropic
 
-    # Load saved household preferences
-    saved_prefs = db.get(models.HouseholdPreferences, 1)
+    # Load saved household preferences for current user
+    saved_prefs = db.query(models.HouseholdPreferences).filter_by(user_id=current_user.id).first()
 
     # Build preferences block
     pref_lines = []
@@ -584,7 +914,11 @@ def generate_meal_plan(body: GenerateMealPlanRequest, db: Session = Depends(get_
     # Build favorites block
     favorites_context = ""
     if body.use_favorites:
-        favorites = db.query(models.Recipe).filter(models.Recipe.is_favorite == True).all()
+        favorites = (
+            db.query(models.Recipe)
+            .filter(models.Recipe.is_favorite == True, models.Recipe.user_id == current_user.id)
+            .all()
+        )
         if favorites:
             fav_list = "\n".join(
                 f"  - {r.title}" + (f" (tags: {', '.join(r.tags)})" if r.tags else "")
@@ -601,7 +935,7 @@ def generate_meal_plan(body: GenerateMealPlanRequest, db: Session = Depends(get_
     # Build cooked history block — what the household has actually enjoyed
     cooked_recipes = (
         db.query(models.Recipe)
-        .filter(models.Recipe.times_made > 0)
+        .filter(models.Recipe.times_made > 0, models.Recipe.user_id == current_user.id)
         .order_by(models.Recipe.times_made.desc())
         .limit(12)
         .all()
@@ -619,7 +953,7 @@ def generate_meal_plan(body: GenerateMealPlanRequest, db: Session = Depends(get_
     # Build pantry block — pantry-first when use_pantry is on
     pantry_context = ""
     if body.use_pantry:
-        items = db.query(models.PantryItem).all()
+        items = db.query(models.PantryItem).filter(models.PantryItem.user_id == current_user.id).all()
         if items:
             today = date.today()
             soon = today + timedelta(days=7)
@@ -686,12 +1020,19 @@ def generate_meal_plan(body: GenerateMealPlanRequest, db: Session = Depends(get_
 # ---------------------------------------------------------------------------
 
 @app.post("/ai/generate-prep-list")
-def generate_prep_list(body: GeneratePrepListRequest, db: Session = Depends(get_db)):
+def generate_prep_list(
+    body: GeneratePrepListRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     import anthropic
 
     entries = (
         db.query(models.MealPlanEntry)
-        .filter(models.MealPlanEntry.week_start == body.week_start)
+        .filter(
+            models.MealPlanEntry.week_start == body.week_start,
+            models.MealPlanEntry.user_id == current_user.id,
+        )
         .all()
     )
 
@@ -768,13 +1109,23 @@ def _fmt_amount(total: float) -> str:
 
 
 @app.get("/shopping-list")
-def get_shopping_list(week_start: date, db: Session = Depends(get_db)):
+def get_shopping_list(
+    week_start: date,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     entries = (
         db.query(models.MealPlanEntry)
-        .filter(models.MealPlanEntry.week_start == week_start)
+        .filter(
+            models.MealPlanEntry.week_start == week_start,
+            models.MealPlanEntry.user_id == current_user.id,
+        )
         .all()
     )
-    pantry = {item.name.lower(): item for item in db.query(models.PantryItem).all()}
+    pantry = {
+        item.name.lower(): item
+        for item in db.query(models.PantryItem).filter(models.PantryItem.user_id == current_user.id).all()
+    }
 
     # key = (normalised_name, unit) → aggregate amounts across all recipes
     groups: dict = {}
@@ -835,11 +1186,16 @@ def _extract_leftover_base(text: str) -> str | None:
 
 
 @app.post("/ai/generate-week-recipes")
-def generate_week_recipes(body: GenerateWeekRecipesRequest, db: Session = Depends(get_db)):
+def generate_week_recipes(
+    body: GenerateWeekRecipesRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     import anthropic
 
     all_week_entries = db.query(models.MealPlanEntry).filter(
         models.MealPlanEntry.week_start == body.week_start,
+        models.MealPlanEntry.user_id == current_user.id,
     ).all()
 
     # Unlinked, non-skip entries that need recipes
@@ -851,7 +1207,7 @@ def generate_week_recipes(body: GenerateWeekRecipesRequest, db: Session = Depend
     if not entries:
         return {"generated": 0}
 
-    prefs = db.get(models.HouseholdPreferences, 1)
+    prefs = db.query(models.HouseholdPreferences).filter_by(user_id=current_user.id).first()
     servings = prefs.servings if prefs else 4
 
     # ── Leftover detection ──────────────────────────────────────────────────
@@ -950,6 +1306,7 @@ def generate_week_recipes(body: GenerateWeekRecipesRequest, db: Session = Depend
         for meal_name, rd in batch_data.items():
             target_sv = _target(meal_name)
             recipe = models.Recipe(
+                user_id=current_user.id,
                 title=rd.get("title", meal_name),
                 servings=rd.get("servings", target_sv),
                 prep_min=rd.get("prep_min", 0),
@@ -986,12 +1343,19 @@ def generate_week_recipes(body: GenerateWeekRecipesRequest, db: Session = Depend
 # ---------------------------------------------------------------------------
 
 @app.post("/ai/refresh-meal-slot")
-def refresh_meal_slot(body: RefreshMealSlotRequest, db: Session = Depends(get_db)):
+def refresh_meal_slot(
+    body: RefreshMealSlotRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     import anthropic
 
     entries = (
         db.query(models.MealPlanEntry)
-        .filter(models.MealPlanEntry.week_start == body.week_start)
+        .filter(
+            models.MealPlanEntry.week_start == body.week_start,
+            models.MealPlanEntry.user_id == current_user.id,
+        )
         .all()
     )
     existing = []
@@ -1006,7 +1370,7 @@ def refresh_meal_slot(body: RefreshMealSlotRequest, db: Session = Depends(get_db
         if label:
             existing.append(f"{e.day} {e.meal_type}: {label}")
 
-    saved_prefs = db.get(models.HouseholdPreferences, 1)
+    saved_prefs = db.query(models.HouseholdPreferences).filter_by(user_id=current_user.id).first()
     pref_lines = []
     if saved_prefs:
         if saved_prefs.dietary_restrictions:
@@ -1071,7 +1435,10 @@ RECIPE_JSON_SYSTEM = (
 # ---------------------------------------------------------------------------
 
 @app.post("/ai/import-recipe/pdf")
-async def import_recipe_pdf(file: UploadFile = File(...)):
+async def import_recipe_pdf(
+    file: UploadFile = File(...),
+    current_user: models.User = Depends(get_current_user),
+):
     import anthropic
 
     if not file.filename.lower().endswith(".pdf"):
@@ -1145,7 +1512,10 @@ def _fetch_page_text(url: str) -> str:
 
 
 @app.post("/ai/import-recipe/text")
-def import_recipe_text(body: ImportRecipeTextRequest):
+def import_recipe_text(
+    body: ImportRecipeTextRequest,
+    current_user: models.User = Depends(get_current_user),
+):
     import anthropic
 
     def stream():
@@ -1167,7 +1537,10 @@ def import_recipe_text(body: ImportRecipeTextRequest):
 
 
 @app.post("/ai/import-recipe/url")
-def import_recipe_url(body: ImportRecipeURLRequest):
+def import_recipe_url(
+    body: ImportRecipeURLRequest,
+    current_user: models.User = Depends(get_current_user),
+):
     import anthropic
 
     try:
@@ -1196,13 +1569,16 @@ def import_recipe_url(body: ImportRecipeURLRequest):
     return StreamingResponse(stream(), media_type="text/event-stream")
 
 
-
 # ---------------------------------------------------------------------------
 # AI: Parse grocery receipt image into pantry items
 # ---------------------------------------------------------------------------
 
 @app.post("/ai/parse-receipt")
-async def parse_receipt(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def parse_receipt(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     import anthropic
 
     contents = await file.read()
@@ -1266,7 +1642,11 @@ async def parse_receipt(file: UploadFile = File(...), db: Session = Depends(get_
 
 
 @app.post("/ai/scan-pantry-photo")
-async def scan_pantry_photo(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def scan_pantry_photo(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     """Identify visible food items in a pantry/fridge/freezer photo."""
     import anthropic
 

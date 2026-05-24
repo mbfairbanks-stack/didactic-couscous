@@ -1,4 +1,5 @@
 import { NavLink } from "react-router-dom";
+import { useAuth } from "../AuthContext";
 
 const CalendarIcon = () => (
   <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
@@ -41,6 +42,8 @@ const links = [
 ];
 
 export default function Nav() {
+  const { user, logout } = useAuth();
+
   return (
     <>
       {/* Top header */}
@@ -53,7 +56,7 @@ export default function Nav() {
             </span>
           </div>
           {/* Desktop nav links */}
-          <nav className="hidden sm:flex gap-1 ml-2">
+          <nav className="hidden sm:flex gap-1 ml-2 flex-1">
             {links.map((l) => (
               <NavLink
                 key={l.to}
@@ -70,6 +73,18 @@ export default function Nav() {
               </NavLink>
             ))}
           </nav>
+          {/* User + logout */}
+          <div className="hidden sm:flex items-center gap-3 ml-auto shrink-0">
+            <span className="text-xs text-stone-400">
+              👤 <span className="text-stone-300 font-medium">{user?.username}</span>
+            </span>
+            <button
+              onClick={logout}
+              className="text-xs text-stone-500 hover:text-stone-300 transition-colors px-2 py-1 rounded hover:bg-white/10"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
 

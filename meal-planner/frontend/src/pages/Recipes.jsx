@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { getRecipes, createRecipe, updateRecipe, deleteRecipe, getPantry, streamGenerateRecipe, streamImportRecipePDF, streamImportRecipeURL, streamImportRecipeText } from "../api";
+import { getRecipes, createRecipe, updateRecipe, deleteRecipe, getPantry, streamGenerateRecipe, streamImportRecipePDF, streamImportRecipeURL, streamImportRecipeText, publishRecipe, unpublishRecipe, getCommunityRecipes, copyCommunityRecipe } from "../api";
 
 const EMPTY_FORM = {
   title: "",
@@ -45,7 +45,7 @@ function recipeTheme(title) {
   return { emoji: "🍽️", grad: "from-stone-100 to-stone-200" };
 }
 
-function RecipeCard({ recipe, onEdit, onDelete, onToggleFavorite, pantryNames }) {
+function RecipeCard({ recipe, onEdit, onDelete, onToggleFavorite, onTogglePublish, pantryNames }) {
   const [expanded, setExpanded] = useState(false);
   const totalIng = recipe.ingredients?.length || 0;
   const matched = (recipe.ingredients || []).filter(
@@ -103,6 +103,13 @@ function RecipeCard({ recipe, onEdit, onDelete, onToggleFavorite, pantryNames })
               title={recipe.is_favorite ? "Unfavorite" : "Favorite"}
             >
               ★
+            </button>
+            <button
+              onClick={() => onTogglePublish(recipe)}
+              title={recipe.is_public ? "Remove from Community" : "Share to Community"}
+              className={`text-xs px-1 transition-colors ${recipe.is_public ? "text-blue-500 hover:text-blue-700" : "text-stone-300 hover:text-blue-400"}`}
+            >
+              🌐
             </button>
             <button onClick={() => onEdit(recipe)} className="text-xs text-stone-500 hover:underline px-1">Edit</button>
             <button onClick={() => onDelete(recipe.id)} className="text-xs text-red-400 hover:underline px-1">Del</button>
@@ -212,6 +219,9 @@ export default function Recipes() {
   const [aiParsed, setAiParsed] = useState(null);
   const [aiError, setAiError] = useState(null);
   const [pantryNames, setPantryNames] = useState(() => new Set());
+  const [tab, setTab] = useState("mine"); // "mine" | "community"
+  const [communityRecipes, setCommunityRecipes] = useState([]);
+  const [communityLoading, setCommunityLoading] = useState(false);
   const rawRef = useRef("");
 
   const load = () => {
@@ -226,6 +236,35 @@ export default function Recipes() {
   };
 
   useEffect(() => { load(); }, []);
+
+  const loadCommunity = () => {
+    setCommunityLoading(true);
+    getCommunityRecipes()
+      .then(setCommunityRecipes)
+      .catch(() => {})
+      .finally(() => setCommunityLoading(false));
+  };
+
+  useEffect(() => { if (tab === "community") loadCommunity(); }, [tab]);
+
+  const handleTogglePublish = async (recipe) => {
+    try {
+      if (recipe.is_public) {
+        await unpublishRecipe(recipe.id);
+      } else {
+        await publishRecipe(recipe.id);
+      }
+      load();
+    } catch (e) { setError(e.message); }
+  };
+
+  const handleCopyFromCommunity = async (recipe) => {
+    try {
+      await copyCommunityRecipe(recipe.id);
+      load();
+      setTab("mine");
+    } catch (e) { setError(e.message); }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -639,52 +678,120 @@ export default function Recipes() {
         </div>
       )}
 
-      {loading ? (
-        <p className="text-gray-400 text-sm">Loading...</p>
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">
-          <p className="text-lg">No recipes yet.</p>
-          <p className="text-sm mt-1">Add one manually or use AI Generate.</p>
-        </div>
+      {/* Tab switcher: My Recipes / Community */}
+      <div className="flex gap-1 mb-5 border-b border-stone-200">
+        {[["mine", "My Recipes"], ["community", "🌐 Community"]].map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
+              tab === key
+                ? "border-green-600 text-green-700"
+                : "border-transparent text-stone-500 hover:text-stone-700"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "mine" ? (
+        loading ? (
+          <p className="text-gray-400 text-sm">Loading...</p>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-16 text-gray-400">
+            <p className="text-lg">No recipes yet.</p>
+            <p className="text-sm mt-1">Add one manually or use AI Generate.</p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {favorites.length > 0 && (
+              <div>
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Favorites</h3>
+                <div className="grid sm:grid-cols-2 gap-3 items-start">
+                  {favorites.map((r) => (
+                    <RecipeCard
+                      key={r.id}
+                      recipe={r}
+                      onEdit={handleEdit}
+                      onDelete={handleDelete}
+                      onToggleFavorite={handleToggleFavorite}
+                      onTogglePublish={handleTogglePublish}
+                      pantryNames={pantryNames}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+            {rest.length > 0 && (
+              <div>
+                {favorites.length > 0 && (
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">All Recipes</h3>
+                )}
+                <div className="grid sm:grid-cols-2 gap-3 items-start">
+                  {rest.map((r) => (
+                    <RecipeCard
+                      key={r.id}
+                      recipe={r}
+                      onEdit={handleEdit}
+                      onDelete={handleDelete}
+                      onToggleFavorite={handleToggleFavorite}
+                      onTogglePublish={handleTogglePublish}
+                      pantryNames={pantryNames}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )
       ) : (
-        <div className="space-y-6">
-          {favorites.length > 0 && (
-            <div>
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Favorites</h3>
-              <div className="grid sm:grid-cols-2 gap-3 items-start">
-                {favorites.map((r) => (
-                  <RecipeCard
-                    key={r.id}
-                    recipe={r}
-                    onEdit={handleEdit}
-                    onDelete={handleDelete}
-                    onToggleFavorite={handleToggleFavorite}
-                    pantryNames={pantryNames}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-          {rest.length > 0 && (
-            <div>
-              {favorites.length > 0 && (
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">All Recipes</h3>
-              )}
-              <div className="grid sm:grid-cols-2 gap-3 items-start">
-                {rest.map((r) => (
-                  <RecipeCard
-                    key={r.id}
-                    recipe={r}
-                    onEdit={handleEdit}
-                    onDelete={handleDelete}
-                    onToggleFavorite={handleToggleFavorite}
-                    pantryNames={pantryNames}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+        /* Community tab */
+        communityLoading ? (
+          <p className="text-gray-400 text-sm">Loading community recipes…</p>
+        ) : communityRecipes.length === 0 ? (
+          <div className="text-center py-16 text-gray-400">
+            <p className="text-lg">No community recipes yet.</p>
+            <p className="text-sm mt-1">
+              Share your own recipes using the 🌐 button on any recipe card.
+            </p>
+          </div>
+        ) : (
+          <div className="grid sm:grid-cols-2 gap-3 items-start">
+            {communityRecipes.map((r) => {
+              const theme = recipeTheme(r.title);
+              return (
+                <div key={r.id} className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
+                  <div className={`h-12 bg-gradient-to-r ${theme.grad} flex items-center px-4 gap-2`}>
+                    <span className="text-xl">{theme.emoji}</span>
+                    <span className="text-xs font-semibold text-stone-500 ml-auto">Community</span>
+                  </div>
+                  <div className="p-4">
+                    <p className="font-semibold text-stone-800">{r.title}</p>
+                    <div className="flex gap-3 text-xs text-stone-400 mt-1 flex-wrap">
+                      {r.prep_min > 0 && <span>Prep {r.prep_min}m</span>}
+                      {r.cook_min > 0 && <span>Cook {r.cook_min}m</span>}
+                      {r.servings && <span>Serves {r.servings}</span>}
+                    </div>
+                    {r.tags?.length > 0 && (
+                      <div className="flex gap-1 flex-wrap mt-2">
+                        {r.tags.map((t) => (
+                          <span key={t} className="text-xs bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-100">{t}</span>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      onClick={() => handleCopyFromCommunity(r)}
+                      className="mt-3 w-full bg-green-600 text-white text-sm font-medium py-1.5 rounded-lg hover:bg-green-700 transition-colors"
+                    >
+                      + Add to my recipes
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )
       )}
     </div>
   );

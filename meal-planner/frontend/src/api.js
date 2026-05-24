@@ -1,7 +1,24 @@
 const BASE = "/api";
 
+function getToken() {
+  return localStorage.getItem("sc_token");
+}
+
+function authHeaders(extra = {}) {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}`, ...extra } : extra;
+}
+
 async function req(path, options = {}) {
-  const res = await fetch(`${BASE}${path}`, options);
+  const headers = { ...authHeaders(), ...(options.headers || {}) };
+  const res = await fetch(`${BASE}${path}`, { ...options, headers });
+  if (res.status === 401) {
+    // Token expired or invalid — clear it so the app redirects to login
+    localStorage.removeItem("sc_token");
+    localStorage.removeItem("sc_user");
+    window.location.href = "/";
+    return;
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || "Request failed");
@@ -14,6 +31,31 @@ const json = (body) => ({
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify(body),
 });
+
+// Auth
+export const authLogin = (username, password) =>
+  fetch(`${BASE}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  }).then((r) => r.json());
+
+export const authRegister = (username, password) =>
+  fetch(`${BASE}/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  }).then((r) => r.json());
+
+export const getMe = () => req("/auth/me");
+export const changePassword = (current_password, new_password) =>
+  req("/auth/password", { method: "PUT", ...json({ current_password, new_password }) });
+
+// Community Recipes
+export const getCommunityRecipes = () => req("/community/recipes");
+export const publishRecipe = (id) => req(`/recipes/${id}/publish`, { method: "POST" });
+export const unpublishRecipe = (id) => req(`/recipes/${id}/unpublish`, { method: "POST" });
+export const copyCommunityRecipe = (id) => req(`/community/recipes/${id}/copy`, { method: "POST" });
 
 // Recipes
 export const getRecipes = (params = {}) => {
@@ -51,7 +93,7 @@ export const generateWeekRecipes = (weekStart) =>
 async function uploadImageForItems(url, file) {
   const fd = new FormData();
   fd.append("file", file);
-  const res = await fetch(url, { method: "POST", body: fd });
+  const res = await fetch(url, { method: "POST", headers: authHeaders(), body: fd });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || "Upload failed");
@@ -80,7 +122,7 @@ async function streamSSE(url, body, onChunk, onDone, onError) {
   try {
     res = await fetch(`${BASE}${url}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify(body),
     });
   } catch (e) {
