@@ -514,7 +514,10 @@ def generate_recipe(body: GenerateRecipeRequest):
 
     system = (
         "You are a helpful home chef assistant specialising in classic, time-tested recipes. "
-        "Only generate traditional, well-established recipes — no trendy, fusion, or novelty dishes. "
+        "Only generate real, well-known dishes that a home cook would recognise — the kind found in "
+        "traditional cookbooks. If the requested name sounds invented or vague, interpret it as the "
+        "nearest classic equivalent (e.g. 'herby chicken bake' → 'Roast Chicken with Herbs'). "
+        "Never invent fusion dishes or novelty mashups. "
         "When asked to generate a recipe, respond with ONLY a valid JSON object — no markdown, no code fences, no extra text. "
         "The JSON must have these exact keys: "
         "title (string), servings (int), prep_min (int), cook_min (int), "
@@ -631,7 +634,13 @@ def generate_meal_plan(body: GenerateMealPlanRequest, db: Session = Depends(get_
 
     system = (
         "You are a helpful meal planning assistant specialising in classic, time-tested home cooking. "
-        "Only suggest traditional, well-established meals — no trendy, fusion, or novelty dishes. "
+        "Every meal name you suggest must be a real, well-known dish that a home cook would recognise — "
+        "something you could look up in a traditional cookbook. "
+        "Think: Spaghetti Bolognese, Chicken Tikka Masala, Caesar Salad, Beef Stew, Pad Thai, "
+        "Fish Tacos, Shakshuka, French Onion Soup, Chicken Stir-Fry, Mushroom Risotto. "
+        "Do NOT invent mashups, fusion dishes, or descriptive marketing names like "
+        "'Herb-Crusted Protein Bowl', 'Mediterranean-Asian Wrap', or 'Turmeric Glow Soup'. "
+        "If pantry items suggest a dish, name the actual classic dish — e.g. 'pasta + tomatoes' → 'Spaghetti Pomodoro'. "
         "Your top priority is to USE WHAT THE HOUSEHOLD ALREADY HAS, then fresh suggestions that fit "
         "their preferences and are inspired by (but not limited to) their favourite recipes. "
         "Respond with ONLY a valid JSON object — no markdown, no code fences. "
@@ -804,7 +813,10 @@ def generate_week_recipes(body: GenerateWeekRecipesRequest, db: Session = Depend
 
     system = (
         "You are a helpful home chef assistant specialising in classic, time-tested recipes. "
-        "Generate full recipes for a list of meal names. "
+        "Generate full recipes for a list of meal names. Every recipe must be a real, well-known dish "
+        "that a home cook would recognise from a traditional cookbook. If a meal name sounds invented "
+        "or vague, use the nearest classic dish — e.g. 'Asian-style noodles' → 'Pad Thai', "
+        "'creamy tomato pasta' → 'Pasta al Pomodoro'. Never invent fusion or novelty dishes. "
         "Respond with ONLY a valid JSON object — no markdown, no code fences, no extra text. "
         "Keys are the exact meal names provided. Each value has: "
         "title (string), servings (int), prep_min (int), cook_min (int), "
