@@ -44,14 +44,14 @@ function parseLines(text, defaultCategory) {
 function PrefsStep({ prefs, setPrefs }) {
   const field = (label, key, opts = {}) => (
     <div>
-      <label className="text-sm font-medium text-stone-700 block mb-1">{label}</label>
-      {opts.hint && <p className="text-xs text-stone-400 mb-1">{opts.hint}</p>}
+      <label className="text-sm font-medium text-stone-700 dark:text-stone-200 block mb-1">{label}</label>
+      {opts.hint && <p className="text-xs text-stone-400 dark:text-stone-500 mb-1">{opts.hint}</p>}
       {opts.textarea ? (
         <textarea
           value={prefs[key]}
           onChange={(e) => setPrefs({ ...prefs, [key]: e.target.value })}
           rows={2}
-          className="border border-stone-200 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent resize-none"
+          className="border border-stone-200 dark:border-stone-600 bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent resize-none placeholder:text-stone-400 dark:placeholder:text-stone-500"
           placeholder={opts.placeholder}
         />
       ) : (
@@ -59,7 +59,7 @@ function PrefsStep({ prefs, setPrefs }) {
           type={opts.type || "text"}
           value={prefs[key]}
           onChange={(e) => setPrefs({ ...prefs, [key]: e.target.value })}
-          className="border border-stone-200 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
+          className="border border-stone-200 dark:border-stone-600 bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent placeholder:text-stone-400 dark:placeholder:text-stone-500"
           placeholder={opts.placeholder}
           min={opts.min}
           max={opts.max}
@@ -70,7 +70,7 @@ function PrefsStep({ prefs, setPrefs }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-stone-600">Tell us about your household so AI can plan meals you'll love.</p>
+      <p className="text-sm text-stone-600 dark:text-stone-400">Tell us about your household so AI can plan meals you'll love.</p>
       {field("How many people?", "servings", { type: "number", min: 1, max: 20, placeholder: "2" })}
       {field("Dietary restrictions", "dietary_restrictions", {
         textarea: true,
@@ -160,7 +160,7 @@ export default function Onboarding({ onDone }) {
       aria-labelledby="onboarding-title"
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/70 backdrop-blur-sm"
     >
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[92vh] overflow-hidden flex flex-col">
+      <div className="bg-white dark:bg-stone-800 rounded-3xl shadow-2xl w-full max-w-md max-h-[92vh] overflow-hidden flex flex-col">
         {/* Hero */}
         <div className="bg-gradient-to-br from-emerald-600 to-emerald-700 px-6 pt-7 pb-5 text-white">
           <div className="flex items-center gap-3">
@@ -182,7 +182,7 @@ export default function Onboarding({ onDone }) {
         </div>
 
         {/* Stepper */}
-        <div className="flex border-b border-stone-100 bg-stone-50/50 overflow-x-auto">
+        <div className="flex border-b border-stone-100 dark:border-stone-700 bg-stone-50/50 dark:bg-stone-800/50 overflow-x-auto">
           {allSteps.map((label, i) => {
             const active = i === currentTabIdx;
             const icons = ["⚙️", ...PANTRY_STEPS.map((s) => s.icon)];
@@ -193,20 +193,20 @@ export default function Onboarding({ onDone }) {
               <button
                 key={label}
                 onClick={() => setStepIdx(i - 1)}
-                className={`flex-1 px-2 py-3 text-center transition-colors shrink-0 ${active ? "bg-white" : "hover:bg-stone-50"}`}
+                className={`flex-1 px-2 py-3 text-center transition-colors shrink-0 ${active ? "bg-white dark:bg-stone-700" : "hover:bg-stone-50 dark:hover:bg-stone-700/50"}`}
               >
                 <div className="flex items-center justify-center gap-1">
                   <span className={`text-sm ${active ? "" : "opacity-50"}`}>{icons[i]}</span>
-                  <span className={`text-xs font-semibold ${active ? "text-stone-800" : "text-stone-400"}`}>
+                  <span className={`text-xs font-semibold ${active ? "text-stone-800 dark:text-stone-100" : "text-stone-400 dark:text-stone-500"}`}>
                     {label}
                   </span>
                   {filled && i > 0 && (
-                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded-full">
+                    <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/40 px-1 py-0.5 rounded-full">
                       {itemCount(i - 1)}
                     </span>
                   )}
                   {filled && i === 0 && (
-                    <span className="text-[10px] text-emerald-600">✓</span>
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400">✓</span>
                   )}
                 </div>
                 <div className={`h-0.5 mt-2 rounded-full transition-colors ${active ? "bg-emerald-500" : "bg-transparent"}`} />
@@ -221,17 +221,17 @@ export default function Onboarding({ onDone }) {
             <PrefsStep prefs={prefs} setPrefs={setPrefs} />
           ) : (
             <>
-              <p className="text-sm text-stone-600 mb-3">{pantryStep.blurb}</p>
+              <p className="text-sm text-stone-600 dark:text-stone-400 mb-3">{pantryStep.blurb}</p>
               <textarea
                 value={texts[stepIdx]}
                 onChange={(e) => setText(e.target.value)}
                 placeholder={pantryStep.placeholder}
                 rows={9}
                 spellCheck={false}
-                className="w-full border border-stone-200 rounded-xl p-3 text-sm font-mono focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 placeholder:text-stone-300"
+                className="w-full border border-stone-200 dark:border-stone-600 bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 rounded-xl p-3 text-sm font-mono focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 dark:focus:ring-emerald-900 placeholder:text-stone-300 dark:placeholder:text-stone-500"
               />
-              <p className="text-xs text-stone-400 mt-2">
-                One per line · format: <code className="bg-stone-100 px-1 rounded">name amount unit</code>
+              <p className="text-xs text-stone-400 dark:text-stone-500 mt-2">
+                One per line · format: <code className="bg-stone-100 dark:bg-stone-600 px-1 rounded">name amount unit</code>
               </p>
             </>
           )}
@@ -240,11 +240,11 @@ export default function Onboarding({ onDone }) {
         {error && <p className="text-red-500 text-sm px-6 pb-2">{error}</p>}
 
         {/* Footer */}
-        <div className="border-t border-stone-100 px-5 py-3 flex items-center justify-between bg-stone-50/50">
+        <div className="border-t border-stone-100 dark:border-stone-700 px-5 py-3 flex items-center justify-between bg-stone-50/50 dark:bg-stone-800/50">
           <button
             onClick={skip}
             disabled={saving}
-            className="text-sm text-stone-500 hover:text-stone-700 px-2 py-2 disabled:opacity-50"
+            className="text-sm text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 px-2 py-2 disabled:opacity-50"
           >
             Skip for now
           </button>
@@ -252,7 +252,7 @@ export default function Onboarding({ onDone }) {
             {currentTabIdx > 0 && (
               <button
                 onClick={() => setStepIdx(stepIdx - 1)}
-                className="text-sm font-medium text-stone-700 hover:bg-stone-100 px-3 py-2 rounded-lg"
+                className="text-sm font-medium text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-700 px-3 py-2 rounded-lg"
               >
                 ← Back
               </button>
@@ -260,7 +260,7 @@ export default function Onboarding({ onDone }) {
             {currentTabIdx < allSteps.length - 1 ? (
               <button
                 onClick={() => setStepIdx(stepIdx + 1)}
-                className="bg-stone-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-stone-800"
+                className="bg-stone-900 dark:bg-stone-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-stone-800 dark:hover:bg-stone-500"
               >
                 Next →
               </button>
