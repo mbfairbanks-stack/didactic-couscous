@@ -33,6 +33,21 @@ function mealEmoji(title) {
   return "🍽️";
 }
 
+const GRADS = ["from-orange-100 to-amber-200","from-green-100 to-emerald-200","from-amber-100 to-orange-200",
+  "from-yellow-100 to-orange-200","from-yellow-100 to-amber-200","from-red-100 to-rose-200",
+  "from-rose-100 to-red-200","from-blue-100 to-cyan-200","from-red-100 to-orange-200",
+  "from-yellow-100 to-green-200","from-pink-100 to-rose-200","from-amber-100 to-yellow-200",
+  "from-yellow-100 to-amber-200","from-slate-100 to-gray-200","from-amber-50 to-yellow-200","from-green-100 to-lime-200"];
+
+function recipeTheme(title) {
+  const lower = (title || "").toLowerCase();
+  for (let i = 0; i < RECIPE_THEMES.length; i++) {
+    if (RECIPE_THEMES[i].kw.some((k) => lower.includes(k)))
+      return { emoji: RECIPE_THEMES[i].emoji, grad: GRADS[i] || "from-stone-100 to-stone-200" };
+  }
+  return { emoji: "🍽️", grad: "from-stone-100 to-stone-200" };
+}
+
 const ALL_DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 
 function getWeekStart(d, startDay = "Monday") {
@@ -162,35 +177,112 @@ function MobileSheet({ title, recipes, onSelect, onClear, onSkip, onClose }) {
   );
 }
 
+// ── Timer widget ────────────────────────────────────────────────────────────
+function Timer({ label, minutes }) {
+  const total = minutes * 60;
+  const [remaining, setRemaining] = useState(total);
+  const [running, setRunning] = useState(false);
+  const intervalRef = useRef(null);
+
+  useEffect(() => {
+    if (running) {
+      intervalRef.current = setInterval(() => {
+        setRemaining((r) => {
+          if (r <= 1) { clearInterval(intervalRef.current); setRunning(false); return 0; }
+          return r - 1;
+        });
+      }, 1000);
+    } else {
+      clearInterval(intervalRef.current);
+    }
+    return () => clearInterval(intervalRef.current);
+  }, [running]);
+
+  const reset = () => { setRunning(false); setRemaining(total); };
+  const pct = total > 0 ? (remaining / total) * 100 : 0;
+  const mins = Math.floor(remaining / 60);
+  const secs = remaining % 60;
+  const done = remaining === 0;
+  const circumference = 2 * Math.PI * 20;
+
+  return (
+    <div className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-colors ${done ? "bg-emerald-50 border-emerald-200" : running ? "bg-amber-50 border-amber-200" : "bg-stone-50 border-stone-200"}`}>
+      <svg width="48" height="48" className="shrink-0 -rotate-90">
+        <circle cx="24" cy="24" r="20" fill="none" stroke="#e5e7eb" strokeWidth="4" />
+        <circle
+          cx="24" cy="24" r="20" fill="none"
+          stroke={done ? "#10b981" : running ? "#f59e0b" : "#d1d5db"}
+          strokeWidth="4"
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference * (1 - pct / 100)}
+          strokeLinecap="round"
+          style={{ transition: "stroke-dashoffset 0.5s" }}
+        />
+      </svg>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-semibold text-stone-500 uppercase tracking-wider">{label}</p>
+        <p className={`text-xl font-mono font-bold tabular-nums leading-tight ${done ? "text-emerald-600" : running ? "text-amber-600" : "text-stone-700"}`}>
+          {done ? "Done!" : `${String(mins).padStart(2,"0")}:${String(secs).padStart(2,"0")}`}
+        </p>
+      </div>
+      <div className="flex gap-1.5 shrink-0">
+        {!done && (
+          <button
+            onClick={() => setRunning((r) => !r)}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${running ? "bg-amber-100 text-amber-700 hover:bg-amber-200" : "bg-stone-900 text-white hover:bg-stone-700"}`}
+          >
+            {running ? "Pause" : remaining === total ? "Start" : "Resume"}
+          </button>
+        )}
+        <button onClick={reset} className="px-2.5 py-1.5 rounded-lg text-sm text-stone-400 hover:bg-stone-100">↺</button>
+      </div>
+    </div>
+  );
+}
+
 // Recipe quick-view sheet (bottom on mobile, centered modal on desktop)
 function RecipeSheet({ recipe, onClose }) {
+  const theme = recipeTheme(recipe.title);
   return (
     <>
       <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
       <div
-        className="fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-2xl shadow-xl overflow-hidden sm:inset-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-[480px] sm:rounded-2xl"
-        style={{ maxHeight: "85vh" }}
+        className="fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-2xl shadow-xl overflow-hidden sm:inset-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-[520px] sm:rounded-2xl"
+        style={{ maxHeight: "90vh" }}
       >
-        <div className="flex items-start justify-between px-4 py-3 border-b bg-white sticky top-0">
-          <div>
-            <p className="font-semibold text-gray-800">{recipe.title}</p>
-            <div className="flex gap-3 text-xs text-gray-400 mt-0.5">
+        {/* Header with emoji band */}
+        <div className={`h-14 bg-gradient-to-r ${theme.grad} flex items-center px-4 gap-3`}>
+          <span className="text-2xl">{theme.emoji}</span>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-stone-800 truncate">{recipe.title}</p>
+            <div className="flex gap-3 text-xs text-stone-500 mt-0.5">
               {recipe.prep_min > 0 && <span>Prep {recipe.prep_min}m</span>}
               {recipe.cook_min > 0 && <span>Cook {recipe.cook_min}m</span>}
               {recipe.servings > 0 && <span>Serves {recipe.servings}</span>}
             </div>
           </div>
-          <button onClick={onClose} className="text-gray-400 text-2xl leading-none ml-4 mt-0.5">×</button>
+          <button onClick={onClose} className="text-stone-400 text-2xl leading-none ml-2 shrink-0">×</button>
         </div>
-        <div className="overflow-y-auto p-4 space-y-4">
+
+        <div className="overflow-y-auto p-4 space-y-4" style={{ maxHeight: "calc(90vh - 56px)" }}>
+          {/* Timers */}
+          {(recipe.prep_min > 0 || recipe.cook_min > 0) && (
+            <div className="space-y-2">
+              <h4 className="text-xs font-semibold text-stone-500 uppercase tracking-wider">Timers</h4>
+              {recipe.prep_min > 0 && <Timer label="Prep" minutes={recipe.prep_min} />}
+              {recipe.cook_min > 0 && <Timer label="Cook" minutes={recipe.cook_min} />}
+            </div>
+          )}
+
+          {/* Ingredients */}
           {recipe.ingredients?.length > 0 && (
             <div>
-              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Ingredients</h4>
+              <h4 className="text-xs font-semibold text-stone-500 uppercase tracking-wider mb-2">Ingredients</h4>
               <ul className="space-y-1">
                 {recipe.ingredients.map((ing, i) => (
-                  <li key={i} className="text-sm text-gray-700 flex gap-2">
+                  <li key={i} className="text-sm text-stone-700 flex gap-2">
                     {(ing.amount || ing.unit) && (
-                      <span className="font-medium text-gray-500 shrink-0 min-w-[60px]">{ing.amount} {ing.unit}</span>
+                      <span className="font-medium text-stone-500 shrink-0 min-w-[64px]">{ing.amount} {ing.unit}</span>
                     )}
                     <span>{ing.name}</span>
                   </li>
@@ -198,13 +290,15 @@ function RecipeSheet({ recipe, onClose }) {
               </ul>
             </div>
           )}
+
+          {/* Instructions */}
           {recipe.instructions && (
             <div>
-              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Instructions</h4>
-              <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{recipe.instructions}</p>
+              <h4 className="text-xs font-semibold text-stone-500 uppercase tracking-wider mb-2">Instructions</h4>
+              <p className="text-sm text-stone-700 whitespace-pre-line leading-relaxed">{recipe.instructions}</p>
             </div>
           )}
-          {recipe.notes && <p className="text-xs text-gray-400 italic">{recipe.notes}</p>}
+          {recipe.notes && <p className="text-xs text-stone-400 italic">{recipe.notes}</p>}
         </div>
       </div>
     </>
@@ -730,7 +824,11 @@ export default function MealPlan() {
                             }}
                           >
                             <button
-                              onClick={() => setActiveCell(isActive ? null : { day, meal_type: mealType })}
+                              onClick={() => {
+                                const linked = entry?.recipe_id ? recipes.find((r) => r.id === entry.recipe_id) : null;
+                                if (linked && !isSkipped(entry)) { setRecipeSheet(linked); return; }
+                                setActiveCell(isActive ? null : { day, meal_type: mealType });
+                              }}
                               className={`w-full min-h-[52px] text-left rounded-lg border px-2 py-1.5 text-xs transition-all overflow-hidden ${entryClass(entry)} hover:opacity-80 ${entry ? "cursor-grab active:cursor-grabbing" : ""} ${isActive ? "ring-2 ring-green-400" : ""} ${dragTarget?.day === day && dragTarget?.mealType === mealType ? "ring-2 ring-blue-400 !bg-blue-50" : ""}`}
                             >
                               {isSkipped(entry) ? (
