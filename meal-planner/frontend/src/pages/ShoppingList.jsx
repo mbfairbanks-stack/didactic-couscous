@@ -145,7 +145,7 @@ export default function ShoppingList() {
                     </span>
                     {(item.amount || item.unit) && (
                       <span className="text-xs text-gray-400">
-                        {item.amount} {item.unit}
+                        {[item.amount, item.unit].filter(Boolean).join(" ")}
                       </span>
                     )}
                   </div>
@@ -166,7 +166,7 @@ export default function ShoppingList() {
                     <span className="flex-1 text-sm text-gray-400 line-through">{item.name}</span>
                     {(item.amount || item.unit) && (
                       <span className="text-xs text-gray-300">
-                        {item.amount} {item.unit}
+                        {[item.amount, item.unit].filter(Boolean).join(" ")}
                       </span>
                     )}
                   </div>

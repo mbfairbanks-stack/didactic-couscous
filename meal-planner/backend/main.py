@@ -731,6 +731,13 @@ def generate_prep_list(body: GeneratePrepListRequest, db: Session = Depends(get_
 # Shopping list: diff meal plan vs pantry
 # ---------------------------------------------------------------------------
 
+# Ingredients that are always available from the tap / household — never buy
+_SKIP_INGREDIENTS = {
+    "water", "cold water", "hot water", "boiling water", "ice water",
+    "warm water", "tap water", "lukewarm water", "ice", "ice cubes",
+}
+
+
 def _parse_amount(val) -> float:
     try:
         return float(val)
@@ -773,6 +780,8 @@ def get_shopping_list(week_start: date, db: Session = Depends(get_db)):
             if not name:
                 continue
             norm = name.lower()
+            if norm in _SKIP_INGREDIENTS:
+                continue
             unit = str(ing.get("unit", "") or "").strip().lower()
             key = (norm, unit)
             amt = _parse_amount(ing.get("amount", 0))
