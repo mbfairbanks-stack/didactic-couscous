@@ -283,7 +283,11 @@ export default function MealPlan() {
       async () => {
         setAiStreaming(false);
         try {
-          const parsed = JSON.parse(rawRef.current);
+          const raw = rawRef.current;
+          // Extract JSON object even if the model wraps it in text or code fences
+          const match = raw.match(/\{[\s\S]*\}/);
+          if (!match) throw new Error("No JSON found");
+          const parsed = JSON.parse(match[0]);
           for (const day of DAYS) {
             const dayPlan = parsed[day];
             if (!dayPlan) continue;
@@ -296,7 +300,7 @@ export default function MealPlan() {
           }
           setShowAI(false);
           load();
-        } catch { setAiError("Could not parse AI response. Try again."); }
+        } catch (e) { console.error("AI parse error:", e, rawRef.current); setAiError("Could not parse AI response. Try again."); }
       },
       (err) => { setAiStreaming(false); setAiError(err); }
     );
