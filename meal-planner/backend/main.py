@@ -802,24 +802,90 @@ def get_shopping_list(week_start: date, db: Session = Depends(get_db)):
 # AI: Generate real recipes for all unlinked meal plan entries (batch)
 # ---------------------------------------------------------------------------
 
+def _extract_leftover_base(text: str) -> str | None:
+    """Return the base meal name if this entry is a leftovers entry, else None.
+
+    Handles patterns like:
+      'Mushroom Risotto Leftovers'  → 'Mushroom Risotto'
+      'Leftover Chicken Tikka Masala' → 'Chicken Tikka Masala'
+      'Leftovers: Salmon'            → 'Salmon'
+    """
+    t = text.strip()
+    lower = t.lower()
+    if lower.endswith(" leftovers"):
+        return t[: -len(" leftovers")].strip()
+    if lower.endswith(" leftover"):
+        return t[: -len(" leftover")].strip()
+    if lower.startswith("leftover "):
+        return t[len("leftover "):].strip()
+    if lower.startswith("leftovers: "):
+        return t[len("leftovers: "):].strip()
+    if lower.startswith("leftovers "):
+        return t[len("leftovers "):].strip()
+    return None
+
+
 @app.post("/ai/generate-week-recipes")
 def generate_week_recipes(body: GenerateWeekRecipesRequest, db: Session = Depends(get_db)):
     import anthropic
 
-    entries = db.query(models.MealPlanEntry).filter(
+    all_week_entries = db.query(models.MealPlanEntry).filter(
         models.MealPlanEntry.week_start == body.week_start,
-        models.MealPlanEntry.recipe_id == None,
     ).all()
-    entries = [e for e in entries if e.free_text and e.free_text != "__skip__"]
+
+    # Unlinked, non-skip entries that need recipes
+    entries = [
+        e for e in all_week_entries
+        if not e.recipe_id and e.free_text and e.free_text != "__skip__"
+    ]
 
     if not entries:
         return {"generated": 0}
 
-    meal_names = list({e.free_text for e in entries})
-
     prefs = db.get(models.HouseholdPreferences, 1)
     servings = prefs.servings if prefs else 4
 
+    # ── Leftover detection ──────────────────────────────────────────────────
+    # Build a map: normalised base name → recipe_id for all already-linked entries
+    already_linked: dict[str, int] = {}
+    for e in all_week_entries:
+        if e.recipe_id and e.free_text is None:
+            recipe = db.get(models.Recipe, e.recipe_id)
+            if recipe:
+                already_linked[recipe.title.lower().strip()] = e.recipe_id
+
+    # Separate leftover entries from entries that need new recipes
+    leftover_entries = []   # will be linked to the parent recipe
+    generate_entries = []   # need an AI recipe generated
+    # Track which base meals have a leftover counterpart (→ double servings)
+    bases_needing_double: set[str] = set()
+
+    for e in entries:
+        base = _extract_leftover_base(e.free_text)
+        if base is not None:
+            leftover_entries.append((e, base))
+            bases_needing_double.add(base.lower().strip())
+        else:
+            generate_entries.append(e)
+
+    # Link leftover entries to already-linked base recipes where possible
+    unresolved_leftovers = []
+    for e, base in leftover_entries:
+        parent_id = already_linked.get(base.lower().strip())
+        if parent_id:
+            e.recipe_id = parent_id
+            e.free_text = None
+        else:
+            # Parent not yet generated — keep in list to resolve after generation
+            unresolved_leftovers.append((e, base))
+
+    meal_names = list({e.free_text for e in generate_entries})
+
+    if not meal_names:
+        db.commit()
+        return {"generated": 0}
+
+    # ── Recipe generation ───────────────────────────────────────────────────
     system = (
         "You are a helpful home chef assistant specialising in classic, time-tested recipes. "
         "Generate full recipes for a list of meal names. Every recipe must be a real, well-known dish "
@@ -837,21 +903,25 @@ def generate_week_recipes(body: GenerateWeekRecipesRequest, db: Session = Depend
         "'chicken breast' not 'boneless skinless chicken breast'. "
         "Amounts must be plain numbers or simple fractions (e.g. 0.5 not '1/2')."
     )
-    user_msg = (
-        f"Generate classic recipes for these meals (target {servings} servings each):\n"
-        + "\n".join(f"- {m}" for m in meal_names)
-    )
 
     client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
     saved = 0
     BATCH = 5
 
+    # Map: normalised meal name → created recipe id (for resolving leftovers)
+    generated_recipe_ids: dict[str, int] = {}
+
     for i in range(0, len(meal_names), BATCH):
-        batch = meal_names[i:i + BATCH]
-        user_msg = (
-            f"Generate classic recipes for these meals (target {servings} servings each):\n"
-            + "\n".join(f"- {m}" for m in batch)
+        batch = meal_names[i : i + BATCH]
+        # Double servings for meals that have a leftovers lunch planned
+        def _target(name: str) -> int:
+            return servings * 2 if name.lower().strip() in bases_needing_double else servings
+
+        lines = "\n".join(
+            f"- {m} (target {_target(m)} servings)" for m in batch
         )
+        user_msg = f"Generate classic recipes for these meals:\n{lines}"
+
         message = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=8000,
@@ -869,9 +939,10 @@ def generate_week_recipes(body: GenerateWeekRecipesRequest, db: Session = Depend
             continue
 
         for meal_name, rd in batch_data.items():
+            target_sv = _target(meal_name)
             recipe = models.Recipe(
                 title=rd.get("title", meal_name),
-                servings=rd.get("servings", servings),
+                servings=rd.get("servings", target_sv),
                 prep_min=rd.get("prep_min", 0),
                 cook_min=rd.get("cook_min", 0),
                 ingredients=rd.get("ingredients", []),
@@ -883,11 +954,19 @@ def generate_week_recipes(body: GenerateWeekRecipesRequest, db: Session = Depend
             db.add(recipe)
             db.flush()
             lower = meal_name.lower()
-            for entry in entries:
+            for entry in generate_entries:
                 if entry.free_text and entry.free_text.lower() == lower:
                     entry.recipe_id = recipe.id
                     entry.free_text = None
+            generated_recipe_ids[lower.strip()] = recipe.id
             saved += 1
+
+    # Resolve any leftover entries whose parent was just generated
+    for e, base in unresolved_leftovers:
+        parent_id = generated_recipe_ids.get(base.lower().strip())
+        if parent_id:
+            e.recipe_id = parent_id
+            e.free_text = None
 
     db.commit()
     return {"generated": saved}
