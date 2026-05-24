@@ -358,6 +358,15 @@ def delete_meal_plan_entry(entry_id: int, db: Session = Depends(get_db)):
     db.commit()
 
 
+@app.delete("/meal-plan", status_code=204)
+def clear_week_meal_plan(week_start: date, db: Session = Depends(get_db)):
+    """Delete all meal plan entries for a given week."""
+    db.query(models.MealPlanEntry).filter(
+        models.MealPlanEntry.week_start == week_start
+    ).delete()
+    db.commit()
+
+
 @app.post("/meal-plan/{entry_id}/cook")
 def mark_meal_cooked(entry_id: int, db: Session = Depends(get_db)):
     """Mark a meal slot as cooked: stamp the entry, bump recipe stats, deduct pantry."""

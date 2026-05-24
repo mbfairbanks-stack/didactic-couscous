@@ -40,6 +40,7 @@ export const clearAllPantryItems = () => req("/pantry", { method: "DELETE" });
 export const getMealPlan = (weekStart) => req(`/meal-plan?week_start=${weekStart}`);
 export const setMealPlanEntry = (body) => req("/meal-plan", { method: "POST", ...json(body) });
 export const deleteMealPlanEntry = (id) => req(`/meal-plan/${id}`, { method: "DELETE" });
+export const clearWeekMealPlan = (weekStart) => req(`/meal-plan?week_start=${weekStart}`, { method: "DELETE" });
 export const markMealCooked = (id) => req(`/meal-plan/${id}/cook`, { method: "POST" });
 export const unmarkMealCooked = (id) => req(`/meal-plan/${id}/uncook`, { method: "POST" });
 

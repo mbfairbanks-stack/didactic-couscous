@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { getMealPlan, setMealPlanEntry, deleteMealPlanEntry, getRecipes, getPreferences, streamGenerateMealPlan, streamRefreshMealSlot, generateWeekRecipes, markMealCooked, unmarkMealCooked } from "../api";
+import { getMealPlan, setMealPlanEntry, deleteMealPlanEntry, clearWeekMealPlan, getRecipes, getPreferences, streamGenerateMealPlan, streamRefreshMealSlot, generateWeekRecipes, markMealCooked, unmarkMealCooked } from "../api";
 import { format, addDays, addWeeks, subWeeks } from "date-fns";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -426,6 +426,15 @@ export default function MealPlan() {
     );
   };
 
+  const handleClearWeek = async () => {
+    const count = entries.length;
+    if (!window.confirm(`Clear all ${count} meal${count === 1 ? "" : "s"} for this week?`)) return;
+    try {
+      await clearWeekMealPlan(weekKey);
+      load();
+    } catch (e) { setError(e.message); }
+  };
+
   const handlePublish = async () => {
     setPublishing(true);
     try {
@@ -550,6 +559,14 @@ export default function MealPlan() {
           <button onClick={thisWeek} className="text-xs text-green-600 hover:underline">Today</button>
         </div>
         <div className="flex items-center gap-2">
+          {entries.length > 0 && (
+            <button
+              onClick={handleClearWeek}
+              className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-sm font-medium border border-red-200 text-red-500 hover:bg-red-50 hover:border-red-300 transition-colors"
+            >
+              Clear
+            </button>
+          )}
           <button
             onClick={handlePublish}
             disabled={publishing}
