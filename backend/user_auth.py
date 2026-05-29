@@ -83,24 +83,43 @@ def seed_default_users(admin_password: str = "") -> None:
 
 def authenticate(username: str, password: str):
     """Returns (token, is_demo) or raises ValueError on bad credentials."""
+    import datetime
     conn = _get_conn()
     row = conn.execute(
-        "SELECT password_hash, token, is_demo FROM users WHERE username=?",
+        "SELECT password_hash, token, is_demo, token_expires FROM users WHERE username=?",
         (username,),
     ).fetchone()
     conn.close()
     if not row or not _check_pw(password, row[0]):
         raise ValueError("Invalid credentials")
-    # Refresh token expiry on login
+
+    existing_token, is_demo, expires = row[1], row[2], row[3]
+
+    # Reuse the existing token if it's still valid — allows multiple simultaneous sessions
+    token_still_valid = False
+    if existing_token and expires:
+        try:
+            token_still_valid = datetime.datetime.fromisoformat(expires) > datetime.datetime.utcnow()
+        except ValueError:
+            pass
+
     conn = _get_conn()
-    new_token = _make_token()
-    conn.execute(
-        "UPDATE users SET token=?, token_expires=? WHERE username=?",
-        (new_token, _token_expiry(), username)
-    )
+    if token_still_valid:
+        # Refresh expiry without changing the token so other active sessions stay valid
+        conn.execute(
+            "UPDATE users SET token_expires=? WHERE username=?",
+            (_token_expiry(), username)
+        )
+        token = existing_token
+    else:
+        token = _make_token()
+        conn.execute(
+            "UPDATE users SET token=?, token_expires=? WHERE username=?",
+            (token, _token_expiry(), username)
+        )
     conn.commit()
     conn.close()
-    return new_token, bool(row[2])
+    return token, bool(is_demo)
 
 
 def register(username: str, password: str) -> str:
