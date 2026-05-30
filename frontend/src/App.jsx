@@ -15,8 +15,6 @@ import Savings from "./pages/Savings";
 import Settings from "./pages/Settings";
 import Onboarding from "./pages/Onboarding";
 import Login from "./pages/Login";
-import Bills from "./pages/Bills";
-import TaxSummary from "./pages/TaxSummary";
 import { SettingsProvider } from "./contexts/SettingsContext";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { getOnboardingStatus } from "./api";
@@ -90,8 +88,6 @@ export default function App() {
                         <Route path="/net-worth" element={<NetWorth />} />
                         <Route path="/savings" element={<Savings />} />
                         <Route path="/settings" element={<Settings />} />
-                        <Route path="/bills" element={<Bills />} />
-                        <Route path="/tax-summary" element={<TaxSummary />} />
                       </Routes>
                     </main>
                   </div>

@@ -13,8 +13,6 @@ const mainLinks = [
   { to: "/insights", label: "AI Insights" },
   { to: "/net-worth", label: "Net Worth" },
   { to: "/savings", label: "Savings" },
-  { to: "/bills", label: "Bills" },
-  { to: "/tax-summary", label: "Tax" },
   { to: "/settings", label: "Settings" },
 ];
 
