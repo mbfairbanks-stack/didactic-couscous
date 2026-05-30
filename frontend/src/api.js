@@ -350,6 +350,9 @@ export const parsePdf = (file) => {
   return req("/parse-pdf", { method: "POST", body: form });
 };
 
+// Emergency fund
+export const getEmergencyFund = () => req("/emergency-fund");
+
 // Net worth milestones
 export const getMilestones = () => req("/net-worth/milestones");
 export const createMilestone = (body) =>

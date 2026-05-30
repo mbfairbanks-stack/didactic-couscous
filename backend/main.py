@@ -3137,6 +3137,48 @@ def delete_milestone(mid: int, db: Session = Depends(get_db)):
     db.commit()
 
 
+@app.get("/emergency-fund")
+def get_emergency_fund(db: Session = Depends(get_db)):
+    """Returns emergency fund status: avg monthly expenses vs liquid cash assets."""
+    today = datetime.date.today()
+    # Compute last 3 completed months
+    monthly_totals = []
+    for i in range(1, 4):
+        d = (today.replace(day=1) - datetime.timedelta(days=1))
+        for _ in range(i - 1):
+            d = (d.replace(day=1) - datetime.timedelta(days=1))
+        mo_total = db.execute(
+            select(func.sum(models.Transaction.amount))
+            .where(models.Transaction.year == d.year)
+            .where(models.Transaction.month == d.month)
+            .where(models.Transaction.amount > 0)
+        ).scalar() or 0
+        if mo_total > 0:
+            monthly_totals.append(float(mo_total))
+
+    avg_monthly = round(sum(monthly_totals) / len(monthly_totals), 2) if monthly_totals else 0.0
+
+    # Liquid cash assets
+    cash_assets = db.execute(
+        select(models.Asset).where(
+            models.Asset.asset_type == "cash",
+            models.Asset.liquidity == "liquid",
+        )
+    ).scalars().all()
+    liquid_cash = round(sum(float(a.balance or 0) for a in cash_assets), 2)
+
+    return {
+        "avg_monthly_expenses": avg_monthly,
+        "liquid_cash": liquid_cash,
+        "targets": {
+            "3_months": round(avg_monthly * 3, 2),
+            "6_months": round(avg_monthly * 6, 2),
+            "9_months": round(avg_monthly * 9, 2),
+        },
+        "months_covered": round(liquid_cash / avg_monthly, 1) if avg_monthly > 0 else None,
+    }
+
+
 # ── Merchant Category Rules ──────────────────────────────────────────────────
 
 class MerchantRuleUpsert(BaseModel):
