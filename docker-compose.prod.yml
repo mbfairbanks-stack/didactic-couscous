@@ -18,10 +18,14 @@ services:
     expose:
       - "80"
     volumes:
-      - ./backend/budget.db:/app/backend/budget.db
+      - ./data:/data        # auth.db + all user databases survive rebuilds
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - BUDGET_PASSWORD=${BUDGET_PASSWORD:-}
+      - DEMO_PASSWORD=${DEMO_PASSWORD:-demo}
+      - MULTI_USER=true
+      - AUTH_DB_PATH=/data/auth.db
+      - USER_DB_DIR=/data/users
     restart: unless-stopped
 
   demo:
@@ -31,7 +35,6 @@ services:
     environment:
       - DEMO_MODE=true
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      # No BUDGET_PASSWORD = no login required, and writes are blocked by demo middleware
     restart: unless-stopped
 
 volumes:
