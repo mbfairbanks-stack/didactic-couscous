@@ -1544,8 +1544,22 @@ def _parse_date(s: str) -> Optional[str]:
 
 
 def _lookup_category(merchant: str, db: Session) -> Optional[str]:
-    """Find the most common historical category for a merchant using fuzzy matching."""
-    # Try exact match first
+    """Find category: check merchant_rules first, then transaction history."""
+    # 1. Exact match in merchant_rules
+    rule = db.execute(
+        select(models.MerchantRule).where(models.MerchantRule.merchant_pattern == merchant)
+    ).scalar_one_or_none()
+    if rule:
+        return rule.category
+
+    # 2. Partial match in merchant_rules
+    rules = db.execute(select(models.MerchantRule)).scalars().all()
+    merchant_lower = merchant.lower()
+    for r in rules:
+        if r.merchant_pattern.lower() in merchant_lower or merchant_lower in r.merchant_pattern.lower():
+            return r.category
+
+    # 3. Exact match in transaction history
     rows = db.execute(
         select(models.Transaction.category, func.count(models.Transaction.id).label("cnt"))
         .where(models.Transaction.merchant == merchant)
@@ -1555,7 +1569,7 @@ def _lookup_category(merchant: str, db: Session) -> Optional[str]:
     if rows:
         return rows[0].category
 
-    # Fuzzy: extract significant words and search
+    # 4. Fuzzy match in transaction history
     words = [w for w in re.sub(r'[^a-z\s]', '', merchant.lower()).split() if len(w) > 3]
     if not words:
         return None
@@ -1611,12 +1625,21 @@ def parse_csv(body: ParseCsvRequest, db: Session = Depends(get_db)):
             if not parsed_date or not merchant or not amount or amount <= 0:
                 continue
             suggested = _lookup_category(merchant, db)
+            # Check if already in transactions
+            is_dup = db.execute(
+                select(models.Transaction).where(
+                    models.Transaction.date == datetime.date.fromisoformat(parsed_date),
+                    models.Transaction.merchant == merchant,
+                    func.round(models.Transaction.amount, 2) == round(amount, 2),
+                )
+            ).first() is not None
             parsed.append({
                 "date": parsed_date,
                 "merchant": merchant,
                 "amount": round(amount, 2),
                 "suggested_category": suggested or "",
                 "confidence": "high" if suggested else "low",
+                "is_duplicate": is_dup,
             })
         return {"rows": parsed}
 
@@ -1659,12 +1682,21 @@ def parse_csv(body: ParseCsvRequest, db: Session = Depends(get_db)):
                 continue
 
             suggested = _lookup_category(merchant, db)
+            # Check if already in transactions
+            is_dup = db.execute(
+                select(models.Transaction).where(
+                    models.Transaction.date == datetime.date.fromisoformat(parsed_date),
+                    models.Transaction.merchant == merchant,
+                    func.round(models.Transaction.amount, 2) == round(amount, 2),
+                )
+            ).first() is not None
             parsed.append({
                 "date": parsed_date,
                 "merchant": merchant,
                 "amount": round(amount, 2),
                 "suggested_category": suggested or "",
                 "confidence": "high" if suggested else "low",
+                "is_duplicate": is_dup,
             })
     else:
         # Header-based CSV (AMEX, RBC, CIBC, etc.)
@@ -1712,12 +1744,21 @@ def parse_csv(body: ParseCsvRequest, db: Session = Depends(get_db)):
                 continue
 
             suggested = _lookup_category(merchant, db)
+            # Check if already in transactions
+            is_dup = db.execute(
+                select(models.Transaction).where(
+                    models.Transaction.date == datetime.date.fromisoformat(parsed_date),
+                    models.Transaction.merchant == merchant,
+                    func.round(models.Transaction.amount, 2) == round(amount, 2),
+                )
+            ).first() is not None
             parsed.append({
                 "date": parsed_date,
                 "merchant": merchant,
                 "amount": round(amount, 2),
                 "suggested_category": suggested or "",
                 "confidence": "high" if suggested else "low",
+                "is_duplicate": is_dup,
             })
 
     return {"rows": parsed}
@@ -3036,3 +3077,161 @@ def get_upcoming_bills(db: Session = Depends(get_db)):
 
     upcoming.sort(key=lambda x: x["days_until"])
     return upcoming
+
+
+# ── Net Worth Milestones ─────────────────────────────────────────────────────
+
+class MilestoneCreate(BaseModel):
+    label: str
+    target_amount: float
+    notes: Optional[str] = None
+
+class MilestoneOut(BaseModel):
+    id: int
+    label: str
+    target_amount: float
+    achieved_at: Optional[str] = None
+    notes: Optional[str] = None
+    is_achieved: bool = False
+    progress_pct: float = 0.0
+    model_config = {"from_attributes": True}
+
+@app.get("/net-worth/milestones", response_model=list[MilestoneOut])
+def list_milestones(db: Session = Depends(get_db)):
+    milestones = db.execute(
+        select(models.NetWorthMilestone).order_by(models.NetWorthMilestone.target_amount)
+    ).scalars().all()
+    assets = db.execute(select(models.Asset)).scalars().all()
+    debts = db.execute(select(models.Debt)).scalars().all()
+    current_nw = sum(a.balance for a in assets) - sum(d.current_balance for d in debts)
+    result = []
+    for m in milestones:
+        pct = round(min((current_nw / m.target_amount) * 100, 100), 1) if m.target_amount > 0 else 0.0
+        is_achieved = current_nw >= m.target_amount
+        # Auto-mark achieved_at if just crossed
+        if is_achieved and not m.achieved_at:
+            m.achieved_at = datetime.date.today().isoformat()
+            db.commit()
+        result.append(MilestoneOut(
+            id=m.id, label=m.label, target_amount=m.target_amount,
+            achieved_at=m.achieved_at, notes=m.notes,
+            is_achieved=is_achieved, progress_pct=pct,
+        ))
+    return result
+
+@app.post("/net-worth/milestones", response_model=MilestoneOut, status_code=201)
+def create_milestone(body: MilestoneCreate, db: Session = Depends(get_db)):
+    m = models.NetWorthMilestone(**body.model_dump())
+    db.add(m)
+    db.commit()
+    db.refresh(m)
+    return MilestoneOut(id=m.id, label=m.label, target_amount=m.target_amount,
+                        achieved_at=m.achieved_at, notes=m.notes)
+
+@app.delete("/net-worth/milestones/{mid}", status_code=204)
+def delete_milestone(mid: int, db: Session = Depends(get_db)):
+    m = db.get(models.NetWorthMilestone, mid)
+    if not m:
+        raise HTTPException(404, "Milestone not found")
+    db.delete(m)
+    db.commit()
+
+
+# ── Merchant Category Rules ──────────────────────────────────────────────────
+
+class MerchantRuleUpsert(BaseModel):
+    merchant_pattern: str
+    category: str
+
+@app.post("/merchant-rules", status_code=200)
+def upsert_merchant_rule(body: MerchantRuleUpsert, db: Session = Depends(get_db)):
+    """Save or update a merchant→category rule (called after user corrects category)."""
+    existing = db.execute(
+        select(models.MerchantRule).where(models.MerchantRule.merchant_pattern == body.merchant_pattern)
+    ).scalar_one_or_none()
+    if existing:
+        existing.category = body.category
+        existing.updated_at = datetime.date.today().isoformat()
+    else:
+        rule = models.MerchantRule(
+            merchant_pattern=body.merchant_pattern,
+            category=body.category,
+            updated_at=datetime.date.today().isoformat(),
+        )
+        db.add(rule)
+    db.commit()
+    return {"ok": True}
+
+@app.get("/merchant-rules")
+def list_merchant_rules(db: Session = Depends(get_db)):
+    rules = db.execute(select(models.MerchantRule).order_by(models.MerchantRule.merchant_pattern)).scalars().all()
+    return [{"id": r.id, "merchant_pattern": r.merchant_pattern, "category": r.category, "updated_at": r.updated_at} for r in rules]
+
+@app.delete("/merchant-rules/{rule_id}", status_code=204)
+def delete_merchant_rule(rule_id: int, db: Session = Depends(get_db)):
+    rule = db.get(models.MerchantRule, rule_id)
+    if not rule:
+        raise HTTPException(404, "Rule not found")
+    db.delete(rule)
+    db.commit()
+
+
+# ── Recurring Transaction Detection ─────────────────────────────────────────
+
+@app.get("/transactions/missing-recurring")
+def missing_recurring(db: Session = Depends(get_db)):
+    """Find merchants that appeared in each of the last 3 months but not the current month."""
+    today = datetime.date.today()
+    current_year, current_month = today.year, today.month
+
+    # Get the last 3 months
+    check_months = []
+    for i in range(1, 4):
+        m = current_month - i
+        y = current_year
+        while m <= 0:
+            m += 12
+            y -= 1
+        check_months.append((y, m))
+
+    # Find merchants present in ALL 3 prior months
+    merchant_months: dict = {}
+    for y, m in check_months:
+        rows = db.execute(
+            select(models.Transaction.merchant, func.sum(models.Transaction.amount).label("total"))
+            .where(models.Transaction.year == y, models.Transaction.month == m)
+            .group_by(models.Transaction.merchant)
+        ).all()
+        for r in rows:
+            if r.merchant not in merchant_months:
+                merchant_months[r.merchant] = {"months": 0, "avg_amount": 0, "amounts": []}
+            merchant_months[r.merchant]["months"] += 1
+            merchant_months[r.merchant]["amounts"].append(r.total)
+
+    # Keep only merchants that appeared in all 3 months
+    recurring = {
+        m: v for m, v in merchant_months.items()
+        if v["months"] >= 3
+    }
+
+    # Check which are missing from current month
+    current_merchants = set(
+        r[0] for r in db.execute(
+            select(models.Transaction.merchant)
+            .where(models.Transaction.year == current_year, models.Transaction.month == current_month)
+            .distinct()
+        ).all()
+    )
+
+    missing = []
+    for merchant, data in recurring.items():
+        if merchant not in current_merchants:
+            avg = round(sum(data["amounts"]) / len(data["amounts"]), 2)
+            missing.append({
+                "merchant": merchant,
+                "avg_amount": avg,
+                "months_seen": data["months"],
+            })
+
+    missing.sort(key=lambda x: x["avg_amount"], reverse=True)
+    return missing

@@ -179,3 +179,20 @@ class RecurringBill(Base):
     last_seen = Column(String, nullable=True)       # "2025-01-15" last transaction date
     is_active = Column(Boolean, default=True)
     notes = Column(String, nullable=True)
+
+
+class NetWorthMilestone(Base):
+    __tablename__ = "net_worth_milestones"
+    id = Column(Integer, primary_key=True, index=True)
+    label = Column(String, nullable=False)       # "First $100k", "Half a million"
+    target_amount = Column(Float, nullable=False)
+    achieved_at = Column(String, nullable=True)  # ISO date string when first crossed
+    notes = Column(String, nullable=True)
+
+
+class MerchantRule(Base):
+    __tablename__ = "merchant_rules"
+    id = Column(Integer, primary_key=True, index=True)
+    merchant_pattern = Column(String, nullable=False, unique=True)
+    category = Column(String, nullable=False)
+    updated_at = Column(String, nullable=True)
