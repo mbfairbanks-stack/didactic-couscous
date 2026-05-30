@@ -338,3 +338,14 @@ export const updateBill = (id, body) =>
   req(`/bills/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 export const deleteBill = (id) => req(`/bills/${id}`, { method: "DELETE" });
 export const getUpcomingBills = () => req("/bills/upcoming");
+
+// Merchant rules
+export const upsertMerchantRule = (merchant_pattern, category) =>
+  req("/merchant-rules", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ merchant_pattern, category }) });
+
+// PDF parsing
+export const parsePdf = (file) => {
+  const form = new FormData();
+  form.append("file", file);
+  return req("/parse-pdf", { method: "POST", body: form });
+};

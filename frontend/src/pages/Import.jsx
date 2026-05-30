@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { importFile, exportUrl, getYears, deduplicate, cleanupSummary, parseCsv, importCsvRows, getCategories } from "../api";
+import { importFile, exportUrl, getYears, deduplicate, cleanupSummary, parseCsv, importCsvRows, getCategories, upsertMerchantRule, parsePdf } from "../api";
 import { MONTH_LABELS, currentYear } from "../utils";
 
 const CARD_FORMATS = [
@@ -40,6 +40,13 @@ export default function Import() {
   const [parseError, setParseError] = useState("");
   const [csvImporting, setCsvImporting] = useState(false);
   const [csvResult, setCsvResult] = useState(null);
+  const [changedCategories, setChangedCategories] = useState({});  // { idx: { merchant, category } }
+
+  // PDF import state
+  const [pdfFile, setPdfFile] = useState(null);
+  const [pdfParsing, setPdfParsing] = useState(false);
+  const [pdfError, setPdfError] = useState("");
+  const pdfFileRef = useRef();
 
   const handleDeduplicate = async () => {
     setDeduping(true);
@@ -134,6 +141,12 @@ export default function Import() {
 
   const updateRow = (idx, field, value) => {
     setParsedRows((rows) => rows.map((r, i) => i === idx ? { ...r, [field]: value } : r));
+    if (field === "category") {
+      setChangedCategories((prev) => ({
+        ...prev,
+        [idx]: { merchant: parsedRows[idx].merchant, category: value },
+      }));
+    }
   };
 
   const removeRow = (idx) => {
@@ -147,6 +160,16 @@ export default function Import() {
     try {
       const res = await importCsvRows({ rows: parsedRows });
       setCsvResult(res);
+      // Save any manually corrected merchant→category rules
+      const corrections = Object.values(changedCategories);
+      if (corrections.length > 0) {
+        await Promise.allSettled(
+          corrections.map(({ merchant, category }) =>
+            upsertMerchantRule(merchant, category)
+          )
+        );
+      }
+      setChangedCategories({});
       setParsedRows(null);
       setCsvText("");
       getYears().then((y) => setYears(y.length ? y : [currentYear]));
@@ -342,6 +365,14 @@ export default function Import() {
               <p className="text-sm text-zinc-400">{parsedRows.length} transactions — review categories before importing</p>
               <button onClick={() => setParsedRows(null)} className="text-xs text-zinc-600 hover:text-zinc-400">Clear</button>
             </div>
+            {parsedRows.some(r => r.is_duplicate) && (
+              <button
+                onClick={() => setParsedRows(rows => rows.filter(r => !r.is_duplicate))}
+                className="text-xs text-yellow-400 hover:text-yellow-300 underline"
+              >
+                Remove {parsedRows.filter(r => r.is_duplicate).length} already-imported rows
+              </button>
+            )}
             <div className="overflow-x-auto rounded-lg border border-zinc-700">
               <table className="w-full text-xs">
                 <thead>
@@ -356,9 +387,14 @@ export default function Import() {
                 </thead>
                 <tbody>
                   {parsedRows.map((row, idx) => (
-                    <tr key={idx} className="border-b border-zinc-800 last:border-0 hover:bg-zinc-800/50">
+                    <tr key={idx} className={`border-b border-zinc-800 last:border-0 ${row.is_duplicate ? "opacity-40" : "hover:bg-zinc-800/50"}`}>
                       <td className="px-3 py-1.5 text-zinc-400">{row.date}</td>
-                      <td className="px-3 py-1.5 text-zinc-200 max-w-[180px] truncate">{row.merchant}</td>
+                      <td className="px-3 py-1.5 text-zinc-200 max-w-[180px]">
+                        <div className="truncate">{row.merchant}</div>
+                        {row.is_duplicate && (
+                          <span className="text-xs text-yellow-600 font-medium">already imported</span>
+                        )}
+                      </td>
                       <td className="px-3 py-1.5 text-right text-zinc-300">${Number(row.amount).toFixed(2)}</td>
                       <td className="px-3 py-1.5">
                         <select
@@ -401,6 +437,53 @@ export default function Import() {
             </button>
           </div>
         )}
+      </div>
+
+      {/* PDF Import */}
+      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-zinc-200">Import Bank Statement PDF</h2>
+          <p className="text-sm text-zinc-500 mt-1">Upload a PDF bank statement from TD, RBC, CIBC, or AMEX. Transactions are extracted automatically.</p>
+        </div>
+        <div
+          onClick={() => pdfFileRef.current.click()}
+          className="border-2 border-dashed border-zinc-700 hover:border-yellow-400/40 rounded-xl p-8 text-center cursor-pointer hover:bg-zinc-800 transition-colors"
+        >
+          <input ref={pdfFileRef} type="file" accept=".pdf" className="hidden"
+            onChange={(e) => { setPdfFile(e.target.files[0]); setPdfError(""); }} />
+          {pdfFile ? (
+            <p className="text-yellow-400 font-medium">{pdfFile.name}</p>
+          ) : (
+            <p className="text-zinc-400">Drop PDF or click to browse</p>
+          )}
+        </div>
+        {pdfError && <p className="text-red-400 text-sm">{pdfError}</p>}
+        <button
+          disabled={!pdfFile || pdfParsing}
+          onClick={async () => {
+            setPdfParsing(true);
+            setPdfError("");
+            try {
+              const res = await parsePdf(pdfFile);
+              if (!res.rows?.length) { setPdfError("No transactions found in this PDF."); return; }
+              const rows = res.rows.map((r) => ({
+                ...r,
+                category: r.suggested_category || "",
+                source: "pdf",
+              }));
+              setParsedRows(rows);
+              setPdfFile(null);
+            } catch (e) {
+              setPdfError(e.message || "Failed to parse PDF.");
+            } finally {
+              setPdfParsing(false);
+            }
+          }}
+          className="bg-zinc-700 text-zinc-100 px-5 py-2 rounded-lg font-medium text-sm hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {pdfParsing ? "Parsing PDF..." : "Parse PDF"}
+        </button>
+        <p className="text-xs text-zinc-600">After parsing, transactions appear in the same review table as CSV imports above.</p>
       </div>
 
       {/* Deduplicate section */}
