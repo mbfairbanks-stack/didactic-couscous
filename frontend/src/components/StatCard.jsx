@@ -1,15 +1,16 @@
-export default function StatCard({ label, value, sub, color = "blue" }) {
-  const colors = {
-    blue: "bg-blue-50 border-blue-200 text-blue-700",
-    green: "bg-green-50 border-green-200 text-green-700",
-    red: "bg-red-50 border-red-200 text-red-700",
-    purple: "bg-purple-50 border-purple-200 text-purple-700",
+export default function StatCard({ label, value, sub, color = "yellow" }) {
+  const accent = {
+    yellow: "border-t-yellow-400 text-yellow-400",
+    green:  "border-t-green-400 text-green-400",
+    red:    "border-t-red-400 text-red-400",
+    purple: "border-t-purple-400 text-purple-400",
+    blue:   "border-t-blue-400 text-blue-400",
   };
   return (
-    <div className={`rounded-xl border p-5 ${colors[color]}`}>
-      <p className="text-sm font-medium opacity-75">{label}</p>
+    <div className={`bg-zinc-900 rounded-xl border border-zinc-800 border-t-2 p-5 shadow-sm ${accent[color] ?? accent.yellow}`}>
+      <p className="text-xs font-medium text-zinc-500 uppercase tracking-wide">{label}</p>
       <p className="text-2xl font-bold mt-1">{value}</p>
-      {sub && <p className="text-xs mt-1 opacity-60">{sub}</p>}
+      {sub && <p className="text-xs mt-1 text-zinc-600">{sub}</p>}
     </div>
   );
 }

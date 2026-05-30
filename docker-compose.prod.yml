@@ -1,0 +1,39 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+      - demo
+    restart: unless-stopped
+
+  app:
+    build: .
+    expose:
+      - "80"
+    volumes:
+      - ./backend/budget.db:/app/backend/budget.db
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - BUDGET_PASSWORD=${BUDGET_PASSWORD:-}
+    restart: unless-stopped
+
+  demo:
+    build: .
+    expose:
+      - "80"
+    environment:
+      - DEMO_MODE=true
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # No BUDGET_PASSWORD = no login required, and writes are blocked by demo middleware
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

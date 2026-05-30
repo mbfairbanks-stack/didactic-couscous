@@ -1,0 +1,23 @@
+services:
+  app:
+    build: .
+    ports:
+      - "80:80"
+    volumes:
+      # Persist the real database outside the container
+      - ./backend/budget.db:/app/backend/budget.db
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - BUDGET_PASSWORD=${BUDGET_PASSWORD:-}
+    restart: unless-stopped
+
+  demo:
+    build: .
+    ports:
+      - "8080:80"
+    environment:
+      - DEMO_MODE=true
+      - BUDGET_PASSWORD=${DEMO_PASSWORD:-demo}
+    restart: unless-stopped
+    profiles:
+      - demo

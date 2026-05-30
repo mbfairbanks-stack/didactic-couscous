@@ -3,28 +3,102 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
-import { getMonthlySummary, getCategorySummary, getCategoryTrend, getCategories, getYears } from "../api";
-
-const MONTH_LABELS = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const currentYear = new Date().getFullYear();
+import { getMonthlySummary, getCategorySummary, getCategoryTrend, getCategories, getYears, getMultiCategoryTrend, getDailySummary } from "../api";
+import { MONTH_LABELS, currentYear, fmt } from "../utils";
 
 const COLORS = [
-  "#3b82f6", "#ef4444", "#22c55e", "#f59e0b", "#8b5cf6",
-  "#06b6d4", "#ec4899", "#10b981", "#f97316", "#6366f1",
-  "#84cc16", "#14b8a6",
+  "#fbbf24", "#ef4444", "#22c55e", "#a78bfa", "#06b6d4",
+  "#ec4899", "#10b981", "#f97316", "#6366f1", "#84cc16",
+  "#14b8a6", "#f59e0b",
 ];
 
-const fmt = (n) => "$" + Number(n || 0).toLocaleString("en-CA", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-
-function CustomTooltip({ active, payload, label }) {
+function DarkTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-white border shadow-lg rounded-lg p-3 text-sm">
-      <p className="font-medium mb-1">{label}</p>
+    <div className="bg-zinc-900 border border-zinc-800 shadow-lg rounded-lg p-3 text-xs">
+      <p className="font-medium text-zinc-300 mb-1">{label}</p>
       {payload.map((p) => (
         <p key={p.name} style={{ color: p.color }}>{p.name}: {fmt(p.value)}</p>
       ))}
+    </div>
+  );
+}
+
+const axisProps = { tick: { fontSize: 11, fill: "#71717a" }, axisLine: false, tickLine: false };
+const gridProps = { strokeDasharray: "3 3", vertical: false, stroke: "#27272a" };
+
+// ── Multi-category spending trend chart ──────────────────────────────────────
+function MultiCategoryTrend({ categories }) {
+  const [selected, setSelected] = useState([]);
+  const [trendData, setTrendData] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const TREND_COLORS = ["#fbbf24", "#22c55e", "#a78bfa", "#06b6d4", "#ec4899", "#f97316"];
+
+  const toggleCategory = (cat) => {
+    setSelected((prev) =>
+      prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]
+    );
+  };
+
+  useEffect(() => {
+    if (!selected.length) { setTrendData([]); return; }
+    setLoading(true);
+    getMultiCategoryTrend(selected)
+      .then((rows) => {
+        // Build month labels and pivot by category
+        const months = [...new Set(rows.map((r) => `${r.year}-${String(r.month).padStart(2, "0")}`))].sort();
+        const data = months.map((key) => {
+          const [y, m] = key.split("-");
+          const obj = { name: `${MONTH_LABELS[parseInt(m)]} ${y}` };
+          for (const cat of selected) {
+            const row = rows.find((r) => r.category === cat && r.year === parseInt(y) && r.month === parseInt(m));
+            obj[cat] = row ? row.total : 0;
+          }
+          return obj;
+        });
+        setTrendData(data);
+      })
+      .finally(() => setLoading(false));
+  }, [selected]);
+
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+      <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">Spending Trends — Multi-Category</h2>
+      <div className="flex flex-wrap gap-1.5 mb-4">
+        {categories.slice(0, 20).map((cat, i) => (
+          <button
+            key={cat}
+            onClick={() => toggleCategory(cat)}
+            className={`px-2 py-1 rounded text-xs font-medium transition-colors border ${
+              selected.includes(cat)
+                ? "border-transparent text-black"
+                : "border-zinc-700 text-zinc-500 hover:text-zinc-300"
+            }`}
+            style={selected.includes(cat) ? { backgroundColor: TREND_COLORS[selected.indexOf(cat) % TREND_COLORS.length] } : {}}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
+      {selected.length === 0 ? (
+        <p className="text-zinc-600 text-sm text-center py-10">Select categories above to compare trends</p>
+      ) : loading ? (
+        <p className="text-zinc-600 text-sm text-center py-10">Loading...</p>
+      ) : (
+        <ResponsiveContainer width="100%" height={280}>
+          <LineChart data={trendData}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
+            <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#71717a" }} axisLine={false} tickLine={false} angle={-30} textAnchor="end" height={50} />
+            <YAxis tick={{ fontSize: 11, fill: "#71717a" }} tickFormatter={(v) => `$${(v / 1000).toFixed(1)}k`} axisLine={false} tickLine={false} />
+            <Tooltip content={<DarkTooltip />} />
+            <Legend wrapperStyle={{ fontSize: 11, color: "#a1a1aa" }} />
+            {selected.map((cat, i) => (
+              <Line key={cat} type="monotone" dataKey={cat} stroke={TREND_COLORS[i % TREND_COLORS.length]} strokeWidth={2} dot={{ r: 3 }} />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      )}
     </div>
   );
 }
@@ -37,9 +111,11 @@ export default function Charts() {
   const [monthly, setMonthly] = useState([]);
   const [catSummary, setCatSummary] = useState([]);
   const [catTrend, setCatTrend] = useState([]);
+  const [dailyData, setDailyData] = useState([]);
+  const [heatmapMonth, setHeatmapMonth] = useState(new Date().getMonth() + 1);
 
   useEffect(() => {
-    getYears().then((y) => setYears(y.length ? y : [currentYear]));
+    getYears().then((y) => setYears(y.length ? [...y].sort((a, b) => b - a) : [currentYear]));
     getCategories().then((cats) => {
       setCategories(cats);
       if (cats.length) setSelectedCategory(cats[0]);
@@ -55,6 +131,22 @@ export default function Charts() {
     if (selectedCategory) getCategoryTrend(selectedCategory).then(setCatTrend);
   }, [selectedCategory]);
 
+  useEffect(() => {
+    getDailySummary(year, heatmapMonth).then((rows) => {
+      // Build day 1–31 array
+      const byDay = {};
+      for (const r of rows) {
+        const day = parseInt(r.date.split("-")[2], 10);
+        byDay[day] = (byDay[day] || 0) + r.total;
+      }
+      const days = Array.from({ length: 31 }, (_, i) => ({
+        day: i + 1,
+        total: Math.round((byDay[i + 1] || 0) * 100) / 100,
+      }));
+      setDailyData(days);
+    }).catch(() => setDailyData([]));
+  }, [year, heatmapMonth]);
+
   const incomeExpenseData = monthly.map((m) => ({
     name: MONTH_LABELS[m.month],
     Income: m.income,
@@ -62,15 +154,14 @@ export default function Charts() {
     Balance: m.balance,
   }));
 
+  const totalCatSpending = catSummary.reduce((s, c) => s + c.total, 0);
   const pieData = catSummary.slice(0, 12).map((c) => ({ name: c.category, value: c.total }));
 
-  // Build trend data: group by month label across all years
   const trendData = catTrend.map((r) => ({
     name: `${MONTH_LABELS[r.month]} ${r.year}`,
     Amount: r.total,
   }));
 
-  // Year-over-year comparison: monthly expenses for selected year vs prior
   const priorYear = year - 1;
   const [priorMonthly, setPriorMonthly] = useState([]);
   useEffect(() => {
@@ -89,43 +180,54 @@ export default function Charts() {
     };
   });
 
+  // Income projection for current year
+  const isCurrentYear = year === currentYear;
+  const monthsWithIncome = monthly.filter((m) => m.income > 0);
+  const actualIncome = monthly.reduce((s, m) => s + m.income, 0);
+  const lastRecordedMonth = monthsWithIncome.length > 0 ? Math.max(...monthsWithIncome.map((m) => m.month)) : 0;
+  const avgMonthlyIncome = monthsWithIncome.length > 0 ? actualIncome / monthsWithIncome.length : 0;
+  const remainingMonths = lastRecordedMonth > 0 ? 12 - lastRecordedMonth : 0;
+  const projectedAdditional = avgMonthlyIncome * remainingMonths;
+  const projectedTotal = actualIncome + projectedAdditional;
+
+  const cardCls = "bg-zinc-900 border border-zinc-800 rounded-xl p-5";
+  const selectCls = "bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:outline-none";
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Charts</h1>
-        <select className="border rounded px-3 py-1.5 text-sm" value={year} onChange={(e) => setYear(Number(e.target.value))}>
+        <h1 className="text-2xl font-bold text-zinc-100">Charts</h1>
+        <select className={selectCls} value={year} onChange={(e) => setYear(Number(e.target.value))}>
           {years.map((y) => <option key={y} value={y}>{y}</option>)}
         </select>
       </div>
 
-      {/* Row 1: Income vs Expenses bar + Balance line */}
+      {/* Row 1: Income vs Expenses + Balance */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white border rounded-xl p-5">
-          <h2 className="text-sm font-semibold mb-4">{year} Income vs Expenses</h2>
+        <div className={cardCls}>
+          <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-4">{year} Income vs Expenses</h2>
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={incomeExpenseData}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
+              <CartesianGrid {...gridProps} />
+              <XAxis dataKey="name" {...axisProps} />
+              <YAxis {...axisProps} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+              <Tooltip content={<DarkTooltip />} />
+              <Legend wrapperStyle={{ fontSize: 11, color: "#a1a1aa" }} />
               <Bar dataKey="Income" fill="#22c55e" radius={[3, 3, 0, 0]} />
               <Bar dataKey="Expenses" fill="#ef4444" radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
-        <div className="bg-white border rounded-xl p-5">
-          <h2 className="text-sm font-semibold mb-4">{year} Monthly Balance</h2>
+        <div className={cardCls}>
+          <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-4">{year} Monthly Balance</h2>
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={incomeExpenseData}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-              <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="Balance" fill="#3b82f6" radius={[3, 3, 0, 0]}
-                label={false}
-              >
+              <CartesianGrid {...gridProps} />
+              <XAxis dataKey="name" {...axisProps} />
+              <YAxis {...axisProps} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+              <Tooltip content={<DarkTooltip />} />
+              <Bar dataKey="Balance" radius={[3, 3, 0, 0]}>
                 {incomeExpenseData.map((entry, index) => (
                   <Cell key={index} fill={entry.Balance >= 0 ? "#22c55e" : "#ef4444"} />
                 ))}
@@ -135,56 +237,126 @@ export default function Charts() {
         </div>
       </div>
 
+      {/* Income projection (current year only) */}
+      {isCurrentYear && lastRecordedMonth > 0 && remainingMonths > 0 && (
+        <div className={cardCls}>
+          <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-4">{year} Income Projection</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div>
+              <p className="text-xs text-zinc-500 mb-1">Income to Date</p>
+              <p className="text-lg font-bold text-zinc-100">{fmt(Math.round(actualIncome))}</p>
+              <p className="text-xs text-zinc-600">through {MONTH_LABELS[lastRecordedMonth]}</p>
+            </div>
+            <div>
+              <p className="text-xs text-zinc-500 mb-1">Avg / Month</p>
+              <p className="text-lg font-bold text-zinc-100">{fmt(Math.round(avgMonthlyIncome))}</p>
+              <p className="text-xs text-zinc-600">over {monthsWithIncome.length} months</p>
+            </div>
+            <div>
+              <p className="text-xs text-zinc-500 mb-1">Est. Remaining</p>
+              <p className="text-lg font-bold text-yellow-400">{fmt(Math.round(projectedAdditional))}</p>
+              <p className="text-xs text-zinc-600">{remainingMonths} months × avg</p>
+            </div>
+            <div>
+              <p className="text-xs text-zinc-500 mb-1">Projected Full Year</p>
+              <p className="text-lg font-bold text-green-400">{fmt(Math.round(projectedTotal))}</p>
+              <p className="text-xs text-zinc-600">based on current pace</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Row 2: Pie + Category trend */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white border rounded-xl p-5">
-          <h2 className="text-sm font-semibold mb-4">{year} Spending by Category</h2>
+        <div className={cardCls}>
+          <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-4">{year} Spending by Category</h2>
           {pieData.length === 0 ? (
-            <p className="text-gray-400 text-sm text-center py-12">No data</p>
+            <p className="text-zinc-600 text-sm text-center py-12">No data</p>
           ) : (
-            <ResponsiveContainer width="100%" height={260}>
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  dataKey="value"
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  labelLine={false}
-                >
-                  {pieData.map((_, i) => (
-                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(v) => fmt(v)} />
-              </PieChart>
-            </ResponsiveContainer>
+            <>
+              <ResponsiveContainer width="100%" height={260}>
+                <PieChart>
+                  <Pie
+                    data={pieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={100}
+                    dataKey="value"
+                    label={({ name, value }) =>
+                      totalCatSpending > 0 ? `${name} ${((value / totalCatSpending) * 100).toFixed(0)}%` : name
+                    }
+                    labelLine={false}
+                  >
+                    {pieData.map((_, i) => (
+                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(v) => fmt(v)}
+                    contentStyle={{ backgroundColor: "#18181b", border: "1px solid #3f3f46", borderRadius: "8px", fontSize: 12 }}
+                    labelStyle={{ color: "#a1a1aa" }}
+                    itemStyle={{ color: "#e4e4e7" }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              {/* Full breakdown table */}
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-zinc-800 text-xs text-zinc-500 uppercase tracking-wide">
+                      <th className="text-left pb-2 pr-4 font-semibold">Category</th>
+                      <th className="text-right pb-2 pr-4 font-semibold">Amount</th>
+                      <th className="text-right pb-2 font-semibold">% of Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {catSummary.map((c, i) => (
+                      <tr key={c.category} className="border-b border-zinc-800/40 last:border-0 hover:bg-zinc-800/30">
+                        <td className="py-1.5 pr-4 flex items-center gap-2">
+                          <span
+                            className="inline-block w-2 h-2 rounded-full shrink-0"
+                            style={{ backgroundColor: i < COLORS.length ? COLORS[i] : "#52525b" }}
+                          />
+                          <span className="text-zinc-300">{c.category}</span>
+                        </td>
+                        <td className="py-1.5 pr-4 text-right text-zinc-100">{fmt(c.total)}</td>
+                        <td className="py-1.5 text-right text-zinc-400">
+                          {totalCatSpending > 0 ? `${((c.total / totalCatSpending) * 100).toFixed(1)}%` : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                    {catSummary.length > 0 && (
+                      <tr className="border-t border-zinc-700 font-semibold">
+                        <td className="pt-2 pr-4 text-zinc-400 text-xs uppercase tracking-wide">Total</td>
+                        <td className="pt-2 pr-4 text-right text-zinc-100">{fmt(totalCatSpending)}</td>
+                        <td className="pt-2 text-right text-zinc-400">100%</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
 
-        <div className="bg-white border rounded-xl p-5">
+        <div className={cardCls}>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold">Category Trend</h2>
-            <select
-              className="border rounded px-3 py-1 text-sm"
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-            >
+            <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Category Trend</h2>
+            <select className={selectCls} value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)}>
               {categories.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           {trendData.length === 0 ? (
-            <p className="text-gray-400 text-sm text-center py-12">No data for this category</p>
+            <p className="text-zinc-600 text-sm text-center py-12">No data for this category</p>
           ) : (
             <ResponsiveContainer width="100%" height={240}>
               <LineChart data={trendData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 10 }} angle={-30} textAnchor="end" height={50} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `$${(v / 1000).toFixed(1)}k`} />
-                <Tooltip content={<CustomTooltip />} />
-                <Line type="monotone" dataKey="Amount" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
+                <CartesianGrid {...gridProps} />
+                <XAxis dataKey="name" {...axisProps} angle={-30} textAnchor="end" height={50} />
+                <YAxis {...axisProps} tickFormatter={(v) => `$${(v / 1000).toFixed(1)}k`} />
+                <Tooltip content={<DarkTooltip />} />
+                <Line type="monotone" dataKey="Amount" stroke="#fbbf24" strokeWidth={2} dot={{ r: 3, fill: "#fbbf24" }} />
               </LineChart>
             </ResponsiveContainer>
           )}
@@ -193,21 +365,68 @@ export default function Charts() {
 
       {/* Row 3: Year-over-year */}
       {years.includes(priorYear) && (
-        <div className="bg-white border rounded-xl p-5">
-          <h2 className="text-sm font-semibold mb-4">Year-over-Year Expenses: {priorYear} vs {year}</h2>
+        <div className={cardCls}>
+          <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-4">Year-over-Year Expenses: {priorYear} vs {year}</h2>
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={yoyData}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <Bar dataKey={String(priorYear)} fill="#94a3b8" radius={[3, 3, 0, 0]} />
-              <Bar dataKey={String(year)} fill="#3b82f6" radius={[3, 3, 0, 0]} />
+              <CartesianGrid {...gridProps} />
+              <XAxis dataKey="name" {...axisProps} />
+              <YAxis {...axisProps} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+              <Tooltip content={<DarkTooltip />} />
+              <Legend wrapperStyle={{ fontSize: 11, color: "#a1a1aa" }} />
+              <Bar dataKey={String(priorYear)} fill="#52525b" radius={[3, 3, 0, 0]} />
+              <Bar dataKey={String(year)} fill="#fbbf24" radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
       )}
+
+      {/* Row 4: Daily spending heatmap */}
+      <div className={cardCls}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Daily Spending — {MONTH_LABELS[heatmapMonth]} {year}</h2>
+          <select className={selectCls} value={heatmapMonth} onChange={(e) => setHeatmapMonth(Number(e.target.value))}>
+            {MONTH_LABELS.slice(1).map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+          </select>
+        </div>
+        {dailyData.every((d) => d.total === 0) ? (
+          <p className="text-zinc-600 text-sm text-center py-10">No spending data for this month</p>
+        ) : (
+          <>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={dailyData} barCategoryGap="20%">
+                <CartesianGrid {...gridProps} />
+                <XAxis dataKey="day" tick={{ fontSize: 10, fill: "#71717a" }} axisLine={false} tickLine={false} label={{ value: "Day of Month", position: "insideBottom", offset: -2, fontSize: 10, fill: "#52525b" }} height={30} />
+                <YAxis tick={{ fontSize: 11, fill: "#71717a" }} tickFormatter={(v) => `$${v}`} axisLine={false} tickLine={false} />
+                <Tooltip
+                  formatter={(v) => [fmt(v), "Spending"]}
+                  labelFormatter={(l) => `Day ${l}`}
+                  contentStyle={{ backgroundColor: "#18181b", border: "1px solid #3f3f46", borderRadius: "8px", fontSize: 12 }}
+                  labelStyle={{ color: "#a1a1aa" }}
+                />
+                <Bar dataKey="total" radius={[3, 3, 0, 0]}>
+                  {dailyData.map((d, i) => {
+                    const max = Math.max(...dailyData.map((x) => x.total));
+                    const intensity = max > 0 ? d.total / max : 0;
+                    const r = Math.round(251 * intensity + 39 * (1 - intensity));
+                    const g = Math.round(191 * intensity + 39 * (1 - intensity));
+                    const b = Math.round(36 * intensity + 39 * (1 - intensity));
+                    return <Cell key={i} fill={d.total > 0 ? `rgb(${r},${g},${b})` : "#27272a"} />;
+                  })}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+            <div className="mt-3 flex justify-between text-xs text-zinc-500">
+              <span>Total: {fmt(dailyData.reduce((s, d) => s + d.total, 0))}</span>
+              <span>Peak: {fmt(Math.max(...dailyData.map((d) => d.total)))} on day {dailyData.reduce((max, d) => d.total > max.total ? d : max, { total: 0, day: 0 }).day}</span>
+              <span>Avg: {fmt(Math.round(dailyData.filter((d) => d.total > 0).reduce((s, d) => s + d.total, 0) / Math.max(dailyData.filter((d) => d.total > 0).length, 1)))} on spending days</span>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Row 5: Multi-category spending trends */}
+      <MultiCategoryTrend categories={categories} />
     </div>
   );
 }

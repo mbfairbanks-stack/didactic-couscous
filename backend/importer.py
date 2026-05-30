@@ -8,9 +8,11 @@ FY24 format: sheets named "CC - Jan 24", "CB - Jan 24"
 FY25/FY26 format: sheets named "Jan-2025 (CC)", "Jan - 2026 (CC)"
   Single card per sheet, headers at row 1: DATE, ITEM, AMOUNT, CATEGORY
 """
+from __future__ import annotations
 import re
 from datetime import date, datetime
 import openpyxl
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from models import Transaction, Income
 
@@ -226,8 +228,7 @@ def _add_fy24_txn(row, item_col, date_col, amt_col, cat_col, month, year, source
         month=month,
         source=source,
     )
-    db.add(txn)
-    counts["transactions"] += 1
+    _upsert_transaction(db, txn, counts)
 
 
 # ---------------------------------------------------------------------------
@@ -291,6 +292,7 @@ def _import_income_fy25_26(ws, detected_year: int | None, db: Session, counts: d
     )
     if is_fy26:
         _import_income_fy26(rows, detected_year, db, counts)
+        _import_expenses_fy26_summary(rows, detected_year, db, counts)
         return
 
     # FY25 layout: one row per month with exact 3-letter month key in col 0
@@ -316,19 +318,17 @@ def _import_income_fy26(rows, detected_year: int | None, db: Session, counts: di
     Other rows: (None, 'Matt Pay', val, val, ...) and (None, 'Nicole Pay', val, val, ...)
     """
     col_months = {}
-    month_map = {"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
-                 "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12}
 
     # Find the header row with month column labels
     for row in rows:
         has_months = any(
-            isinstance(v, str) and v.strip().lower()[:3] in month_map
+            isinstance(v, str) and v.strip().lower()[:3] in MONTH_SHORT
             for v in (row or [])
         )
         if has_months:
             for col_idx, val in enumerate(row):
-                if isinstance(val, str) and val.strip().lower()[:3] in month_map:
-                    col_months[col_idx] = month_map[val.strip().lower()[:3]]
+                if isinstance(val, str) and val.strip().lower()[:3] in MONTH_SHORT:
+                    col_months[col_idx] = MONTH_SHORT[val.strip().lower()[:3]]
             break  # use first matching header row
 
     year = detected_year
@@ -355,6 +355,112 @@ def _import_income_fy26(rows, detected_year: int | None, db: Session, counts: di
             val = row[col_idx] if col_idx < len(row) else None
             if isinstance(val, (int, float)) and val > 0:
                 _upsert_income(db, year, month, person, itype, float(val), counts)
+
+
+_SKIP_SUMMARY_LABELS = {
+    "", "needs", "wants", "total", "total expenses", "expenses",
+    "total income", "net income", "gross income", "savings", "savings rate",
+    "income", "balance", "surplus", "deficit", "subscriptions",
+}
+
+# Only these categories are imported from the Summary tab.
+# Everything else is already captured by CC transaction imports.
+# If a category appears on the credit card, do NOT list it here.
+_BANK_ONLY_CATEGORIES = {
+    "Mortgage",
+    "Gas (Utility)",   # Enbridge
+    "Hydro",           # London Hydro
+    "Municipal Taxes", # Property taxes
+    "Debt Payment",    # LOC / loan payments
+    "Insurance",       # Life/home/auto/pet bundled premiums paid by bank
+    "Reliance",        # Reliance home comfort
+}
+
+
+def _map_summary_expense_category(label: str) -> str:
+    l = label.lower()
+    if "housing" in l or "mortgage" in l:   return "Mortgage"
+    if "enbridge" in l:                      return "Gas (Utility)"
+    if "hydro" in l:                         return "Hydro"
+    if "groceries" in l or "grocery" in l:  return "Groceries"
+    if "pet" in l:                           return "Pets"
+    if "transportation" in l:               return "Transportation"
+    if "internet" in l:                      return "Internet"
+    if "security" in l:                      return "Security"
+    if "mobile" in l:                        return "Mobile"
+    if "insurance" in l:                     return "Insurance"
+    if "property tax" in l:                  return "Municipal Taxes"
+    if "debit payment" in l or "loan" in l: return "Debt Payment"
+    if "subscription" in l:                  return "Entertainment"
+    if "entertainment" in l or "dining" in l: return "Entertainment"
+    if "clothing" in l or "personal care" in l: return "Clothes"
+    if "gift" in l or "donation" in l:      return "Gifts"
+    if "charity" in l:                       return "Charity"
+    if "travel" in l:                        return "Travel"
+    if "coffee" in l:                        return "Coffee"
+    if "home" in l:                          return "Home"
+    if "misc" in l or "alcohol" in l or "cannabis" in l: return "Misc"
+    return label.strip().title()
+
+
+def _import_expenses_fy26_summary(rows, detected_year: int | None, db: Session, counts: dict):
+    """
+    Import per-month expense rows from the FY26 Summary sheet.
+    Rows look like: (None, 'Housing', 1967.98, 1967.98, ...)
+    with month columns identified by the same header row used for income.
+    """
+    # Find col -> month mapping
+    col_months: dict[int, int] = {}
+    for row in rows:
+        has_months = any(
+            isinstance(v, str) and v.strip().lower()[:3] in MONTH_SHORT
+            for v in (row or [])
+        )
+        if has_months:
+            for col_idx, val in enumerate(row):
+                if isinstance(val, str) and val.strip().lower()[:3] in MONTH_SHORT:
+                    col_months[col_idx] = MONTH_SHORT[val.strip().lower()[:3]]
+            break
+
+    if not col_months:
+        return
+
+    year = detected_year or 2026
+
+    for row in rows:
+        if not row or not row[1] or not isinstance(row[1], str):
+            continue
+        label = row[1].strip()
+        if label.lower() in _SKIP_SUMMARY_LABELS:
+            continue
+        lower = label.lower()
+        # Skip income rows and summary/total rows
+        if ("matt" in lower and "pay" in lower) or ("nicole" in lower and "pay" in lower):
+            continue
+        if "income" in lower or "saving" in lower or lower.startswith("total"):
+            continue
+
+        category = _map_summary_expense_category(label)
+
+        # Skip categories that are already captured by CC transactions.
+        # Only import expenses that are paid directly from the bank account.
+        if category not in _BANK_ONLY_CATEGORIES:
+            continue
+
+        for col_idx, month in col_months.items():
+            val = row[col_idx] if col_idx < len(row) else None
+            if not isinstance(val, (int, float)) or val <= 0:
+                continue
+            txn = Transaction(
+                date=date(year, month, 1),
+                merchant=label,
+                amount=float(val),
+                category=category,
+                year=year,
+                month=month,
+                source="summary",
+            )
+            _upsert_transaction(db, txn, counts)
 
 
 def _import_fy25_26_cc_sheet(ws, month: int, year: int, db: Session, counts: dict):
@@ -390,8 +496,7 @@ def _import_fy25_26_cc_sheet(ws, month: int, year: int, db: Session, counts: dic
             month=month,
             source="cc",
         )
-        db.add(txn)
-        counts["transactions"] += 1
+        _upsert_transaction(db, txn, counts)
 
 
 # ---------------------------------------------------------------------------
@@ -399,19 +504,26 @@ def _import_fy25_26_cc_sheet(ws, month: int, year: int, db: Session, counts: dic
 # ---------------------------------------------------------------------------
 
 def _upsert_income(db: Session, year: int, month: int, person: str, itype: str, amount: float, counts: dict):
-    from models import Income
-    from sqlalchemy import select
+    # Only match imported records (pay_date=None). Manually-entered payday records have a pay_date set
+    # and should never be overwritten by a re-import.
     existing = db.execute(
         select(Income).where(
             Income.year == year,
             Income.month == month,
             Income.person == person,
             Income.income_type == itype,
+            Income.pay_date == None,  # noqa: E711
         )
-    ).scalar_one_or_none()
+    ).scalars().first()
     if existing:
         existing.amount = amount
         counts["skipped"] += 1
     else:
         db.add(Income(year=year, month=month, person=person, income_type=itype, amount=amount))
         counts["income"] += 1
+
+
+def _upsert_transaction(db: Session, txn: Transaction, counts: dict):
+    """Add transaction to the session. Use Remove Duplicates after importing."""
+    db.add(txn)
+    counts["transactions"] += 1

@@ -1,0 +1,9 @@
+# Your private instance (password-protected)
+your-domain.com {
+    reverse_proxy app:80
+}
+
+# Public demo (read-only, no login required)
+demo.your-domain.com {
+    reverse_proxy demo:80
+}
