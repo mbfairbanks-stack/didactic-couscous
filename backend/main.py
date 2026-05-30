@@ -3235,3 +3235,141 @@ def missing_recurring(db: Session = Depends(get_db)):
 
     missing.sort(key=lambda x: x["avg_amount"], reverse=True)
     return missing
+
+
+# ── PDF Bank Statement Parser ────────────────────────────────────────────────
+
+@app.post("/parse-pdf")
+async def parse_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Parse a bank statement PDF and extract transactions."""
+    try:
+        import pdfplumber
+    except ImportError:
+        raise HTTPException(500, "pdfplumber not installed")
+
+    contents = await file.read()
+    rows_out = []
+    page_count = 0
+
+    try:
+        with pdfplumber.open(io.BytesIO(contents)) as pdf:
+            page_count = len(pdf.pages)
+            for page in pdf.pages:
+                # Try table extraction first
+                tables = page.extract_tables()
+                for table in tables:
+                    if not table or len(table) < 2:
+                        continue
+                    # Find header row
+                    header = [str(c).lower().strip() if c else "" for c in table[0]]
+
+                    def col_idx(names):
+                        for name in names:
+                            for i, h in enumerate(header):
+                                if name in h:
+                                    return i
+                        return None
+
+                    date_col = col_idx(["date", "transaction date", "posted"])
+                    desc_col = col_idx(["description", "desc", "merchant", "details", "activity", "payee", "transaction"])
+                    debit_col = col_idx(["debit", "withdrawal", "charges", "amount"])
+                    credit_col = col_idx(["credit", "payment", "deposit"])
+                    amt_col = col_idx(["amount"]) if debit_col is None else None
+
+                    if date_col is None or desc_col is None:
+                        continue
+
+                    for row in table[1:]:
+                        if not row or all(not c for c in row):
+                            continue
+                        date_str = str(row[date_col]).strip() if date_col < len(row) and row[date_col] else ""
+                        merchant = str(row[desc_col]).strip() if desc_col < len(row) and row[desc_col] else ""
+                        if not date_str or not merchant or merchant.lower() in ("", "none"):
+                            continue
+
+                        parsed_date = _parse_date(date_str)
+                        if not parsed_date:
+                            continue
+
+                        amount = None
+                        # Try debit column first
+                        if debit_col is not None and debit_col < len(row) and row[debit_col]:
+                            amount = _parse_amount(str(row[debit_col]))
+                        # Fall back to amount column
+                        if (amount is None or amount <= 0) and amt_col is not None and amt_col < len(row) and row[amt_col]:
+                            val = _parse_amount(str(row[amt_col]))
+                            if val and val > 0:
+                                amount = val
+
+                        if amount is None or amount <= 0:
+                            continue
+
+                        # Skip payment/credit rows
+                        if credit_col is not None and credit_col < len(row) and row[credit_col]:
+                            credit_val = _parse_amount(str(row[credit_col]))
+                            if credit_val and credit_val > 0 and (amount is None or amount == 0):
+                                continue
+
+                        is_dup = db.execute(
+                            select(models.Transaction).where(
+                                models.Transaction.date == datetime.date.fromisoformat(parsed_date),
+                                models.Transaction.merchant == merchant,
+                                func.round(models.Transaction.amount, 2) == round(amount, 2),
+                            )
+                        ).first() is not None
+
+                        suggested = _lookup_category(merchant, db)
+                        rows_out.append({
+                            "date": parsed_date,
+                            "merchant": merchant,
+                            "amount": round(amount, 2),
+                            "suggested_category": suggested or "",
+                            "confidence": "high" if suggested else "low",
+                            "is_duplicate": is_dup,
+                        })
+
+                # If no tables found, try text-based extraction
+                if not rows_out:
+                    text = page.extract_text() or ""
+                    lines = [l.strip() for l in text.splitlines() if l.strip()]
+                    # Look for lines matching: date + description + amount pattern
+                    for line in lines:
+                        # Try to match: date at start, amount at end
+                        m = re.match(
+                            r'^(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}\s+\w+\s+\d{2,4})\s+(.+?)\s+(\$?[\d,]+\.\d{2})$',
+                            line
+                        )
+                        if m:
+                            parsed_date = _parse_date(m.group(1))
+                            merchant = m.group(2).strip()
+                            amount = _parse_amount(m.group(3))
+                            if parsed_date and merchant and amount and amount > 0:
+                                is_dup = db.execute(
+                                    select(models.Transaction).where(
+                                        models.Transaction.date == datetime.date.fromisoformat(parsed_date),
+                                        models.Transaction.merchant == merchant,
+                                        func.round(models.Transaction.amount, 2) == round(amount, 2),
+                                    )
+                                ).first() is not None
+                                suggested = _lookup_category(merchant, db)
+                                rows_out.append({
+                                    "date": parsed_date,
+                                    "merchant": merchant,
+                                    "amount": round(amount, 2),
+                                    "suggested_category": suggested or "",
+                                    "confidence": "high" if suggested else "low",
+                                    "is_duplicate": is_dup,
+                                })
+    except Exception as e:
+        raise HTTPException(400, f"Could not parse PDF: {str(e)}")
+
+    # Deduplicate rows_out by (date, merchant, amount)
+    seen = set()
+    unique_rows = []
+    for r in rows_out:
+        key = (r["date"], r["merchant"], r["amount"])
+        if key not in seen:
+            seen.add(key)
+            unique_rows.append(r)
+
+    return {"rows": unique_rows, "pages": page_count}
