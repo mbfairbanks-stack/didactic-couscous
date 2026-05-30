@@ -4,7 +4,7 @@ import {
   AreaChart, Area,
 } from "recharts";
 import StatCard from "../components/StatCard";
-import { getMonthlySummary, getTotals, getCategorySummary, getYears, getProjections, getBudgetTargets, getCategoryDefinitions, getDebts, getTransactions } from "../api";
+import { getMonthlySummary, getTotals, getCategorySummary, getYears, getProjections, getBudgetTargets, getCategoryDefinitions, getDebts, getTransactions, createTransaction, getCategories, getMissingRecurring } from "../api";
 import { getCategoryGroup, updateCategoryGroups } from "../constants";
 import { MONTH_LABELS, currentYear, currentMonth, fmt } from "../utils";
 
@@ -299,10 +299,19 @@ export default function Dashboard() {
     return stored !== null ? Number(stored) : 20;
   });
   const [statView, setStatView] = useState("month");
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [quickForm, setQuickForm] = useState({ date: new Date().toISOString().split("T")[0], merchant: "", amount: "", category: "", notes: "" });
+  const [quickCategories, setQuickCategories] = useState([]);
+  const [quickSaving, setQuickSaving] = useState(false);
+  const [quickError, setQuickError] = useState("");
+  const [quickSuccess, setQuickSuccess] = useState("");
+  const [missingRecurring, setMissingRecurring] = useState([]);
 
   useEffect(() => {
     getYears().then((y) => setYears(y.length ? y : [currentYear])).catch(() => {});
     getCategoryDefinitions().then(updateCategoryGroups).catch(() => {});
+    getCategories().then(setQuickCategories).catch(() => {});
+    getMissingRecurring().then(setMissingRecurring).catch(() => {});
   }, []);
 
   const loadDashboardData = () => {
@@ -375,6 +384,27 @@ export default function Dashboard() {
       {error && (
         <div className="bg-red-900/20 border border-red-700/50 rounded-xl px-4 py-3 text-sm text-red-400">
           Failed to load data: {error}
+        </div>
+      )}
+
+      {/* Missing recurring transactions alert */}
+      {missingRecurring.length > 0 && (
+        <div className="bg-zinc-900 border border-yellow-400/20 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold text-yellow-400 uppercase tracking-wide">Expected This Month</p>
+            <span className="text-xs text-zinc-500">{missingRecurring.length} recurring {missingRecurring.length === 1 ? "transaction" : "transactions"} not yet seen</span>
+          </div>
+          <div className="space-y-1">
+            {missingRecurring.slice(0, 5).map((r) => (
+              <div key={r.merchant} className="flex items-center justify-between text-sm">
+                <span className="text-zinc-300">{r.merchant}</span>
+                <span className="text-zinc-500 font-mono text-xs">{fmt(r.avg_amount)} avg</span>
+              </div>
+            ))}
+            {missingRecurring.length > 5 && (
+              <p className="text-xs text-zinc-600">+{missingRecurring.length - 5} more</p>
+            )}
+          </div>
         </div>
       )}
 
@@ -676,6 +706,88 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Quick Add Transaction Button */}
+      <button
+        onClick={() => { setShowQuickAdd(true); setQuickError(""); setQuickSuccess(""); }}
+        className="fixed bottom-6 right-6 bg-yellow-400 text-zinc-900 w-12 h-12 rounded-full shadow-lg flex items-center justify-center text-2xl font-bold hover:bg-yellow-300 transition-colors z-40"
+        title="Quick add transaction"
+      >
+        +
+      </button>
+
+      {/* Quick Add Modal */}
+      {showQuickAdd && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) setShowQuickAdd(false); }}>
+          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6 w-full max-w-sm space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold text-zinc-100">Quick Add Transaction</h2>
+              <button onClick={() => setShowQuickAdd(false)} className="text-zinc-500 hover:text-zinc-300 text-xl">✕</button>
+            </div>
+            {quickError && <p className="text-red-400 text-sm">{quickError}</p>}
+            {quickSuccess && <p className="text-green-400 text-sm">{quickSuccess}</p>}
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-zinc-500 mb-1">Date</label>
+                <input type="date" className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400"
+                  value={quickForm.date} onChange={(e) => setQuickForm({ ...quickForm, date: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-xs text-zinc-500 mb-1">Merchant</label>
+                <input type="text" className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400"
+                  placeholder="Tim Hortons" value={quickForm.merchant} onChange={(e) => setQuickForm({ ...quickForm, merchant: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-xs text-zinc-500 mb-1">Amount</label>
+                <input type="number" step="0.01" className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400"
+                  placeholder="0.00" value={quickForm.amount} onChange={(e) => setQuickForm({ ...quickForm, amount: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-xs text-zinc-500 mb-1">Category</label>
+                <select className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400"
+                  value={quickForm.category} onChange={(e) => setQuickForm({ ...quickForm, category: e.target.value })}>
+                  <option value="">— Select category —</option>
+                  {quickCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-zinc-500 mb-1">Notes (optional)</label>
+                <input type="text" className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400"
+                  value={quickForm.notes} onChange={(e) => setQuickForm({ ...quickForm, notes: e.target.value })} />
+              </div>
+            </div>
+            <button
+              disabled={quickSaving || !quickForm.merchant || !quickForm.amount || !quickForm.category}
+              onClick={async () => {
+                setQuickSaving(true);
+                setQuickError("");
+                setQuickSuccess("");
+                try {
+                  await createTransaction({
+                    date: quickForm.date,
+                    merchant: quickForm.merchant,
+                    amount: parseFloat(quickForm.amount),
+                    category: quickForm.category,
+                    notes: quickForm.notes || null,
+                    year: new Date(quickForm.date).getFullYear(),
+                    month: new Date(quickForm.date).getMonth() + 1,
+                  });
+                  setQuickSuccess("Transaction added!");
+                  setQuickForm({ date: new Date().toISOString().split("T")[0], merchant: "", amount: "", category: "", notes: "" });
+                  loadDashboardData();
+                  setTimeout(() => setQuickSuccess(""), 2000);
+                } catch (e) {
+                  setQuickError(e.message || "Failed to save.");
+                } finally {
+                  setQuickSaving(false);
+                }
+              }}
+              className="w-full bg-yellow-400 text-zinc-900 py-2 rounded-lg font-semibold text-sm hover:bg-yellow-300 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {quickSaving ? "Saving..." : "Add Transaction"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

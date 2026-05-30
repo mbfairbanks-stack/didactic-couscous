@@ -146,6 +146,7 @@ export const deleteCategoryDefinition = (id) =>
 // Meta
 export const getCategories = () => req("/categories");
 export const getYears = () => req("/years");
+export const getMissingRecurring = () => req("/transactions/missing-recurring");
 
 // Debts
 export const getDebts = () => req("/debts");
