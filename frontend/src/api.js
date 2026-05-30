@@ -349,3 +349,9 @@ export const parsePdf = (file) => {
   form.append("file", file);
   return req("/parse-pdf", { method: "POST", body: form });
 };
+
+// Net worth milestones
+export const getMilestones = () => req("/net-worth/milestones");
+export const createMilestone = (body) =>
+  req("/net-worth/milestones", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteMilestone = (id) => req(`/net-worth/milestones/${id}`, { method: "DELETE" });

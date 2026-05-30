@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, AreaChart, Area, Legend } from "recharts";
-import { getAssets, createAsset, updateAsset, deleteAsset, syncSavingsAssets, getDebts, getSavingsSummary, getNetWorthHistory, snapshotNetWorth, deleteNetWorthSnapshot, getSavingsGoals, createSavingsGoal, updateSavingsGoal, deleteSavingsGoal } from "../api";
+import { getAssets, createAsset, updateAsset, deleteAsset, syncSavingsAssets, getDebts, getSavingsSummary, getNetWorthHistory, snapshotNetWorth, deleteNetWorthSnapshot, getSavingsGoals, createSavingsGoal, updateSavingsGoal, deleteSavingsGoal, getMilestones, createMilestone, deleteMilestone } from "../api";
 import { fmt } from "../utils";
 import { currentYear } from "../utils";
 
@@ -34,6 +34,9 @@ export default function NetWorth() {
   const [editGoalId, setEditGoalId] = useState(null);
   const [showGoalForm, setShowGoalForm] = useState(false);
   const [snapshotting, setSnapshotting] = useState(false);
+  const [milestones, setMilestones] = useState([]);
+  const [milestoneForm, setMilestoneForm] = useState({ label: "", target_amount: "" });
+  const [showMilestoneForm, setShowMilestoneForm] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -114,9 +117,25 @@ export default function NetWorth() {
     loadGoals();
   };
 
+  const loadMilestones = async () => {
+    try { setMilestones(await getMilestones()); } catch (e) {}
+  };
+  const saveMilestone = async () => {
+    if (!milestoneForm.label || !milestoneForm.target_amount) return;
+    await createMilestone({ label: milestoneForm.label, target_amount: parseFloat(milestoneForm.target_amount) });
+    setMilestoneForm({ label: "", target_amount: "" });
+    setShowMilestoneForm(false);
+    loadMilestones();
+  };
+  const removeMilestone = async (id) => {
+    await deleteMilestone(id);
+    loadMilestones();
+  };
+
   useEffect(() => {
     loadHistory();
     loadGoals();
+    loadMilestones();
   }, []);
 
   const handleSync = async () => {
@@ -435,6 +454,69 @@ export default function NetWorth() {
                   />
                 </div>
                 <p className="text-xs text-zinc-500">{g.progress_pct}%{g.target_date ? ` · target ${g.target_date}` : ""}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Net Worth Milestones */}
+      <div className="bg-zinc-800 rounded-xl p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-yellow-400 font-semibold">Net Worth Milestones</h2>
+          <button
+            onClick={() => setShowMilestoneForm(!showMilestoneForm)}
+            className="bg-yellow-400 text-zinc-900 px-3 py-1 rounded text-sm font-semibold hover:bg-yellow-300"
+          >
+            {showMilestoneForm ? "Cancel" : "+ Milestone"}
+          </button>
+        </div>
+
+        {showMilestoneForm && (
+          <div className="flex gap-3 flex-wrap">
+            <input
+              className="flex-1 bg-zinc-700 border border-zinc-600 rounded px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400"
+              placeholder='Label e.g. "First $100k"'
+              value={milestoneForm.label}
+              onChange={(e) => setMilestoneForm({ ...milestoneForm, label: e.target.value })}
+            />
+            <input
+              type="number"
+              className="w-36 bg-zinc-700 border border-zinc-600 rounded px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400"
+              placeholder="Target $"
+              value={milestoneForm.target_amount}
+              onChange={(e) => setMilestoneForm({ ...milestoneForm, target_amount: e.target.value })}
+            />
+            <button onClick={saveMilestone} className="bg-yellow-400 text-zinc-900 px-4 py-2 rounded text-sm font-semibold hover:bg-yellow-300">
+              Add
+            </button>
+          </div>
+        )}
+
+        {milestones.length === 0 ? (
+          <p className="text-zinc-500 text-sm text-center py-2">No milestones set. Add goals like "First $100k" or "Net worth $500k".</p>
+        ) : (
+          <div className="space-y-3">
+            {milestones.map((m) => (
+              <div key={m.id}>
+                <div className="flex items-center justify-between text-sm mb-1">
+                  <div className="flex items-center gap-2">
+                    {m.is_achieved && <span className="text-green-400 text-xs">✓</span>}
+                    <span className={`font-medium ${m.is_achieved ? "text-green-400" : "text-zinc-100"}`}>{m.label}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-zinc-400 font-mono">${m.target_amount.toLocaleString("en-CA")}</span>
+                    {m.achieved_at && <span className="text-xs text-zinc-500">{m.achieved_at}</span>}
+                    <button onClick={() => removeMilestone(m.id)} className="text-xs text-zinc-500 hover:text-red-400">✕</button>
+                  </div>
+                </div>
+                <div className="h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${m.is_achieved ? "bg-green-400" : "bg-yellow-400"}`}
+                    style={{ width: `${m.progress_pct}%` }}
+                  />
+                </div>
+                <p className="text-xs text-zinc-500 mt-0.5">{m.progress_pct}%</p>
               </div>
             ))}
           </div>

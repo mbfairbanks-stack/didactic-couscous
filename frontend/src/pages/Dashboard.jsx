@@ -4,7 +4,7 @@ import {
   AreaChart, Area,
 } from "recharts";
 import StatCard from "../components/StatCard";
-import { getMonthlySummary, getTotals, getCategorySummary, getYears, getProjections, getBudgetTargets, getCategoryDefinitions, getDebts, getTransactions, createTransaction, getCategories, getMissingRecurring } from "../api";
+import { getMonthlySummary, getTotals, getCategorySummary, getYears, getProjections, getBudgetTargets, getCategoryDefinitions, getDebts, getTransactions, createTransaction, getCategories, getMissingRecurring, getMultiCategoryTrend } from "../api";
 import { getCategoryGroup, updateCategoryGroups } from "../constants";
 import { MONTH_LABELS, currentYear, currentMonth, fmt } from "../utils";
 
@@ -281,6 +281,26 @@ function DebtPaymentsWidget({ year, month }) {
 }
 
 
+// ── Sparkline ────────────────────────────────────────────────────────────────
+function Sparkline({ data, color = "#facc15" }) {
+  if (!data || data.length < 2) return null;
+  const values = data.map(d => d.total || 0);
+  const max = Math.max(...values) || 1;
+  const min = Math.min(...values);
+  const range = max - min || 1;
+  const w = 48, h = 20;
+  const pts = values.map((v, i) => {
+    const x = (i / (values.length - 1)) * w;
+    const y = h - ((v - min) / range) * h;
+    return `${x},${y}`;
+  }).join(" ");
+  return (
+    <svg width={w} height={h} className="inline-block align-middle opacity-60">
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 // ── Dashboard ────────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const [year, setYear] = useState(currentYear);
@@ -306,6 +326,7 @@ export default function Dashboard() {
   const [quickError, setQuickError] = useState("");
   const [quickSuccess, setQuickSuccess] = useState("");
   const [missingRecurring, setMissingRecurring] = useState([]);
+  const [categoryTrends, setCategoryTrends] = useState({});  // { categoryName: [{ month, total }] }
 
   useEffect(() => {
     getYears().then((y) => setYears(y.length ? y : [currentYear])).catch(() => {});
@@ -313,6 +334,24 @@ export default function Dashboard() {
     getCategories().then(setQuickCategories).catch(() => {});
     getMissingRecurring().then(setMissingRecurring).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!categories.length) return;
+    const names = categories.slice(0, 12).map(c => c.category);
+    if (!names.length) return;
+    getMultiCategoryTrend(names)
+      .then((data) => {
+        // data is array of { category, month, year, total } or similar
+        // Group by category
+        const grouped = {};
+        for (const row of data) {
+          if (!grouped[row.category]) grouped[row.category] = [];
+          grouped[row.category].push(row);
+        }
+        setCategoryTrends(grouped);
+      })
+      .catch(() => {});
+  }, [categories]);
 
   const loadDashboardData = () => {
     setError("");
@@ -576,7 +615,12 @@ export default function Dashboard() {
                       return (
                         <div key={c.category}>
                           <div className="flex justify-between text-xs mb-0.5">
-                            <span className="text-zinc-400 truncate min-w-0 mr-2">{c.category}</span>
+                            <span className="text-zinc-400 truncate min-w-0 mr-2 flex items-center gap-1">
+                              {c.category}
+                              {categoryTrends[c.category] && (
+                                <Sparkline data={categoryTrends[c.category]} color={label === "Needs" ? "#facc15" : "#71717a"} />
+                              )}
+                            </span>
                             <span className={`font-medium ${over ? "text-red-400" : "text-zinc-300"}`}>
                               {fmt(c.total)}{budget ? <span className="text-zinc-600"> / {fmt(budget)}</span> : null}
                             </span>
