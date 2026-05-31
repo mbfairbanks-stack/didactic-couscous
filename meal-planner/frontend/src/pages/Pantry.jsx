@@ -418,9 +418,9 @@ export default function Pantry() {
 
       {/* Bulk Add Panel */}
       {showBulk && (
-        <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-xl p-5 mb-5 shadow-sm">
-          <h2 className="font-semibold text-green-800 dark:text-green-300 mb-1">Bulk Add Items</h2>
-          <p className="text-xs text-green-600 dark:text-green-400 mb-3">
+        <div className="bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-5 mb-5 shadow-sm">
+          <h2 className="font-semibold text-stone-800 dark:text-stone-100 mb-1">Bulk Add Items</h2>
+          <p className="text-xs text-stone-500 dark:text-stone-400 mb-3">
             One item per line. Supports formats like:<br />
             <span className="font-mono">chicken breast</span> &nbsp;·&nbsp;
             <span className="font-mono">2 lbs ground beef</span> &nbsp;·&nbsp;
@@ -432,7 +432,7 @@ export default function Pantry() {
             value={bulkText}
             onChange={(e) => { setBulkText(e.target.value); setBulkPreview([]); }}
             placeholder={"olive oil\n2 lbs chicken breast\n3 cans diced tomatoes\nmilk\n1 dozen eggs\n500g pasta"}
-            className="w-full border border-stone-300 dark:border-stone-600 rounded-lg px-3 py-2 text-sm font-mono mb-3 bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 placeholder:text-stone-400"
+            className="w-full border border-stone-300 dark:border-stone-600 rounded-lg px-3 py-2 text-sm font-mono mb-3 bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-500"
           />
           <div className="flex gap-2 mb-4">
             <button
@@ -444,7 +444,7 @@ export default function Pantry() {
             </button>
             <button
               onClick={() => { setShowBulk(false); setBulkText(""); setBulkPreview([]); }}
-              className="border border-stone-300 dark:border-stone-600 px-4 py-2 rounded-lg text-sm text-stone-600 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-stone-800"
+              className="border border-stone-300 dark:border-stone-600 px-4 py-2 rounded-lg text-sm text-stone-600 dark:text-stone-300 bg-white dark:bg-stone-700 hover:bg-stone-50 dark:hover:bg-stone-600"
             >
               Cancel
             </button>
@@ -455,7 +455,7 @@ export default function Pantry() {
               <h3 className="text-sm font-semibold text-stone-700 dark:text-stone-200 mb-2">Preview — edit before saving</h3>
               <div className="space-y-2 mb-4">
                 {bulkPreview.map((item, i) => (
-                  <div key={i} className="flex gap-2 items-center bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg px-3 py-2">
+                  <div key={i} className="flex gap-2 items-center bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-600 rounded-lg px-3 py-2">
                     <input
                       value={item.name}
                       onChange={(e) => updatePreviewItem(i, "name", e.target.value)}
