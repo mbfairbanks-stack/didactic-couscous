@@ -964,7 +964,7 @@ def generate_meal_plan(
         )
 
     # Build recent-weeks context — avoid repeating meals from the last 3 weeks
-    week_start_date = datetime.strptime(body.week_start, "%Y-%m-%d").date()
+    week_start_date = body.week_start if isinstance(body.week_start, date) else datetime.strptime(str(body.week_start), "%Y-%m-%d").date()
     three_weeks_ago = week_start_date - timedelta(weeks=3)
     recent_entries = (
         db.query(models.MealPlanEntry)
