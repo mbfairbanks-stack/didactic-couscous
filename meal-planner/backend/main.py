@@ -1165,7 +1165,8 @@ _KNOWN_UNITS = {
 _NAME_STRIP = re.compile(
     r'\b(fresh|dried|frozen|canned|large|small|medium|ripe|raw|cooked|'
     r'chopped|diced|sliced|minced|grated|peeled|halved|crushed|ground|'
-    r'boneless|skinless|whole|organic|baby|extra)\b\s*',
+    r'boneless|skinless|whole|organic|baby|extra|'
+    r'cloves?|heads?|stalks?|sprigs?|leaves?|florets?|strips?)\b\s*',
     re.IGNORECASE,
 )
 
@@ -1173,14 +1174,15 @@ _NAME_STRIP = re.compile(
 def _normalize_ingredient(name: str, unit: str) -> tuple[str, str]:
     """Return (normalised_name, normalised_unit).
     If the unit is not a recognised measurement, fold it back into the name."""
+    # Strip trailing punctuation the AI sometimes adds (commas, periods)
+    name = name.strip().rstrip(".,;:")
     norm_unit = unit.strip().lower()
     if norm_unit not in _KNOWN_UNITS:
-        # e.g. unit="large ripe" → fold into name, clear unit
         combined = f"{name} {unit}".strip() if unit else name
         norm_unit = ""
     else:
         combined = name
-    # Strip common adjectives and lowercase
+    # Strip common adjectives/descriptors and lowercase
     n = _NAME_STRIP.sub("", combined).strip().lower()
     n = re.sub(r'\s+', ' ', n)
     # Singularize common plurals
