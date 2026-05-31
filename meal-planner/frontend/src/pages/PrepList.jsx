@@ -145,11 +145,11 @@ export default function PrepList() {
       {/* Progress */}
       {total > 0 && (
         <div className="mb-5">
-          <div className="flex items-center justify-between text-sm text-gray-500 mb-1">
+          <div className="flex items-center justify-between text-sm text-gray-500 dark:text-stone-400 mb-1">
             <span>{done} of {total} tasks done</span>
             <span>{Math.round((done / total) * 100)}%</span>
           </div>
-          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+          <div className="h-2 bg-gray-200 dark:bg-stone-700 rounded-full overflow-hidden">
             <div
               className="h-full bg-green-500 rounded-full transition-all"
               style={{ width: `${(done / total) * 100}%` }}
@@ -165,12 +165,12 @@ export default function PrepList() {
           placeholder="Add a prep task..."
           value={newTask}
           onChange={(e) => setNewTask(e.target.value)}
-          className="border rounded-lg px-3 py-2 text-sm flex-1 min-w-48"
+          className="border dark:border-stone-600 rounded-lg px-3 py-2 text-sm flex-1 min-w-48 dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
         />
         <select
           value={newDay}
           onChange={(e) => setNewDay(e.target.value)}
-          className="border rounded-lg px-3 py-2 text-sm"
+          className="border dark:border-stone-600 rounded-lg px-3 py-2 text-sm dark:bg-stone-800 dark:text-stone-100"
         >
           <option value="">Any day</option>
           {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map((d) => (
@@ -186,9 +186,9 @@ export default function PrepList() {
       </form>
 
       {loading ? (
-        <p className="text-gray-400 text-sm">Loading...</p>
+        <p className="text-gray-400 dark:text-stone-500 text-sm">Loading...</p>
       ) : tasks.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">
+        <div className="text-center py-16 text-gray-400 dark:text-stone-500">
           <p className="text-lg">No prep tasks yet.</p>
           <p className="text-sm mt-1">Add tasks manually or use AI Generate from your meal plan.</p>
         </div>
@@ -196,8 +196,8 @@ export default function PrepList() {
         <div className="space-y-5">
           {sortedGroups.map((dayLabel) => (
             <div key={dayLabel}>
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">{dayLabel}</h3>
-              <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 shadow-sm">
+              <h3 className="text-xs font-semibold text-gray-500 dark:text-stone-400 uppercase tracking-wider mb-2">{dayLabel}</h3>
+              <div className="bg-white dark:bg-stone-900 rounded-xl border border-gray-200 dark:border-stone-700 divide-y divide-gray-100 dark:divide-stone-800 shadow-sm">
                 {grouped[dayLabel].map((task) => (
                   <div key={task.id} className="flex items-center gap-3 px-4 py-3">
                     <input
@@ -206,7 +206,7 @@ export default function PrepList() {
                       onChange={() => handleToggle(task)}
                       className="w-4 h-4 rounded accent-green-600 cursor-pointer"
                     />
-                    <span className={`flex-1 text-sm ${task.is_done ? "line-through text-gray-400" : "text-gray-700"}`}>
+                    <span className={`flex-1 text-sm ${task.is_done ? "line-through text-gray-400 dark:text-stone-500" : "text-gray-700 dark:text-stone-200"}`}>
                       {task.description}
                     </span>
                     {task.source === "ai" && (

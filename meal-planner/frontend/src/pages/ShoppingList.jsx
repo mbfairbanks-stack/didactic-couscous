@@ -88,27 +88,27 @@ export default function ShoppingList() {
   return (
     <div>
       <div className="flex items-center gap-3 mb-6 flex-wrap">
-        <h1 className="text-2xl font-bold text-gray-800">Shopping List</h1>
+        <h1 className="text-2xl font-bold text-gray-800 dark:text-stone-100">Shopping List</h1>
         <div className="flex items-center gap-1">
-          <button onClick={prevWeek} className="p-1.5 rounded hover:bg-gray-100 text-gray-500">‹</button>
-          <span className="text-sm font-medium text-gray-600 min-w-max">
+          <button onClick={prevWeek} className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-stone-800 text-gray-500 dark:text-stone-400">‹</button>
+          <span className="text-sm font-medium text-gray-600 dark:text-stone-300 min-w-max">
             Week of {format(weekStart, "MMM d, yyyy")}
           </span>
-          <button onClick={nextWeek} className="p-1.5 rounded hover:bg-gray-100 text-gray-500">›</button>
+          <button onClick={nextWeek} className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-stone-800 text-gray-500 dark:text-stone-400">›</button>
         </div>
         <button onClick={thisWeek} className="text-xs text-green-600 hover:underline">This week</button>
       </div>
 
-      <p className="text-sm text-gray-500 mb-5">
+      <p className="text-sm text-gray-500 dark:text-stone-400 mb-5">
         Generated from recipes linked in your meal plan, checked against pantry inventory.
       </p>
 
       {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
 
       {loading ? (
-        <p className="text-gray-400 text-sm">Loading...</p>
+        <p className="text-gray-400 dark:text-stone-500 text-sm">Loading...</p>
       ) : !data ? null : rawToBuy.length === 0 && alreadyHave.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">
+        <div className="text-center py-16 text-gray-400 dark:text-stone-500">
           <p className="text-lg">Nothing to buy.</p>
           <p className="text-sm mt-1">Link recipes to your meal plan to generate a shopping list.</p>
         </div>
@@ -117,7 +117,7 @@ export default function ShoppingList() {
           {rawToBuy.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <h3 className="text-xs font-semibold text-gray-500 dark:text-stone-400 uppercase tracking-wider">
                   To Buy ({toBuy.length}{combined && rawToBuy.length !== toBuy.length ? ` combined from ${rawToBuy.length}` : ""})
                 </h3>
                 <button
@@ -125,13 +125,13 @@ export default function ShoppingList() {
                   className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
                     combined
                       ? "bg-green-50 border-green-300 text-green-700"
-                      : "bg-white border-gray-200 text-gray-500 hover:border-gray-300"
+                      : "bg-white dark:bg-stone-800 border-gray-200 dark:border-stone-700 text-gray-500 dark:text-stone-400 hover:border-gray-300 dark:hover:border-stone-600"
                   }`}
                 >
                   {combined ? "Combined" : "Combine"}
                 </button>
               </div>
-              <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 shadow-sm">
+              <div className="bg-white dark:bg-stone-900 rounded-xl border border-gray-200 dark:border-stone-700 divide-y divide-gray-100 dark:divide-stone-800 shadow-sm">
                 {toBuy.map((item) => (
                   <div key={item.name} className="flex items-center gap-3 px-4 py-3">
                     <input
@@ -140,11 +140,11 @@ export default function ShoppingList() {
                       onChange={() => toggleCheck(item.name)}
                       className="w-4 h-4 rounded accent-green-600 cursor-pointer"
                     />
-                    <span className={`flex-1 text-sm ${checked[item.name] ? "line-through text-gray-400" : "text-gray-700"}`}>
+                    <span className={`flex-1 text-sm ${checked[item.name] ? "line-through text-gray-400 dark:text-stone-500" : "text-gray-700 dark:text-stone-200"}`}>
                       {item.name}
                     </span>
                     {(item.amount || item.unit) && (
-                      <span className="text-xs text-gray-400">
+                      <span className="text-xs text-gray-400 dark:text-stone-500">
                         {[item.amount, item.unit].filter(Boolean).join(" ")}
                       </span>
                     )}
