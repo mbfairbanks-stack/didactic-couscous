@@ -871,6 +871,7 @@ def generate_recipe(
         "title (string), servings (int), prep_min (int), cook_min (int), "
         "ingredients (array of {name, amount, unit}), instructions (string with newlines), "
         "tags (array of strings like 'quick', 'vegetarian', 'gluten-free'), notes (string or null)."
+        + _US_INGREDIENTS_INSTRUCTION
     )
     user_msg = f"Generate a classic recipe for: {body.prompt}{pantry_context}"
 
@@ -1032,6 +1033,7 @@ def generate_meal_plan(
         "Each day is an object with keys: Breakfast, Lunch, Dinner, Snack. "
         "Each value is a short meal name string. Keep meal names concise (under 8 words). "
         "When scheduling a favourite recipe, use its EXACT title."
+        + _US_INGREDIENTS_INSTRUCTION
     )
     user_msg = (
         f"Create a weekly meal plan for the week of {body.week_start}.\n\n"
@@ -1123,6 +1125,45 @@ def generate_prep_list(
 # Shopping list: diff meal plan vs pantry
 # ---------------------------------------------------------------------------
 
+# Shared instruction appended to every recipe-generating system prompt
+_US_INGREDIENTS_INSTRUCTION = (
+    " Always use North American (US/Canadian) ingredient names: "
+    "heavy cream (not double cream), light cream (not single cream), "
+    "eggplant (not aubergine), zucchini (not courgette), cilantro (not coriander leaf), "
+    "arugula (not rocket), scallions or green onions (not spring onions), "
+    "shrimp (not prawns), ground beef/pork (not mince), fava beans (not broad beans), "
+    "snow peas (not mangetout), beet (not beetroot), rutabaga (not swede), "
+    "cornstarch (not cornflour), all-purpose flour (not plain flour), "
+    "powdered sugar (not icing sugar), superfine sugar (not caster sugar), "
+    "bacon (not streaky bacon or rashers), Canadian bacon (not back bacon)."
+)
+
+# British → US/Canadian ingredient name mapping applied at shopping-list normalisation
+_UK_TO_US = {
+    "double cream": "heavy cream",
+    "single cream": "light cream",
+    "aubergine": "eggplant",
+    "courgette": "zucchini",
+    "coriander leaf": "cilantro",
+    "fresh coriander": "cilantro",
+    "rocket": "arugula",
+    "spring onion": "scallion",
+    "prawns": "shrimp",
+    "prawn": "shrimp",
+    "mince": "ground beef",
+    "broad bean": "fava bean",
+    "mangetout": "snow pea",
+    "beetroot": "beet",
+    "swede": "rutabaga",
+    "cornflour": "cornstarch",
+    "plain flour": "all-purpose flour",
+    "icing sugar": "powdered sugar",
+    "caster sugar": "superfine sugar",
+    "streaky bacon": "bacon",
+    "back bacon": "canadian bacon",
+    "rashers": "bacon",
+}
+
 # Ingredients that are always available from the tap / household — never buy
 _SKIP_INGREDIENTS = {
     "water", "cold water", "hot water", "boiling water", "ice water",
@@ -1176,6 +1217,10 @@ def _normalize_ingredient(name: str, unit: str) -> tuple[str, str]:
     If the unit is not a recognised measurement, fold it back into the name."""
     # Strip trailing punctuation the AI sometimes adds (commas, periods)
     name = name.strip().rstrip(".,;:")
+    # Map British/Australian names to US/Canadian equivalents
+    name_lower = name.lower()
+    if name_lower in _UK_TO_US:
+        name = _UK_TO_US[name_lower]
     norm_unit = unit.strip().lower()
     if norm_unit not in _KNOWN_UNITS:
         combined = f"{name} {unit}".strip() if unit else name
@@ -1379,6 +1424,7 @@ def generate_week_recipes(
         "'garlic' not 'garlic cloves', 'butter' not 'unsalted butter', "
         "'chicken breast' not 'boneless skinless chicken breast'. "
         "Amounts must be plain numbers or simple fractions (e.g. 0.5 not '1/2')."
+        + _US_INGREDIENTS_INSTRUCTION
     )
 
     client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
@@ -1543,6 +1589,7 @@ RECIPE_JSON_SYSTEM = (
     "title (string), servings (int), prep_min (int), cook_min (int), "
     "ingredients (array of {name, amount, unit}), instructions (string with newlines), "
     "tags (array of strings like 'quick', 'vegetarian', 'gluten-free'), notes (string or null)."
+    + _US_INGREDIENTS_INSTRUCTION
 )
 
 
