@@ -135,12 +135,23 @@ export default function ShoppingList() {
   const handleShare = async () => {
     const text = buildShareText();
     if (navigator.share) {
-      try { await navigator.share({ title: "Shopping List", text }); } catch {}
-    } else {
-      await navigator.clipboard.writeText(text);
-      setCopyLabel("Copied!");
-      setTimeout(() => setCopyLabel("Share"), 2000);
+      try { await navigator.share({ title: "Shopping List", text }); return; } catch {}
     }
+    // Clipboard API requires HTTPS; fall back to execCommand which works on HTTP
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.cssText = "position:fixed;top:-9999px;left:-9999px;opacity:0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    setCopyLabel("Copied!");
+    setTimeout(() => setCopyLabel("Share"), 2000);
   };
 
   return (
