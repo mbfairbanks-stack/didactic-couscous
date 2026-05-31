@@ -963,6 +963,25 @@ def generate_meal_plan(
             "Schedule a few of these (using their EXACT titles) when they fit the week."
         )
 
+    # Build recent-weeks context — avoid repeating meals from the last 3 weeks
+    three_weeks_ago = (datetime.strptime(body.week_start, "%Y-%m-%d").date() - timedelta(weeks=3)).isoformat()
+    recent_entries = (
+        db.query(models.MealPlanEntry)
+        .filter(
+            models.MealPlanEntry.user_id == current_user.id,
+            models.MealPlanEntry.week_start >= three_weeks_ago,
+            models.MealPlanEntry.week_start < body.week_start,
+        )
+        .all()
+    )
+    recent_context = ""
+    if recent_entries:
+        recent_meals = sorted({e.meal_name for e in recent_entries if e.meal_name})
+        recent_context = (
+            f"\n\nMeals planned in the last 3 weeks (DO NOT repeat these — choose different dishes):\n"
+            + ", ".join(recent_meals)
+        )
+
     # Build pantry block — pantry-first when use_pantry is on
     pantry_context = ""
     if body.use_pantry:
@@ -1010,6 +1029,7 @@ def generate_meal_plan(
         f"Household preferences:\n{prefs_text}"
         f"{favorites_context}"
         f"{history_context}"
+        f"{recent_context}"
         f"{pantry_context}"
     )
 
