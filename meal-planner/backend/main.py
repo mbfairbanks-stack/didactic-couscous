@@ -27,6 +27,7 @@ def _ensure_columns():
         ],
         "pantry_items": [
             ("user_id", "INTEGER"),
+            ("price", "REAL"),
         ],
         "meal_plan_entries": [
             ("cooked_at", "DATETIME"),
@@ -155,6 +156,7 @@ class PantryItemCreate(BaseModel):
     category: str = "Other"
     expiry_date: Optional[date] = None
     notes: Optional[str] = None
+    price: Optional[float] = None
 
 
 class PantryItemUpdate(BaseModel):
@@ -164,6 +166,7 @@ class PantryItemUpdate(BaseModel):
     category: Optional[str] = None
     expiry_date: Optional[date] = None
     notes: Optional[str] = None
+    price: Optional[float] = None
 
 
 class MealPlanEntryCreate(BaseModel):
@@ -389,6 +392,97 @@ def delete_recipe(
         raise HTTPException(403, "Not yours")
     db.delete(r)
     db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Recipe cost estimation
+# ---------------------------------------------------------------------------
+
+@app.get("/recipes/{recipe_id}/estimated-cost")
+def recipe_estimated_cost(
+    recipe_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    recipe = db.get(models.Recipe, recipe_id)
+    if not recipe:
+        raise HTTPException(404, "Recipe not found")
+
+    pantry = db.query(models.PantryItem).filter_by(user_id=current_user.id).all()
+    priced = [p for p in pantry if p.price is not None and p.price > 0]
+    if not priced:
+        return {"cost_per_serving": None, "coverage": 0, "breakdown": []}
+
+    # Build lookup: normalized name → pantry item (prefer priced items)
+    pantry_map: dict[str, models.PantryItem] = {}
+    for p in priced:
+        norm, _ = _normalize_ingredient(p.name, "")
+        if norm not in pantry_map:
+            pantry_map[norm] = p
+
+    total_cost = 0.0
+    matched = 0
+    breakdown = []
+    ingredients = recipe.ingredients or []
+
+    for ing in ingredients:
+        raw_name = (ing.get("name") or "").strip()
+        raw_unit = (ing.get("unit") or "").strip()
+        raw_amount = ing.get("amount")
+        try:
+            ingr_amt = float(raw_amount) if raw_amount else 1.0
+        except (TypeError, ValueError):
+            ingr_amt = 1.0
+
+        norm_name, _ = _normalize_ingredient(raw_name, "")
+
+        # Find best matching pantry item
+        pantry_item = pantry_map.get(norm_name)
+        if not pantry_item:
+            # Substring fallback
+            for pnorm, pitem in pantry_map.items():
+                if pnorm in norm_name or norm_name in pnorm:
+                    pantry_item = pitem
+                    break
+
+        if not pantry_item:
+            continue
+
+        pantry_qty = pantry_item.quantity or 1.0
+        pantry_unit = pantry_item.unit or ""
+        pantry_price = pantry_item.price
+
+        ingr_base = _to_base(ingr_amt, raw_unit)
+        pantry_base = _to_base(pantry_qty, pantry_unit)
+
+        if ingr_base and pantry_base and ingr_base[1] == pantry_base[1] and pantry_base[0] > 0:
+            fraction = ingr_base[0] / pantry_base[0]
+            item_cost = fraction * pantry_price
+        elif ingr_base is None or pantry_base is None or ingr_base[1] != pantry_base[1]:
+            # Incompatible units — use whole-item proportion by count
+            item_cost = pantry_price * (ingr_amt / max(pantry_qty, 1))
+        else:
+            continue
+
+        item_cost = min(item_cost, pantry_price)  # cap at full item price
+        total_cost += item_cost
+        matched += 1
+        breakdown.append({
+            "ingredient": raw_name,
+            "cost": round(item_cost, 2),
+        })
+
+    coverage = matched / len(ingredients) if ingredients else 0
+    servings = recipe.servings or 4
+    cost_per_serving = round(total_cost / servings, 2) if matched > 0 else None
+
+    return {
+        "cost_per_serving": cost_per_serving,
+        "total_cost": round(total_cost, 2),
+        "coverage": round(coverage, 2),
+        "breakdown": breakdown,
+        "servings": servings,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1248,6 +1342,50 @@ def _normalize_ingredient(name: str, unit: str) -> tuple[str, str]:
     return n.strip(), norm_unit
 
 
+# ---------------------------------------------------------------------------
+# Cost-per-serving helpers
+# ---------------------------------------------------------------------------
+
+_VOLUME_ML: dict[str, float] = {
+    "tsp": 4.93, "teaspoon": 4.93, "teaspoons": 4.93,
+    "tbsp": 14.79, "tablespoon": 14.79, "tablespoons": 14.79,
+    "cup": 236.59, "cups": 236.59,
+    "fl oz": 29.57, "fluid ounce": 29.57, "fluid ounces": 29.57,
+    "pint": 473.18, "pt": 473.18,
+    "quart": 946.35, "qt": 946.35,
+    "gallon": 3785.41, "gal": 3785.41,
+    "ml": 1.0, "milliliter": 1.0, "milliliters": 1.0,
+    "l": 1000.0, "liter": 1000.0, "liters": 1000.0, "litre": 1000.0, "litres": 1000.0,
+}
+
+_WEIGHT_G: dict[str, float] = {
+    "g": 1.0, "gram": 1.0, "grams": 1.0,
+    "kg": 1000.0, "kilogram": 1000.0, "kilograms": 1000.0,
+    "oz": 28.35, "ounce": 28.35, "ounces": 28.35,
+    "lb": 453.59, "lbs": 453.59, "pound": 453.59, "pounds": 453.59,
+    "mg": 0.001,
+}
+
+_COUNT_UNITS = {"", "whole", "each", "piece", "pieces", "pcs", "count",
+                "slice", "slices", "can", "cans", "jar", "jars",
+                "bottle", "bottles", "bunch", "bunches", "dozen",
+                "bag", "bags", "box", "boxes", "pack", "packs",
+                "fillet", "fillets", "stalk", "stalks", "spear", "spears",
+                "loaf", "loaves", "sprig", "sprigs"}
+
+
+def _to_base(amount: float, unit: str):
+    """Return (base_value, type_str) or None if unit unknown."""
+    u = unit.strip().lower()
+    if u in _VOLUME_ML:
+        return amount * _VOLUME_ML[u], "volume"
+    if u in _WEIGHT_G:
+        return amount * _WEIGHT_G[u], "weight"
+    if u in _COUNT_UNITS:
+        return amount, "count"
+    return None
+
+
 def _pantry_match(ingredient_norm: str, pantry_keys: set) -> bool:
     """Return True if a normalized pantry item matches the ingredient."""
     if ingredient_norm in pantry_keys:
@@ -1769,11 +1907,13 @@ async def parse_receipt(
         "You extract grocery items from receipt photos for a kitchen pantry app. "
         "Respond with ONLY a valid JSON array — no markdown, no code fences, no commentary. "
         "Each element: {name (clean, lowercase singular noun), quantity (number, default 1), "
-        "unit (string, '' if a count), category (one of: Produce, Dairy, Meat, Pantry, Freezer, Beverages, Other)}. "
+        "unit (string, '' if a count), price (number — the line-item total in dollars, null if not visible), "
+        "category (one of: Produce, Dairy, Meat, Pantry, Freezer, Beverages, Other)}. "
         "Normalise names so they consolidate with existing pantry items "
         "(e.g. 'GV WHL MILK 2L' → 'milk', 'BAN' → 'banana', 'CHKN BRST' → 'chicken breast'). "
         "Skip tax, totals, store info, loyalty rewards, bag fees, and anything that isn't food/drink/household pantry. "
-        "If quantity isn't clear, use 1. If unit isn't clear, leave as ''."
+        "If quantity isn't clear, use 1. If unit isn't clear, leave as ''. "
+        "If a price isn't legible, use null."
     )
 
     client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
@@ -1806,11 +1946,14 @@ async def parse_receipt(
         name = (it.get("name") or "").strip().lower()
         if not name:
             continue
+        raw_price = it.get("price")
+        price = float(raw_price) if raw_price is not None else None
         cleaned.append({
             "name": name,
             "quantity": float(it.get("quantity") or 1),
             "unit": (it.get("unit") or "").strip(),
             "category": it.get("category") or "Other",
+            "price": price,
         })
     return {"items": cleaned}
 

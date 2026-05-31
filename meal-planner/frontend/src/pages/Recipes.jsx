@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { getRecipes, createRecipe, updateRecipe, deleteRecipe, getPantry, streamGenerateRecipe, streamImportRecipePDF, streamImportRecipeURL, streamImportRecipeText, publishRecipe, unpublishRecipe, getCommunityRecipes, copyCommunityRecipe } from "../api";
+import { getRecipes, createRecipe, updateRecipe, deleteRecipe, getPantry, streamGenerateRecipe, streamImportRecipePDF, streamImportRecipeURL, streamImportRecipeText, publishRecipe, unpublishRecipe, getCommunityRecipes, copyCommunityRecipe, getRecipeCost } from "../api";
 
 const EMPTY_FORM = {
   title: "",
@@ -47,6 +47,15 @@ function recipeTheme(title) {
 
 function RecipeCard({ recipe, onEdit, onDelete, onToggleFavorite, onTogglePublish, pantryNames }) {
   const [expanded, setExpanded] = useState(false);
+  const [cost, setCost] = useState(null);
+
+  const handleExpand = () => {
+    const next = !expanded;
+    setExpanded(next);
+    if (next && cost === null) {
+      getRecipeCost(recipe.id).then(setCost).catch(() => setCost(false));
+    }
+  };
   const totalIng = recipe.ingredients?.length || 0;
   const matched = (recipe.ingredients || []).filter(
     (ing) => ing.name && pantryNames.has(ing.name.toLowerCase().trim())
@@ -71,7 +80,7 @@ function RecipeCard({ recipe, onEdit, onDelete, onToggleFavorite, onTogglePublis
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             <button
-              onClick={() => setExpanded(!expanded)}
+              onClick={handleExpand}
               className="font-semibold text-stone-800 dark:text-stone-100 text-left hover:text-emerald-700 w-full"
             >
               {recipe.title}
@@ -86,6 +95,12 @@ function RecipeCard({ recipe, onEdit, onDelete, onToggleFavorite, onTogglePublis
               {totalIng > 0 && (
                 <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${matchColor}`}>
                   {matched}/{totalIng} in pantry
+                </span>
+              )}
+              {cost && cost.cost_per_serving != null && (
+                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full border bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-300 dark:border-blue-800"
+                  title={`~${Math.round(cost.coverage * 100)}% of ingredients priced`}>
+                  ~${cost.cost_per_serving}/serving
                 </span>
               )}
             </div>
@@ -130,6 +145,21 @@ function RecipeCard({ recipe, onEdit, onDelete, onToggleFavorite, onTogglePublis
                     </li>
                   ))}
                 </ul>
+              </div>
+            )}
+            {cost && cost.cost_per_serving != null && (
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 dark:text-stone-400 uppercase tracking-wider mb-1">
+                  Estimated Cost — ${cost.total_cost} total · ${cost.cost_per_serving}/serving
+                  <span className="ml-1 font-normal normal-case text-stone-400">({Math.round(cost.coverage * 100)}% of ingredients priced)</span>
+                </h4>
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                  {cost.breakdown.map((b) => (
+                    <span key={b.ingredient} className="text-xs text-stone-500 dark:text-stone-400">
+                      {b.ingredient} <span className="text-stone-400">${b.cost}</span>
+                    </span>
+                  ))}
+                </div>
               </div>
             )}
             {recipe.instructions && (

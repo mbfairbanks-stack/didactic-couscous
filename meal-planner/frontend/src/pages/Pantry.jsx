@@ -238,6 +238,7 @@ export default function Pantry() {
       category: it.category || "Other",
       expiry_date: null,
       notes: null,
+      price: it.price != null && it.price !== "" ? parseFloat(it.price) : null,
     }));
     try {
       await bulkCreatePantryItems(payload);
@@ -374,26 +375,44 @@ export default function Pantry() {
               )}
               {!photoParsing && photoItems.length > 0 && (
                 <>
-                  <p className="text-xs text-stone-500 dark:text-stone-400 mb-2 uppercase tracking-wider font-semibold">Review ({photoItems.length} items)</p>
+                  <p className="text-xs text-stone-500 dark:text-stone-400 mb-1 uppercase tracking-wider font-semibold">Review ({photoItems.length} items) — edit anything before saving</p>
+                  {photoMode === "receipt" && (
+                    <p className="text-xs text-stone-400 dark:text-stone-500 mb-2">Fix names (e.g. "nordica cott" → "cottage cheese"), adjust amounts, and correct prices.</p>
+                  )}
                   <div className="space-y-1.5">
                     {photoItems.map((it, i) => (
-                      <div key={i} className="flex gap-1.5 items-center">
+                      <div key={i} className="flex gap-1.5 items-center flex-wrap">
                         <input
                           value={it.name}
                           onChange={(e) => updatePhotoItem(i, "name", e.target.value)}
-                          className="flex-1 border border-stone-200 dark:border-stone-600 rounded px-2 py-1 text-sm bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100"
+                          className="flex-1 min-w-32 border border-stone-200 dark:border-stone-600 rounded px-2 py-1 text-sm bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100"
                         />
                         <input
                           value={it.quantity}
                           onChange={(e) => updatePhotoItem(i, "quantity", e.target.value)}
-                          className="w-14 border border-stone-200 dark:border-stone-600 rounded px-2 py-1 text-sm bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100"
+                          placeholder="qty"
+                          className="w-12 border border-stone-200 dark:border-stone-600 rounded px-2 py-1 text-sm bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100"
                         />
                         <input
                           value={it.unit}
                           onChange={(e) => updatePhotoItem(i, "unit", e.target.value)}
                           placeholder="unit"
-                          className="w-16 border border-stone-200 dark:border-stone-600 rounded px-2 py-1 text-sm bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 placeholder:text-stone-400"
+                          className="w-14 border border-stone-200 dark:border-stone-600 rounded px-2 py-1 text-sm bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 placeholder:text-stone-400"
                         />
+                        {photoMode === "receipt" && (
+                          <div className="flex items-center gap-0.5">
+                            <span className="text-stone-400 text-xs">$</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={it.price ?? ""}
+                              onChange={(e) => updatePhotoItem(i, "price", e.target.value === "" ? null : e.target.value)}
+                              placeholder="price"
+                              className="w-16 border border-stone-200 dark:border-stone-600 rounded px-2 py-1 text-sm bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 placeholder:text-stone-400"
+                            />
+                          </div>
+                        )}
                         <select
                           value={it.category}
                           onChange={(e) => updatePhotoItem(i, "category", e.target.value)}
@@ -635,6 +654,9 @@ export default function Pantry() {
                         <span className="text-stone-500 dark:text-stone-400 text-sm ml-2">
                           {item.quantity} {item.unit}
                         </span>
+                      )}
+                      {item.price != null && (
+                        <span className="text-xs text-green-600 dark:text-green-500 ml-2">${item.price.toFixed(2)}</span>
                       )}
                     </div>
                     <ExpiryBadge dateStr={item.expiry_date} />

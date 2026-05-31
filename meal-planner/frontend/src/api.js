@@ -77,6 +77,7 @@ export const bulkCreatePantryItems = (items) => req("/pantry/bulk", { method: "P
 export const updatePantryItem = (id, body) => req(`/pantry/${id}`, { method: "PUT", ...json(body) });
 export const deletePantryItem = (id) => req(`/pantry/${id}`, { method: "DELETE" });
 export const clearAllPantryItems = () => req("/pantry", { method: "DELETE" });
+export const getRecipeCost = (id) => req(`/recipes/${id}/estimated-cost`);
 
 // Meal Plan
 export const getMealPlan = (weekStart) => req(`/meal-plan?week_start=${weekStart}`);

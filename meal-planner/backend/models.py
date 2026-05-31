@@ -43,6 +43,7 @@ class PantryItem(Base):
     category = Column(String, nullable=False, default="Other")
     expiry_date = Column(Date, nullable=True)
     notes = Column(String, nullable=True)
+    price = Column(Float, nullable=True)  # total price paid for quantity/unit above
 
 
 class MealPlanEntry(Base):
