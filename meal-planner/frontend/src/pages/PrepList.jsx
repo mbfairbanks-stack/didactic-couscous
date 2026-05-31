@@ -120,13 +120,13 @@ export default function PrepList() {
     <div>
       <div className="flex items-center justify-between mb-4 sm:mb-6 flex-wrap gap-3">
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Prep List</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-800 dark:text-stone-100">Prep List</h1>
           <div className="flex items-center gap-1">
-            <button onClick={prevWeek} className="p-1.5 rounded hover:bg-gray-100 text-gray-500">‹</button>
-            <span className="text-sm font-medium text-gray-600 min-w-max">
+            <button onClick={prevWeek} className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-stone-800 text-gray-500 dark:text-stone-400">‹</button>
+            <span className="text-sm font-medium text-gray-600 dark:text-stone-300 min-w-max">
               Week of {format(weekStart, "MMM d, yyyy")}
             </span>
-            <button onClick={nextWeek} className="p-1.5 rounded hover:bg-gray-100 text-gray-500">›</button>
+            <button onClick={nextWeek} className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-stone-800 text-gray-500 dark:text-stone-400">›</button>
           </div>
           <button onClick={thisWeek} className="text-xs text-green-600 hover:underline">This week</button>
         </div>

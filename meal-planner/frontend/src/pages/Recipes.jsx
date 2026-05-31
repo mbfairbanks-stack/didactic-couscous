@@ -761,13 +761,13 @@ export default function Recipes() {
             {communityRecipes.map((r) => {
               const theme = recipeTheme(r.title);
               return (
-                <div key={r.id} className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
+                <div key={r.id} className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-700 shadow-sm overflow-hidden">
                   <div className={`h-12 bg-gradient-to-r ${theme.grad} flex items-center px-4 gap-2`}>
                     <span className="text-xl">{theme.emoji}</span>
                     <span className="text-xs font-semibold text-stone-500 ml-auto">Community</span>
                   </div>
                   <div className="p-4">
-                    <p className="font-semibold text-stone-800">{r.title}</p>
+                    <p className="font-semibold text-stone-800 dark:text-stone-100">{r.title}</p>
                     <div className="flex gap-3 text-xs text-stone-400 mt-1 flex-wrap">
                       {r.prep_min > 0 && <span>Prep {r.prep_min}m</span>}
                       {r.cook_min > 0 && <span>Cook {r.cook_min}m</span>}

@@ -90,14 +90,14 @@ function RecipePickerContent({ recipes, onSelect, onClear, onSkip }) {
 
   return (
     <>
-      <div className="p-3 border-b">
+      <div className="p-3 border-b dark:border-stone-700">
         <input
           autoFocus
           type="text"
           placeholder="Search recipes or type a meal..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full border rounded-lg px-3 py-2 text-sm"
+          className="w-full border dark:border-stone-600 rounded-lg px-3 py-2 text-sm dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
           onKeyDown={(e) => {
             if (e.key === "Enter" && search.trim()) {
               const match = recipes.find((r) => r.title.toLowerCase() === search.toLowerCase());
@@ -110,31 +110,31 @@ function RecipePickerContent({ recipes, onSelect, onClear, onSkip }) {
       <div className="overflow-y-auto max-h-64">
         {!search && favorites.length > 0 && (
           <>
-            <p className="px-3 pt-2 pb-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">Favourites</p>
+            <p className="px-3 pt-2 pb-1 text-xs font-semibold text-gray-400 dark:text-stone-500 uppercase tracking-wider">Favourites</p>
             {favorites.map((r) => (
               <button key={r.id} onClick={() => onSelect(r.id, null)}
-                className="w-full text-left px-4 py-3 text-sm hover:bg-yellow-50 text-gray-700 flex items-center gap-2">
+                className="w-full text-left px-4 py-3 text-sm hover:bg-yellow-50 dark:hover:bg-stone-800 text-gray-700 dark:text-stone-200 flex items-center gap-2">
                 <span className="text-yellow-400">★</span> {r.title}
               </button>
             ))}
-            <div className="border-t my-1" />
+            <div className="border-t dark:border-stone-700 my-1" />
           </>
         )}
         {filtered.length === 0 && search.trim() && (
           <button onClick={() => onSelect(null, search.trim())}
-            className="w-full text-left px-4 py-3 text-sm text-green-700 hover:bg-green-50">
+            className="w-full text-left px-4 py-3 text-sm text-green-700 hover:bg-green-50 dark:hover:bg-stone-800">
             Add "{search.trim()}"
           </button>
         )}
         {(search ? filtered : recipes.filter((r) => !r.is_favorite)).map((r) => (
           <button key={r.id} onClick={() => onSelect(r.id, null)}
-            className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 text-gray-700">
+            className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 dark:hover:bg-stone-800 text-gray-700 dark:text-stone-200">
             {r.title}
           </button>
         ))}
       </div>
-      <div className="border-t p-3 space-y-1">
-        <button onClick={onSkip} className="w-full text-left text-sm text-gray-500 hover:text-gray-700 py-0.5">
+      <div className="border-t dark:border-stone-700 p-3 space-y-1">
+        <button onClick={onSkip} className="w-full text-left text-sm text-gray-500 dark:text-stone-400 hover:text-gray-700 dark:hover:text-stone-200 py-0.5">
           Skip this meal
         </button>
         <button onClick={onClear} className="w-full text-left text-sm text-red-400 hover:text-red-600 py-0.5">
@@ -154,7 +154,7 @@ function CellMenu({ recipes, onSelect, onClear, onSkip, onClose }) {
     return () => document.removeEventListener("mousedown", handler);
   }, [onClose]);
   return (
-    <div ref={ref} className="absolute z-20 top-full left-0 mt-1 w-72 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+    <div ref={ref} className="absolute z-20 top-full left-0 mt-1 w-72 bg-white dark:bg-stone-900 border border-gray-200 dark:border-stone-700 rounded-xl shadow-lg overflow-hidden">
       <RecipePickerContent recipes={recipes} onSelect={onSelect} onClear={onClear} onSkip={onSkip} />
     </div>
   );
@@ -165,11 +165,11 @@ function MobileSheet({ title, recipes, onSelect, onClear, onSkip, onClose }) {
   return (
     <>
       <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
-      <div className="fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-2xl shadow-xl overflow-hidden"
+      <div className="fixed inset-x-0 bottom-0 z-50 bg-white dark:bg-stone-900 rounded-t-2xl shadow-xl overflow-hidden"
         style={{ maxHeight: "80vh" }}>
-        <div className="flex items-center justify-between px-4 py-3 border-b">
-          <span className="font-semibold text-gray-800 text-sm">{title}</span>
-          <button onClick={onClose} className="text-gray-400 text-xl leading-none">×</button>
+        <div className="flex items-center justify-between px-4 py-3 border-b dark:border-stone-700">
+          <span className="font-semibold text-gray-800 dark:text-stone-100 text-sm">{title}</span>
+          <button onClick={onClose} className="text-gray-400 dark:text-stone-500 text-xl leading-none">×</button>
         </div>
         <RecipePickerContent recipes={recipes} onSelect={onSelect} onClear={onClear} onSkip={onSkip} />
       </div>
@@ -247,7 +247,7 @@ function RecipeSheet({ recipe, onClose }) {
     <>
       <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
       <div
-        className="fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-2xl shadow-xl overflow-hidden sm:inset-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-[520px] sm:rounded-2xl"
+        className="fixed inset-x-0 bottom-0 z-50 bg-white dark:bg-stone-900 rounded-t-2xl shadow-xl overflow-hidden sm:inset-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-[520px] sm:rounded-2xl"
         style={{ maxHeight: "90vh" }}
       >
         {/* Header with emoji band */}
@@ -548,13 +548,13 @@ export default function MealPlan() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4 sm:mb-6 flex-wrap gap-2">
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Meal Plan</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-800 dark:text-stone-100">Meal Plan</h1>
           <div className="flex items-center gap-1">
-            <button onClick={prevWeek} className="p-1.5 rounded hover:bg-gray-100 text-gray-500 text-lg">‹</button>
-            <span className="text-xs sm:text-sm font-medium text-gray-600 min-w-max">
+            <button onClick={prevWeek} className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-stone-800 text-gray-500 dark:text-stone-400 text-lg">‹</button>
+            <span className="text-xs sm:text-sm font-medium text-gray-600 dark:text-stone-300 min-w-max">
               {format(weekStart, "MMM d")} – {format(addDays(weekStart, 6), "MMM d, yyyy")}
             </span>
-            <button onClick={nextWeek} className="p-1.5 rounded hover:bg-gray-100 text-gray-500 text-lg">›</button>
+            <button onClick={nextWeek} className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-stone-800 text-gray-500 dark:text-stone-400 text-lg">›</button>
           </div>
           <button onClick={thisWeek} className="text-xs text-green-600 hover:underline">Today</button>
         </div>
@@ -585,10 +585,10 @@ export default function MealPlan() {
 
       {/* AI Panel */}
       {showAI && (
-        <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 mb-5 shadow-sm space-y-3">
+        <div className="bg-purple-50 dark:bg-stone-900 border border-purple-200 dark:border-stone-700 rounded-xl p-4 mb-5 shadow-sm space-y-3">
           <h2 className="font-semibold text-purple-800">Generate Week with AI</h2>
           {preferences && (preferences.dietary_restrictions || preferences.cuisine_preferences || preferences.avoid) && (
-            <div className="bg-white border border-purple-100 rounded-lg px-3 py-2 text-xs text-purple-700 space-y-0.5">
+            <div className="bg-white dark:bg-stone-800 border border-purple-100 dark:border-stone-700 rounded-lg px-3 py-2 text-xs text-purple-700 dark:text-stone-300 space-y-0.5">
               <p className="font-medium text-purple-800 mb-1">Using your saved preferences:</p>
               {preferences.dietary_restrictions && <p>Restrictions: {preferences.dietary_restrictions}</p>}
               {preferences.cuisine_preferences && <p>Cuisines: {preferences.cuisine_preferences}</p>}
@@ -610,7 +610,7 @@ export default function MealPlan() {
           <div className="flex flex-col sm:flex-row gap-2">
             <input type="text" placeholder="Extra notes for this week? (optional)"
               value={aiNotes} onChange={(e) => setAiNotes(e.target.value)}
-              className="border rounded-lg px-3 py-2 text-sm flex-1" />
+              className="border dark:border-stone-600 rounded-lg px-3 py-2 text-sm flex-1 dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500" />
             <button onClick={handleGenerateAI} disabled={aiStreaming}
               className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 sm:shrink-0">
               {aiStreaming ? "Generating..." : "Generate"}
@@ -632,7 +632,7 @@ export default function MealPlan() {
       )}
 
       {loading ? (
-        <p className="text-gray-400 text-sm">Loading...</p>
+        <p className="text-gray-400 dark:text-stone-500 text-sm">Loading...</p>
       ) : (
         <>
           {/* ── MOBILE VIEW ── */}
@@ -650,7 +650,7 @@ export default function MealPlan() {
                     className={`flex flex-col items-center px-3 py-2 rounded-xl shrink-0 border transition-colors ${
                       selectedDay === day
                         ? "bg-green-600 text-white border-green-600"
-                        : "bg-white text-gray-600 border-gray-200"
+                        : "bg-white dark:bg-stone-800 text-gray-600 dark:text-stone-300 border-gray-200 dark:border-stone-700"
                     }`}
                   >
                     <span className="text-[10px] font-semibold uppercase">{day.slice(0, 3)}</span>
@@ -796,9 +796,9 @@ export default function MealPlan() {
                 <tr>
                   <th className="w-24 pb-2 pr-2" />
                   {DAYS.map((day, i) => (
-                    <th key={day} className="text-center text-xs font-semibold text-gray-600 pb-2 px-1">
+                    <th key={day} className="text-center text-xs font-semibold text-gray-600 dark:text-stone-300 pb-2 px-1">
                       <div>{day.slice(0, 3)}</div>
-                      <div className="text-gray-400 font-normal">{format(addDays(weekStart, i), "M/d")}</div>
+                      <div className="text-gray-400 dark:text-stone-500 font-normal">{format(addDays(weekStart, i), "M/d")}</div>
                       <button
                         onClick={() => handleSkipDay(day)}
                         title={isDaySkipped(day) ? "Clear day" : "Skip day"}
@@ -813,7 +813,7 @@ export default function MealPlan() {
               <tbody>
                 {MEAL_TYPES.map((mealType) => (
                   <tr key={mealType}>
-                    <td className="text-xs font-semibold text-gray-500 uppercase tracking-wider pr-2 py-1 align-top pt-2">
+                    <td className="text-xs font-semibold text-gray-500 dark:text-stone-400 uppercase tracking-wider pr-2 py-1 align-top pt-2">
                       {mealType}
                     </td>
                     {DAYS.map((day) => {
