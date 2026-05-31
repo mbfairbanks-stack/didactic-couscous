@@ -1207,7 +1207,9 @@ _NAME_STRIP = re.compile(
     r'\b(fresh|dried|frozen|canned|large|small|medium|ripe|raw|cooked|'
     r'chopped|diced|sliced|minced|grated|peeled|halved|crushed|ground|'
     r'boneless|skinless|whole|organic|baby|extra|'
-    r'cloves?|heads?|stalks?|sprigs?|leaves?|florets?|strips?)\b\s*',
+    r'cloves?|heads?|stalks?|sprigs?|leaves?|florets?|strips?|'
+    r'chiffonade|julienned?|shredded|trimmed|deveined|butterflied|'
+    r'thinly|roughly|finely|coarsely|lightly|firmly)\b\s*',
     re.IGNORECASE,
 )
 
@@ -1215,7 +1217,10 @@ _NAME_STRIP = re.compile(
 def _normalize_ingredient(name: str, unit: str) -> tuple[str, str]:
     """Return (normalised_name, normalised_unit).
     If the unit is not a recognised measurement, fold it back into the name."""
-    # Strip trailing punctuation the AI sometimes adds (commas, periods, with optional surrounding spaces)
+    # Drop everything after the first comma (AI often appends prep instructions after a comma)
+    if "," in name:
+        name = name[:name.index(",")]
+    # Strip trailing punctuation/spaces the AI sometimes adds
     name = name.strip().rstrip(".,;: ")
     # Map British/Australian names to US/Canadian equivalents
     name_lower = name.lower()

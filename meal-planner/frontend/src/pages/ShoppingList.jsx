@@ -61,6 +61,8 @@ export default function ShoppingList() {
   const [error, setError] = useState(null);
   const [checked, setChecked] = useState({});
   const [combined, setCombined] = useState(true);
+  const [extraItems, setExtraItems] = useState([]);
+  const [extraInput, setExtraInput] = useState("");
 
   const weekKey = toYMD(weekStart);
 
@@ -74,6 +76,24 @@ export default function ShoppingList() {
   };
 
   useEffect(() => { load(); }, [weekKey]);
+
+  useEffect(() => {
+    try { setExtraItems(JSON.parse(localStorage.getItem("sc_extra_" + weekKey) || "[]")); } catch { setExtraItems([]); }
+  }, [weekKey]);
+
+  const saveExtra = (items) => {
+    setExtraItems(items);
+    localStorage.setItem("sc_extra_" + weekKey, JSON.stringify(items));
+  };
+
+  const addExtraItem = () => {
+    const val = extraInput.trim();
+    if (!val) return;
+    saveExtra([...extraItems, { name: val, amount: "", unit: "" }]);
+    setExtraInput("");
+  };
+
+  const removeExtraItem = (name) => saveExtra(extraItems.filter((i) => i.name !== name));
 
   const prevWeek = () => setWeekStart(subWeeks(weekStart, 1));
   const nextWeek = () => setWeekStart(addWeeks(weekStart, 1));
@@ -120,14 +140,16 @@ export default function ShoppingList() {
 
       {loading ? (
         <p className="text-gray-400 dark:text-stone-500 text-sm">Loading...</p>
-      ) : !data ? null : rawToBuy.length === 0 && alreadyHave.length === 0 ? (
-        <div className="text-center py-16 text-gray-400 dark:text-stone-500">
-          <p className="text-lg">Nothing to buy.</p>
-          <p className="text-sm mt-1">Link recipes to your meal plan to generate a shopping list.</p>
-        </div>
       ) : (
         <div className="space-y-6">
-          {rawToBuy.length > 0 && (
+          {data && rawToBuy.length === 0 && alreadyHave.length === 0 && (
+            <div className="text-center py-10 text-gray-400 dark:text-stone-500">
+              <p className="text-lg">Nothing from recipes.</p>
+              <p className="text-sm mt-1">Link recipes to your meal plan to generate a shopping list.</p>
+            </div>
+          )}
+
+          {data && rawToBuy.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-xs font-semibold text-gray-500 dark:text-stone-400 uppercase tracking-wider">
@@ -173,6 +195,53 @@ export default function ShoppingList() {
               </div>
             </div>
           )}
+
+          {/* Extra manually-added items */}
+          <div>
+            <h3 className="text-xs font-semibold text-gray-500 dark:text-stone-400 uppercase tracking-wider mb-2">
+              Add Items
+            </h3>
+            <div className="flex gap-2 mb-2">
+              <input
+                type="text"
+                value={extraInput}
+                onChange={(e) => setExtraInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addExtraItem()}
+                placeholder="e.g. paper towels"
+                className="flex-1 text-sm px-3 py-2 rounded-lg border border-gray-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-gray-800 dark:text-stone-100 placeholder:text-gray-400 dark:placeholder:text-stone-500 focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+              <button
+                onClick={addExtraItem}
+                className="px-3 py-2 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700 transition-colors"
+              >
+                Add
+              </button>
+            </div>
+            {extraItems.length > 0 && (
+              <div className="bg-white dark:bg-stone-900 rounded-xl border border-gray-200 dark:border-stone-700 divide-y divide-gray-100 dark:divide-stone-800 shadow-sm">
+                {extraItems.map((item) => (
+                  <div key={item.name} className="group flex items-center gap-3 px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={!!checked[item.name]}
+                      onChange={() => toggleCheck(item.name)}
+                      className="w-4 h-4 rounded accent-green-600 cursor-pointer shrink-0"
+                    />
+                    <span className={`flex-1 text-sm ${checked[item.name] ? "line-through text-gray-400 dark:text-stone-500" : "text-gray-700 dark:text-stone-200"}`}>
+                      {item.name}
+                    </span>
+                    <button
+                      onClick={() => removeExtraItem(item.name)}
+                      className="opacity-0 group-hover:opacity-100 text-xs text-red-400 hover:text-red-600 transition-all shrink-0"
+                      title="Remove"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           {alreadyHave.length > 0 && (
             <div>
