@@ -118,6 +118,31 @@ export default function ShoppingList() {
   const alreadyHave = data?.already_have || [];
   const toBuy = combined ? combineItems(rawToBuy) : rawToBuy;
 
+  const buildShareText = () => {
+    const lines = [`Shopping List – Week of ${format(weekStart, "MMM d, yyyy")}`];
+    const allToBuy = [...toBuy, ...extraItems];
+    if (allToBuy.length > 0) {
+      lines.push("");
+      allToBuy.forEach((item) => {
+        const qty = [item.amount, item.unit].filter(Boolean).join(" ");
+        lines.push(`□ ${item.name}${qty ? "  " + qty : ""}`);
+      });
+    }
+    return lines.join("\n");
+  };
+
+  const [copyLabel, setCopyLabel] = useState("Share");
+  const handleShare = async () => {
+    const text = buildShareText();
+    if (navigator.share) {
+      try { await navigator.share({ title: "Shopping List", text }); } catch {}
+    } else {
+      await navigator.clipboard.writeText(text);
+      setCopyLabel("Copied!");
+      setTimeout(() => setCopyLabel("Share"), 2000);
+    }
+  };
+
   return (
     <div>
       <div className="flex items-center gap-3 mb-6 flex-wrap">
@@ -130,6 +155,12 @@ export default function ShoppingList() {
           <button onClick={nextWeek} className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-stone-800 text-gray-500 dark:text-stone-400">›</button>
         </div>
         <button onClick={thisWeek} className="text-xs text-green-600 hover:underline">This week</button>
+        <button
+          onClick={handleShare}
+          className="ml-auto text-xs px-3 py-1.5 rounded-full border border-gray-200 dark:border-stone-700 text-gray-600 dark:text-stone-300 hover:bg-gray-50 dark:hover:bg-stone-800 transition-colors"
+        >
+          {copyLabel}
+        </button>
       </div>
 
       <p className="text-sm text-gray-500 dark:text-stone-400 mb-5">
