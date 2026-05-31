@@ -48,7 +48,7 @@ function parseBulkText(text) {
     .map((line) => {
       const unitMatch = line.match(unitPattern);
       if (unitMatch) {
-        const name = unitMatch[3].trim();
+        const name = unitMatch[3].trim().replace(/^of\s+/i, "");
         return { name, quantity: parseFloat(unitMatch[1]), unit: unitMatch[2].toLowerCase(), category: detectCategory(name), expiry_date: null, notes: null };
       }
       const xMatch = line.match(xPattern);
