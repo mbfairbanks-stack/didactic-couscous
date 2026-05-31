@@ -180,7 +180,7 @@ export async function streamImportRecipePDF(file, onChunk, onDone, onError) {
   fd.append("file", file);
   let res;
   try {
-    res = await fetch(`${BASE}/ai/import-recipe/pdf`, { method: "POST", body: fd });
+    res = await fetch(`${BASE}/ai/import-recipe/pdf`, { method: "POST", headers: authHeaders(), body: fd });
   } catch (e) {
     onError(e.message);
     return;
