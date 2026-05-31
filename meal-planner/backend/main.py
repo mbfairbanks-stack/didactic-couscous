@@ -1150,6 +1150,60 @@ def _fmt_amount(total: float) -> str:
     return str(int(total)) if total == int(total) else str(round(total, 2))
 
 
+# Known units — anything else is treated as a descriptor (folded into name)
+_KNOWN_UNITS = {
+    "g", "kg", "mg", "oz", "lb", "lbs",
+    "ml", "l", "litre", "litres", "liter", "liters",
+    "cup", "cups", "tbsp", "tsp", "tablespoon", "tablespoons", "teaspoon", "teaspoons",
+    "can", "cans", "jar", "jars", "bag", "bags", "box", "boxes",
+    "bottle", "bottles", "bunch", "bunches", "head", "heads",
+    "clove", "cloves", "slice", "slices", "piece", "pieces",
+    "whole", "pcs", "dozen", "loaf", "loaves", "sprig", "sprigs",
+    "pinch", "dash", "handful", "pack", "packs",
+}
+
+_NAME_STRIP = re.compile(
+    r'\b(fresh|dried|frozen|canned|large|small|medium|ripe|raw|cooked|'
+    r'chopped|diced|sliced|minced|grated|peeled|halved|crushed|ground|'
+    r'boneless|skinless|whole|organic|baby|extra)\b\s*',
+    re.IGNORECASE,
+)
+
+
+def _normalize_ingredient(name: str, unit: str) -> tuple[str, str]:
+    """Return (normalised_name, normalised_unit).
+    If the unit is not a recognised measurement, fold it back into the name."""
+    norm_unit = unit.strip().lower()
+    if norm_unit not in _KNOWN_UNITS:
+        # e.g. unit="large ripe" → fold into name, clear unit
+        combined = f"{name} {unit}".strip() if unit else name
+        norm_unit = ""
+    else:
+        combined = name
+    # Strip common adjectives and lowercase
+    n = _NAME_STRIP.sub("", combined).strip().lower()
+    n = re.sub(r'\s+', ' ', n)
+    # Singularize common plurals
+    if n.endswith("ies") and len(n) > 4:
+        n = n[:-3] + "y"
+    elif n.endswith("ves") and len(n) > 4:
+        n = n[:-3] + "f"
+    elif n.endswith("s") and not n.endswith("ss") and len(n) > 3:
+        n = n[:-1]
+    return n.strip(), norm_unit
+
+
+def _pantry_match(ingredient_norm: str, pantry_keys: set) -> bool:
+    """Return True if a normalized pantry item matches the ingredient."""
+    if ingredient_norm in pantry_keys:
+        return True
+    # Check if any pantry key is contained in the ingredient name or vice versa
+    for pk in pantry_keys:
+        if pk in ingredient_norm or ingredient_norm in pk:
+            return True
+    return False
+
+
 @app.get("/shopping-list")
 def get_shopping_list(
     week_start: date,
@@ -1164,12 +1218,13 @@ def get_shopping_list(
         )
         .all()
     )
-    pantry = {
-        item.name.lower(): item
-        for item in db.query(models.PantryItem).filter(models.PantryItem.user_id == current_user.id).all()
-    }
+    pantry_items = db.query(models.PantryItem).filter(models.PantryItem.user_id == current_user.id).all()
+    pantry_keys = set()
+    for item in pantry_items:
+        n, _ = _normalize_ingredient(item.name, "")
+        pantry_keys.add(n)
 
-    # key = (normalised_name, unit) → aggregate amounts across all recipes
+    # key = (normalised_name, normalised_unit) → aggregate amounts
     groups: dict = {}
     for entry in entries:
         if not entry.recipe_id:
@@ -1178,17 +1233,22 @@ def get_shopping_list(
         if not recipe:
             continue
         for ing in (recipe.ingredients or []):
-            name = ing.get("name", "").strip()
-            if not name:
+            raw_name = ing.get("name", "").strip()
+            if not raw_name:
                 continue
-            norm = name.lower()
-            if norm in _SKIP_INGREDIENTS:
+            raw_unit = str(ing.get("unit", "") or "").strip()
+            norm_name, norm_unit = _normalize_ingredient(raw_name, raw_unit)
+            if norm_name in _SKIP_INGREDIENTS:
                 continue
-            unit = str(ing.get("unit", "") or "").strip().lower()
-            key = (norm, unit)
+            key = (norm_name, norm_unit)
             amt = _parse_amount(ing.get("amount", 0))
             if key not in groups:
-                groups[key] = {"name": name, "unit": ing.get("unit", ""), "total": 0.0, "in_pantry": norm in pantry}
+                groups[key] = {
+                    "name": norm_name,
+                    "unit": norm_unit,
+                    "total": 0.0,
+                    "in_pantry": _pantry_match(norm_name, pantry_keys),
+                }
             groups[key]["total"] += amt
 
     result = [
