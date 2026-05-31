@@ -1193,12 +1193,13 @@ def _fmt_amount(total: float) -> str:
 
 # Known units — anything else is treated as a descriptor (folded into name)
 _KNOWN_UNITS = {
-    "g", "kg", "mg", "oz", "lb", "lbs",
+    "g", "kg", "mg", "oz", "lb", "lbs", "gram", "grams",
     "ml", "l", "litre", "litres", "liter", "liters",
     "cup", "cups", "tbsp", "tsp", "tablespoon", "tablespoons", "teaspoon", "teaspoons",
     "can", "cans", "jar", "jars", "bag", "bags", "box", "boxes",
     "bottle", "bottles", "bunch", "bunches", "head", "heads",
     "clove", "cloves", "slice", "slices", "piece", "pieces",
+    "fillet", "fillets", "stalk", "stalks", "spear", "spears",
     "whole", "pcs", "dozen", "loaf", "loaves", "sprig", "sprigs",
     "pinch", "dash", "handful", "pack", "packs",
 }
@@ -1226,9 +1227,11 @@ def _normalize_ingredient(name: str, unit: str) -> tuple[str, str]:
     name_lower = name.lower()
     if name_lower in _UK_TO_US:
         name = _UK_TO_US[name_lower]
-    norm_unit = unit.strip().lower()
+    # Strip parenthetical weight/volume equivalents the AI appends to units (e.g. "cup (130g)" → "cup")
+    clean_unit = re.sub(r'\s*\(.*?\)', '', unit).strip()
+    norm_unit = clean_unit.lower()
     if norm_unit not in _KNOWN_UNITS:
-        combined = f"{name} {unit}".strip() if unit else name
+        combined = f"{name} {clean_unit}".strip() if clean_unit else name
         norm_unit = ""
     else:
         combined = name
