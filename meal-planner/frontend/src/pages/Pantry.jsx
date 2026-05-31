@@ -38,6 +38,7 @@ function detectCategory(name) {
 
 function parseBulkText(text) {
   const unitPattern = new RegExp(`^(\\d+\\.?\\d*)\\s*(${UNITS.join("|")})\\.?\\s+(.+)$`, "i");
+  const xPattern = /^(\d+\.?\d*)\s*x\s+(.+)$/i;   // "2x avocados" or "2 x avocados"
   const qtyPattern = /^(\d+\.?\d*)\s+(.+)$/;
 
   return text
@@ -49,6 +50,11 @@ function parseBulkText(text) {
       if (unitMatch) {
         const name = unitMatch[3].trim();
         return { name, quantity: parseFloat(unitMatch[1]), unit: unitMatch[2].toLowerCase(), category: detectCategory(name), expiry_date: null, notes: null };
+      }
+      const xMatch = line.match(xPattern);
+      if (xMatch) {
+        const name = xMatch[2].trim();
+        return { name, quantity: parseFloat(xMatch[1]), unit: "", category: detectCategory(name), expiry_date: null, notes: null };
       }
       const qtyMatch = line.match(qtyPattern);
       if (qtyMatch) {
