@@ -1215,8 +1215,8 @@ _NAME_STRIP = re.compile(
 def _normalize_ingredient(name: str, unit: str) -> tuple[str, str]:
     """Return (normalised_name, normalised_unit).
     If the unit is not a recognised measurement, fold it back into the name."""
-    # Strip trailing punctuation the AI sometimes adds (commas, periods)
-    name = name.strip().rstrip(".,;:")
+    # Strip trailing punctuation the AI sometimes adds (commas, periods, with optional surrounding spaces)
+    name = name.strip().rstrip(".,;: ")
     # Map British/Australian names to US/Canadian equivalents
     name_lower = name.lower()
     if name_lower in _UK_TO_US:
