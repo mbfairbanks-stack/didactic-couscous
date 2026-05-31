@@ -1518,6 +1518,9 @@ def import_recipe_text(
 ):
     import anthropic
 
+    if not body.text or not body.text.strip():
+        raise HTTPException(400, "No text provided")
+
     def stream():
         client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
         with client.messages.stream(

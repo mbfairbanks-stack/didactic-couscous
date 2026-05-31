@@ -268,31 +268,31 @@ export default function Pantry() {
   return (
     <div>
       <div className="flex items-center justify-between mb-4 sm:mb-6 flex-wrap gap-2">
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Pantry</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-stone-800 dark:text-stone-100">Pantry</h1>
         <div className="flex gap-2 flex-wrap">
           {items.length > 0 && (
             <button
               onClick={handleClearAll}
-              className="border border-red-300 text-red-500 px-3 py-2 rounded-lg text-sm font-medium hover:bg-red-50"
+              className="border border-red-300 text-red-500 px-3 py-2 rounded-lg text-sm font-medium hover:bg-red-50 dark:hover:bg-red-950/30"
             >
               Clear All
             </button>
           )}
           <button
             onClick={() => { setPhotoOpen(true); setPhotoMode("scan"); setProduceMode(true); setPhotoItems([]); setPhotoError(null); setShowForm(false); setShowBulk(false); }}
-            className="border border-violet-400 text-violet-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-violet-50"
+            className="border border-violet-400 text-violet-700 dark:text-violet-400 px-3 py-2 rounded-lg text-sm font-medium hover:bg-violet-50 dark:hover:bg-violet-950/30"
           >
             🥦 Weekly Box
           </button>
           <button
             onClick={() => { setPhotoOpen(true); setPhotoMode(null); setProduceMode(false); setPhotoItems([]); setPhotoError(null); setShowForm(false); setShowBulk(false); }}
-            className="border border-emerald-600 text-emerald-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-emerald-50"
+            className="border border-emerald-600 text-emerald-700 dark:text-emerald-400 px-3 py-2 rounded-lg text-sm font-medium hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
           >
             📷 Photo
           </button>
           <button
             onClick={() => { setShowBulk(!showBulk); setShowForm(false); setBulkPreview([]); setBulkText(""); }}
-            className="border border-green-600 text-green-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-green-50"
+            className="border border-green-600 text-green-700 dark:text-green-400 px-3 py-2 rounded-lg text-sm font-medium hover:bg-green-50 dark:hover:bg-green-950/30"
           >
             Bulk Add
           </button>
@@ -306,42 +306,42 @@ export default function Pantry() {
       </div>
 
       {photoOpen && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={closePhoto}>
-          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-4 py-3 border-b">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={closePhoto}>
+          <div className="bg-white dark:bg-stone-900 rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-stone-200 dark:border-stone-700">
               <div>
-                <h3 className="font-semibold text-stone-800">
+                <h3 className="font-semibold text-stone-800 dark:text-stone-100">
                   {produceMode ? "Weekly Produce Box" : photoMode === "receipt" ? "Upload Receipt" : photoMode === "scan" ? "Scan Pantry / Fridge" : "Add via Photo"}
                 </h3>
-                {produceMode && <p className="text-xs text-violet-600 mt-0.5">All items added as Produce</p>}
+                {produceMode && <p className="text-xs text-violet-600 dark:text-violet-400 mt-0.5">All items added as Produce</p>}
               </div>
-              <button onClick={closePhoto} className="text-stone-400 text-2xl leading-none">×</button>
+              <button onClick={closePhoto} className="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 text-2xl leading-none">×</button>
             </div>
             <div className="p-4 overflow-y-auto flex-1">
               {!photoMode && (
                 <>
-                  <p className="text-sm text-stone-500 mb-4">What kind of photo are you uploading?</p>
+                  <p className="text-sm text-stone-500 dark:text-stone-400 mb-4">What kind of photo are you uploading?</p>
                   <div className="space-y-2">
                     <button
                       onClick={() => setPhotoMode("scan")}
-                      className="w-full text-left p-4 rounded-xl border border-stone-200 hover:border-emerald-400 hover:bg-emerald-50 transition-colors"
+                      className="w-full text-left p-4 rounded-xl border border-stone-200 dark:border-stone-700 hover:border-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors"
                     >
-                      <p className="font-semibold text-stone-800">📸 Pantry / Fridge photo</p>
-                      <p className="text-xs text-stone-500 mt-0.5">Snap your shelf, fridge, or freezer. AI lists what it sees.</p>
+                      <p className="font-semibold text-stone-800 dark:text-stone-100">📸 Pantry / Fridge photo</p>
+                      <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">Snap your shelf, fridge, or freezer. AI lists what it sees.</p>
                     </button>
                     <button
                       onClick={() => setPhotoMode("receipt")}
-                      className="w-full text-left p-4 rounded-xl border border-stone-200 hover:border-emerald-400 hover:bg-emerald-50 transition-colors"
+                      className="w-full text-left p-4 rounded-xl border border-stone-200 dark:border-stone-700 hover:border-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors"
                     >
-                      <p className="font-semibold text-stone-800">🧾 Grocery receipt</p>
-                      <p className="text-xs text-stone-500 mt-0.5">Snap your receipt to log what you bought.</p>
+                      <p className="font-semibold text-stone-800 dark:text-stone-100">🧾 Grocery receipt</p>
+                      <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">Snap your receipt to log what you bought.</p>
                     </button>
                   </div>
                 </>
               )}
               {photoMode && !photoItems.length && !photoParsing && (
                 <>
-                  <p className="text-sm text-stone-500 mb-3">
+                  <p className="text-sm text-stone-500 dark:text-stone-400 mb-3">
                     {produceMode
                       ? "Upload a photo or screenshot of your Odd Bunch box — AI will identify the produce and add it all under the Produce category."
                       : photoMode === "receipt"
@@ -354,44 +354,44 @@ export default function Pantry() {
                       accept="image/*"
                       capture="environment"
                       onChange={(e) => handlePhotoFile(e.target.files?.[0])}
-                      className="block w-full text-sm text-stone-600 file:mr-3 file:px-4 file:py-2 file:rounded-lg file:border file:border-emerald-300 file:bg-emerald-50 file:text-emerald-700 file:font-medium hover:file:bg-emerald-100"
+                      className="block w-full text-sm text-stone-600 dark:text-stone-300 file:mr-3 file:px-4 file:py-2 file:rounded-lg file:border file:border-emerald-300 file:bg-emerald-50 file:text-emerald-700 file:font-medium hover:file:bg-emerald-100"
                     />
                   </label>
-                  <button onClick={() => setPhotoMode(null)} className="text-xs text-stone-500 hover:text-stone-700 mt-3">← Change type</button>
+                  <button onClick={() => setPhotoMode(null)} className="text-xs text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 mt-3">← Change type</button>
                   {photoError && <p className="text-red-500 text-sm mt-3">{photoError}</p>}
                 </>
               )}
               {photoParsing && (
-                <p className="text-stone-500 text-sm">
+                <p className="text-stone-500 dark:text-stone-400 text-sm">
                   {photoMode === "receipt" ? "Parsing receipt" : "Identifying items"} with AI…
                 </p>
               )}
               {!photoParsing && photoItems.length > 0 && (
                 <>
-                  <p className="text-xs text-stone-500 mb-2 uppercase tracking-wider font-semibold">Review ({photoItems.length} items)</p>
+                  <p className="text-xs text-stone-500 dark:text-stone-400 mb-2 uppercase tracking-wider font-semibold">Review ({photoItems.length} items)</p>
                   <div className="space-y-1.5">
                     {photoItems.map((it, i) => (
                       <div key={i} className="flex gap-1.5 items-center">
                         <input
                           value={it.name}
                           onChange={(e) => updatePhotoItem(i, "name", e.target.value)}
-                          className="flex-1 border border-stone-200 rounded px-2 py-1 text-sm"
+                          className="flex-1 border border-stone-200 dark:border-stone-600 rounded px-2 py-1 text-sm bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100"
                         />
                         <input
                           value={it.quantity}
                           onChange={(e) => updatePhotoItem(i, "quantity", e.target.value)}
-                          className="w-14 border border-stone-200 rounded px-2 py-1 text-sm"
+                          className="w-14 border border-stone-200 dark:border-stone-600 rounded px-2 py-1 text-sm bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100"
                         />
                         <input
                           value={it.unit}
                           onChange={(e) => updatePhotoItem(i, "unit", e.target.value)}
                           placeholder="unit"
-                          className="w-16 border border-stone-200 rounded px-2 py-1 text-sm"
+                          className="w-16 border border-stone-200 dark:border-stone-600 rounded px-2 py-1 text-sm bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 placeholder:text-stone-400"
                         />
                         <select
                           value={it.category}
                           onChange={(e) => updatePhotoItem(i, "category", e.target.value)}
-                          className="border border-stone-200 rounded px-1 py-1 text-xs"
+                          className="border border-stone-200 dark:border-stone-600 rounded px-1 py-1 text-xs bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100"
                         >
                           {["Produce","Dairy","Meat","Pantry","Freezer","Beverages","Other"].map((c) => (
                             <option key={c} value={c}>{c}</option>
@@ -405,8 +405,8 @@ export default function Pantry() {
               )}
             </div>
             {photoItems.length > 0 && (
-              <div className="border-t px-4 py-3 flex justify-end gap-2">
-                <button onClick={() => setPhotoItems([])} className="text-sm text-stone-500 hover:text-stone-700 px-3 py-2">Start over</button>
+              <div className="border-t border-stone-200 dark:border-stone-700 px-4 py-3 flex justify-end gap-2">
+                <button onClick={() => setPhotoItems([])} className="text-sm text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 px-3 py-2">Start over</button>
                 <button onClick={handlePhotoSave} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700">
                   Add {photoItems.length} items
                 </button>
@@ -418,9 +418,9 @@ export default function Pantry() {
 
       {/* Bulk Add Panel */}
       {showBulk && (
-        <div className="bg-green-50 border border-green-200 rounded-xl p-5 mb-5 shadow-sm">
-          <h2 className="font-semibold text-green-800 mb-1">Bulk Add Items</h2>
-          <p className="text-xs text-green-600 mb-3">
+        <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-xl p-5 mb-5 shadow-sm">
+          <h2 className="font-semibold text-green-800 dark:text-green-300 mb-1">Bulk Add Items</h2>
+          <p className="text-xs text-green-600 dark:text-green-400 mb-3">
             One item per line. Supports formats like:<br />
             <span className="font-mono">chicken breast</span> &nbsp;·&nbsp;
             <span className="font-mono">2 lbs ground beef</span> &nbsp;·&nbsp;
@@ -432,7 +432,7 @@ export default function Pantry() {
             value={bulkText}
             onChange={(e) => { setBulkText(e.target.value); setBulkPreview([]); }}
             placeholder={"olive oil\n2 lbs chicken breast\n3 cans diced tomatoes\nmilk\n1 dozen eggs\n500g pasta"}
-            className="w-full border rounded-lg px-3 py-2 text-sm font-mono mb-3"
+            className="w-full border border-stone-300 dark:border-stone-600 rounded-lg px-3 py-2 text-sm font-mono mb-3 bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 placeholder:text-stone-400"
           />
           <div className="flex gap-2 mb-4">
             <button
@@ -444,7 +444,7 @@ export default function Pantry() {
             </button>
             <button
               onClick={() => { setShowBulk(false); setBulkText(""); setBulkPreview([]); }}
-              className="border border-gray-300 px-4 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+              className="border border-stone-300 dark:border-stone-600 px-4 py-2 rounded-lg text-sm text-stone-600 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-stone-800"
             >
               Cancel
             </button>
@@ -452,33 +452,33 @@ export default function Pantry() {
 
           {bulkPreview.length > 0 && (
             <div>
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Preview — edit before saving</h3>
+              <h3 className="text-sm font-semibold text-stone-700 dark:text-stone-200 mb-2">Preview — edit before saving</h3>
               <div className="space-y-2 mb-4">
                 {bulkPreview.map((item, i) => (
-                  <div key={i} className="flex gap-2 items-center bg-white border border-gray-200 rounded-lg px-3 py-2">
+                  <div key={i} className="flex gap-2 items-center bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg px-3 py-2">
                     <input
                       value={item.name}
                       onChange={(e) => updatePreviewItem(i, "name", e.target.value)}
-                      className="border rounded px-2 py-1 text-sm flex-1 min-w-0"
+                      className="border border-stone-300 dark:border-stone-600 rounded px-2 py-1 text-sm flex-1 min-w-0 bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100"
                       placeholder="Name"
                     />
                     <input
                       type="number"
                       value={item.quantity || ""}
                       onChange={(e) => updatePreviewItem(i, "quantity", parseFloat(e.target.value) || 0)}
-                      className="border rounded px-2 py-1 text-sm w-16"
+                      className="border border-stone-300 dark:border-stone-600 rounded px-2 py-1 text-sm w-16 bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100"
                       placeholder="Qty"
                     />
                     <input
                       value={item.unit}
                       onChange={(e) => updatePreviewItem(i, "unit", e.target.value)}
-                      className="border rounded px-2 py-1 text-sm w-16"
+                      className="border border-stone-300 dark:border-stone-600 rounded px-2 py-1 text-sm w-16 bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100"
                       placeholder="Unit"
                     />
                     <select
                       value={item.category}
                       onChange={(e) => updatePreviewItem(i, "category", e.target.value)}
-                      className="border rounded px-2 py-1 text-sm"
+                      className="border border-stone-300 dark:border-stone-600 rounded px-2 py-1 text-sm bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100"
                     >
                       {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
                     </select>
@@ -505,7 +505,7 @@ export default function Pantry() {
           placeholder="Search..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="border rounded-lg px-3 py-1.5 text-sm w-48"
+          className="border border-stone-300 dark:border-stone-600 rounded-lg px-3 py-1.5 text-sm w-48 bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 placeholder:text-stone-400"
         />
         <div className="flex gap-1 flex-wrap">
           {["All", ...CATEGORIES].map((cat) => (
@@ -515,7 +515,7 @@ export default function Pantry() {
               className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
                 filterCategory === cat
                   ? "bg-green-600 text-white border-green-600"
-                  : "bg-white text-gray-600 border-gray-300 hover:border-green-400"
+                  : "bg-white dark:bg-stone-800 text-stone-600 dark:text-stone-300 border-stone-300 dark:border-stone-600 hover:border-green-400"
               }`}
             >
               {cat}
@@ -528,64 +528,64 @@ export default function Pantry() {
 
       {/* Add / Edit Form */}
       {showForm && (
-        <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6 shadow-sm">
-          <h2 className="font-semibold text-gray-700 mb-4">{editingId ? "Edit Item" : "Add Item"}</h2>
+        <div className="bg-white dark:bg-stone-900 border border-gray-200 dark:border-stone-700 rounded-xl p-5 mb-6 shadow-sm">
+          <h2 className="font-semibold text-gray-700 dark:text-stone-200 mb-4">{editingId ? "Edit Item" : "Add Item"}</h2>
           <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <div className="col-span-2 sm:col-span-1">
-              <label className="text-xs text-gray-500 block mb-1">Name *</label>
+              <label className="text-xs text-gray-500 dark:text-stone-400 block mb-1">Name *</label>
               <input
                 required
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="border rounded-lg px-3 py-1.5 text-sm w-full"
+                className="border border-stone-300 dark:border-stone-600 rounded-lg px-3 py-1.5 text-sm w-full bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 placeholder:text-stone-400"
                 placeholder="e.g. Chicken breast"
               />
             </div>
             <div>
-              <label className="text-xs text-gray-500 block mb-1">Quantity</label>
+              <label className="text-xs text-gray-500 dark:text-stone-400 block mb-1">Quantity</label>
               <input
                 type="number"
                 step="0.1"
                 value={form.quantity}
                 onChange={(e) => setForm({ ...form, quantity: e.target.value })}
-                className="border rounded-lg px-3 py-1.5 text-sm w-full"
+                className="border border-stone-300 dark:border-stone-600 rounded-lg px-3 py-1.5 text-sm w-full bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 placeholder:text-stone-400"
                 placeholder="2"
               />
             </div>
             <div>
-              <label className="text-xs text-gray-500 block mb-1">Unit</label>
+              <label className="text-xs text-gray-500 dark:text-stone-400 block mb-1">Unit</label>
               <input
                 value={form.unit}
                 onChange={(e) => setForm({ ...form, unit: e.target.value })}
-                className="border rounded-lg px-3 py-1.5 text-sm w-full"
+                className="border border-stone-300 dark:border-stone-600 rounded-lg px-3 py-1.5 text-sm w-full bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 placeholder:text-stone-400"
                 placeholder="lbs, cups, cans..."
               />
             </div>
             <div>
-              <label className="text-xs text-gray-500 block mb-1">Category</label>
+              <label className="text-xs text-gray-500 dark:text-stone-400 block mb-1">Category</label>
               <select
                 value={form.category}
                 onChange={(e) => setForm({ ...form, category: e.target.value })}
-                className="border rounded-lg px-3 py-1.5 text-sm w-full"
+                className="border border-stone-300 dark:border-stone-600 rounded-lg px-3 py-1.5 text-sm w-full bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100"
               >
                 {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
               </select>
             </div>
             <div>
-              <label className="text-xs text-gray-500 block mb-1">Expiry Date</label>
+              <label className="text-xs text-gray-500 dark:text-stone-400 block mb-1">Expiry Date</label>
               <input
                 type="date"
                 value={form.expiry_date}
                 onChange={(e) => setForm({ ...form, expiry_date: e.target.value })}
-                className="border rounded-lg px-3 py-1.5 text-sm w-full"
+                className="border border-stone-300 dark:border-stone-600 rounded-lg px-3 py-1.5 text-sm w-full bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100"
               />
             </div>
             <div className="col-span-2 sm:col-span-1">
-              <label className="text-xs text-gray-500 block mb-1">Notes</label>
+              <label className="text-xs text-gray-500 dark:text-stone-400 block mb-1">Notes</label>
               <input
                 value={form.notes}
                 onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                className="border rounded-lg px-3 py-1.5 text-sm w-full"
+                className="border border-stone-300 dark:border-stone-600 rounded-lg px-3 py-1.5 text-sm w-full bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 placeholder:text-stone-400"
                 placeholder="Optional"
               />
             </div>
@@ -599,7 +599,7 @@ export default function Pantry() {
               <button
                 type="button"
                 onClick={handleCancel}
-                className="border border-gray-300 px-4 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+                className="border border-stone-300 dark:border-stone-600 px-4 py-2 rounded-lg text-sm text-stone-600 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-stone-800"
               >
                 Cancel
               </button>
@@ -609,9 +609,9 @@ export default function Pantry() {
       )}
 
       {loading ? (
-        <p className="text-gray-400 text-sm">Loading...</p>
+        <p className="text-stone-400 text-sm">Loading...</p>
       ) : filtered.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">
+        <div className="text-center py-16 text-stone-400">
           <p className="text-lg">Your pantry is empty.</p>
           <p className="text-sm mt-1">Add items to get started.</p>
         </div>
@@ -619,23 +619,23 @@ export default function Pantry() {
         <div className="space-y-6">
           {Object.entries(grouped).map(([category, catItems]) => (
             <div key={category}>
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">{category}</h3>
-              <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 shadow-sm">
+              <h3 className="text-xs font-semibold text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-2">{category}</h3>
+              <div className="bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-700 divide-y divide-stone-100 dark:divide-stone-800 shadow-sm">
                 {catItems.map((item) => (
                   <div key={item.id} className="flex items-center gap-3 px-4 py-3">
                     <div className="flex-1 min-w-0">
-                      <span className="font-medium text-gray-800">{item.name}</span>
+                      <span className="font-medium text-stone-800 dark:text-stone-100">{item.name}</span>
                       {item.quantity > 0 && (
-                        <span className="text-gray-500 text-sm ml-2">
+                        <span className="text-stone-500 dark:text-stone-400 text-sm ml-2">
                           {item.quantity} {item.unit}
                         </span>
                       )}
                     </div>
                     <ExpiryBadge dateStr={item.expiry_date} />
-                    {item.notes && <span className="text-xs text-gray-400 hidden sm:block truncate max-w-xs">{item.notes}</span>}
+                    {item.notes && <span className="text-xs text-stone-400 hidden sm:block truncate max-w-xs">{item.notes}</span>}
                     <button
                       onClick={() => handleEdit(item)}
-                      className="text-xs text-green-600 hover:underline ml-2"
+                      className="text-xs text-green-600 dark:text-green-400 hover:underline ml-2"
                     >
                       Edit
                     </button>
