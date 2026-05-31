@@ -41,8 +41,10 @@ export default function Login() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: username.trim(), password }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Request failed");
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : {};
+      if (!res.ok) throw new Error(data.detail || `Server error (${res.status})`);
+      if (!data.access_token) throw new Error("Unexpected response from server");
       login(data);
     } catch (e) {
       setError(e.message);

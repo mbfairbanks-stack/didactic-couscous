@@ -64,7 +64,16 @@ def _migrate_default_user():
         # Check if any users exist
         user_count = db.query(models.User).count()
         if user_count > 0:
-            return  # Already have users, skip
+            # Fix any admin user with a NULL password (from failed first migration)
+            broken = db.query(models.User).filter(
+                models.User.username == "admin",
+                models.User.hashed_password == None
+            ).first()
+            if broken:
+                broken.hashed_password = auth.hash_password("admin")
+                db.commit()
+                print("Fixed NULL password for admin user")
+            return
 
         # Create default admin user
         admin = models.User(
@@ -269,7 +278,11 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
 @app.post("/auth/login")
 def login(body: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.username == body.username.strip().lower()).first()
-    if not user or not auth.verify_password(body.password, user.hashed_password):
+    try:
+        valid = user and user.hashed_password and auth.verify_password(body.password, user.hashed_password)
+    except Exception:
+        valid = False
+    if not valid:
         raise HTTPException(401, "Invalid username or password")
     prefs = db.query(models.HouseholdPreferences).filter_by(user_id=user.id).first()
     onboarding_done = prefs.onboarding_done if prefs else False
