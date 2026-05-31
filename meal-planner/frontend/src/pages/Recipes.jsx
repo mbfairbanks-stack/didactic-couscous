@@ -57,7 +57,7 @@ function RecipeCard({ recipe, onEdit, onDelete, onToggleFavorite, onTogglePublis
     matchRatio >= 0.4  ? "bg-amber-50 text-amber-700 border-amber-200" :
                          "bg-stone-50 text-stone-500 border-stone-200";
   return (
-    <div className={`bg-white rounded-2xl border shadow-sm overflow-hidden ${recipe.is_favorite ? "border-amber-300" : "border-stone-200"}`}>
+    <div className={`bg-white dark:bg-stone-900 rounded-2xl border shadow-sm overflow-hidden ${recipe.is_favorite ? "border-amber-300" : "border-stone-200 dark:border-stone-700"}`}>
       {(() => { const t = recipeTheme(recipe.title); return (
         <div className={`h-12 bg-gradient-to-r ${t.grad} flex items-center px-4 gap-2 relative`}>
           <span className="text-xl">{t.emoji}</span>
@@ -71,7 +71,7 @@ function RecipeCard({ recipe, onEdit, onDelete, onToggleFavorite, onTogglePublis
           <div className="flex-1 min-w-0">
             <button
               onClick={() => setExpanded(!expanded)}
-              className="font-semibold text-stone-800 text-left hover:text-emerald-700 w-full"
+              className="font-semibold text-stone-800 dark:text-stone-100 text-left hover:text-emerald-700 w-full"
             >
               {recipe.title}
             </button>
@@ -117,13 +117,13 @@ function RecipeCard({ recipe, onEdit, onDelete, onToggleFavorite, onTogglePublis
         </div>
 
         {expanded && (
-          <div className="mt-4 space-y-3 border-t pt-3">
+          <div className="mt-4 space-y-3 border-t dark:border-stone-700 pt-3">
             {recipe.ingredients?.length > 0 && (
               <div>
-                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Ingredients</h4>
+                <h4 className="text-xs font-semibold text-gray-500 dark:text-stone-400 uppercase tracking-wider mb-1">Ingredients</h4>
                 <ul className="space-y-0.5">
                   {recipe.ingredients.map((ing, i) => (
-                    <li key={i} className="text-sm text-gray-700">
+                    <li key={i} className="text-sm text-gray-700 dark:text-stone-200">
                       {ing.amount && <span className="font-medium">{ing.amount} {ing.unit} </span>}
                       {ing.name}
                     </li>
@@ -133,12 +133,12 @@ function RecipeCard({ recipe, onEdit, onDelete, onToggleFavorite, onTogglePublis
             )}
             {recipe.instructions && (
               <div>
-                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Instructions</h4>
-                <p className="text-sm text-gray-700 whitespace-pre-line">{recipe.instructions}</p>
+                <h4 className="text-xs font-semibold text-gray-500 dark:text-stone-400 uppercase tracking-wider mb-1">Instructions</h4>
+                <p className="text-sm text-gray-700 dark:text-stone-200 whitespace-pre-line">{recipe.instructions}</p>
               </div>
             )}
             {recipe.notes && (
-              <p className="text-xs text-gray-400 italic">{recipe.notes}</p>
+              <p className="text-xs text-gray-400 dark:text-stone-500 italic">{recipe.notes}</p>
             )}
           </div>
         )}
@@ -163,19 +163,19 @@ function IngredientFields({ ingredients, onChange }) {
             placeholder="Amount"
             value={ing.amount}
             onChange={(e) => update(i, "amount", e.target.value)}
-            className="border rounded px-2 py-1 text-sm w-20"
+            className="border dark:border-stone-600 rounded px-2 py-1 text-sm w-20 dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
           />
           <input
             placeholder="Unit"
             value={ing.unit}
             onChange={(e) => update(i, "unit", e.target.value)}
-            className="border rounded px-2 py-1 text-sm w-20"
+            className="border dark:border-stone-600 rounded px-2 py-1 text-sm w-20 dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
           />
           <input
             placeholder="Ingredient name"
             value={ing.name}
             onChange={(e) => update(i, "name", e.target.value)}
-            className="border rounded px-2 py-1 text-sm flex-1"
+            className="border dark:border-stone-600 rounded px-2 py-1 text-sm flex-1 dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
           />
           <button
             type="button"
@@ -397,7 +397,7 @@ export default function Recipes() {
   return (
     <div>
       <div className="flex items-center justify-between mb-4 sm:mb-6 flex-wrap gap-3">
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Recipes</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-800 dark:text-stone-100">Recipes</h1>
         <div className="flex gap-2 flex-wrap">
           {["generate", "paste", "pdf", "url"].map((mode) => (
             <button
@@ -424,12 +424,12 @@ export default function Recipes() {
           placeholder="Search..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="border rounded-lg px-3 py-1.5 text-sm w-48"
+          className="border dark:border-stone-600 rounded-lg px-3 py-1.5 text-sm w-48 dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
         />
         <div className="flex gap-1 flex-wrap">
           <button
             onClick={() => setFilterTag("")}
-            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${!filterTag ? "bg-green-600 text-white border-green-600" : "bg-white text-gray-600 border-gray-300 hover:border-green-400"}`}
+            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${!filterTag ? "bg-green-600 text-white border-green-600" : "bg-white dark:bg-stone-800 text-gray-600 dark:text-stone-300 border-gray-300 dark:border-stone-600 hover:border-green-400"}`}
           >
             All
           </button>
@@ -437,7 +437,7 @@ export default function Recipes() {
             <button
               key={t}
               onClick={() => setFilterTag(t === filterTag ? "" : t)}
-              className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${filterTag === t ? "bg-green-600 text-white border-green-600" : "bg-white text-gray-600 border-gray-300 hover:border-green-400"}`}
+              className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${filterTag === t ? "bg-green-600 text-white border-green-600" : "bg-white dark:bg-stone-800 text-gray-600 dark:text-stone-300 border-gray-300 dark:border-stone-600 hover:border-green-400"}`}
             >
               {t}
             </button>
@@ -449,7 +449,7 @@ export default function Recipes() {
 
       {/* Import / AI Panel */}
       {importMode && (
-        <div className="bg-purple-50 border border-purple-200 rounded-xl p-5 mb-6 shadow-sm">
+        <div className="bg-purple-50 dark:bg-stone-900 border border-purple-200 dark:border-stone-700 rounded-xl p-5 mb-6 shadow-sm">
           <h2 className="font-semibold text-purple-800 mb-3">
             {importMode === "generate" ? "AI Recipe Generator" : importMode === "paste" ? "Paste a Recipe" : importMode === "pdf" ? "Import from PDF" : "Import from URL"}
           </h2>
@@ -462,7 +462,7 @@ export default function Recipes() {
                   placeholder='e.g. "30-minute chicken stir fry" or "easy vegetarian pasta"'
                   value={aiPrompt}
                   onChange={(e) => setAiPrompt(e.target.value)}
-                  className="border rounded-lg px-3 py-2 text-sm flex-1"
+                  className="border dark:border-stone-600 rounded-lg px-3 py-2 text-sm flex-1 dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
                   onKeyDown={(e) => e.key === "Enter" && handleGenerate()}
                 />
                 <button onClick={handleGenerate} disabled={aiStreaming || !aiPrompt.trim()}
@@ -484,7 +484,7 @@ export default function Recipes() {
                 value={pasteText}
                 onChange={(e) => setPasteText(e.target.value)}
                 rows={6}
-                className="border rounded-lg px-3 py-2 text-sm w-full resize-y"
+                className="border dark:border-stone-600 rounded-lg px-3 py-2 text-sm w-full resize-y dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
               />
               <button onClick={handleImportText} disabled={aiStreaming || !pasteText.trim()}
                 className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50">
@@ -499,7 +499,7 @@ export default function Recipes() {
                 type="file"
                 accept=".pdf"
                 onChange={(e) => setImportFile(e.target.files[0] || null)}
-                className="border rounded-lg px-3 py-2 text-sm flex-1 bg-white"
+                className="border dark:border-stone-600 rounded-lg px-3 py-2 text-sm flex-1 bg-white dark:bg-stone-800 dark:text-stone-100"
               />
               <button onClick={handleImportPDF} disabled={aiStreaming || !importFile}
                 className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 shrink-0">
@@ -516,7 +516,7 @@ export default function Recipes() {
                 value={importUrl}
                 onChange={(e) => setImportUrl(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleImportURL()}
-                className="border rounded-lg px-3 py-2 text-sm flex-1"
+                className="border dark:border-stone-600 rounded-lg px-3 py-2 text-sm flex-1 dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
               />
               <button onClick={handleImportURL} disabled={aiStreaming || !importUrl.trim()}
                 className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 shrink-0">
@@ -528,9 +528,9 @@ export default function Recipes() {
           {aiError && <p className="text-red-500 text-sm mb-2">{aiError}</p>}
 
           {aiParsed && (
-            <div className="bg-white rounded-lg border border-purple-200 p-4 mt-2">
+            <div className="bg-white dark:bg-stone-900 rounded-lg border border-purple-200 dark:border-stone-700 p-4 mt-2">
               <div className="flex items-start justify-between mb-2">
-                <h3 className="font-semibold text-gray-800 text-lg">{aiParsed.title}</h3>
+                <h3 className="font-semibold text-gray-800 dark:text-stone-100 text-lg">{aiParsed.title}</h3>
                 <button
                   onClick={handleSaveAI}
                   className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-green-700 shrink-0 ml-2"
@@ -538,7 +538,7 @@ export default function Recipes() {
                   Save Recipe
                 </button>
               </div>
-              <div className="flex gap-4 text-xs text-gray-400 mb-3">
+              <div className="flex gap-4 text-xs text-gray-400 dark:text-stone-500 mb-3">
                 {aiParsed.prep_min > 0 && <span>Prep {aiParsed.prep_min}m</span>}
                 {aiParsed.cook_min > 0 && <span>Cook {aiParsed.cook_min}m</span>}
                 {aiParsed.servings && <span>Serves {aiParsed.servings}</span>}
@@ -552,10 +552,10 @@ export default function Recipes() {
               )}
               <div className="grid sm:grid-cols-2 gap-4">
                 <div>
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Ingredients</h4>
+                  <h4 className="text-xs font-semibold text-gray-500 dark:text-stone-400 uppercase tracking-wider mb-1">Ingredients</h4>
                   <ul className="space-y-0.5">
                     {(aiParsed.ingredients || []).map((ing, i) => (
-                      <li key={i} className="text-sm text-gray-700">
+                      <li key={i} className="text-sm text-gray-700 dark:text-stone-200">
                         {ing.amount && <span className="font-medium">{ing.amount} {ing.unit} </span>}
                         {ing.name}
                       </li>
@@ -563,18 +563,18 @@ export default function Recipes() {
                   </ul>
                 </div>
                 <div>
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Instructions</h4>
-                  <p className="text-sm text-gray-700 whitespace-pre-line">{aiParsed.instructions}</p>
+                  <h4 className="text-xs font-semibold text-gray-500 dark:text-stone-400 uppercase tracking-wider mb-1">Instructions</h4>
+                  <p className="text-sm text-gray-700 dark:text-stone-200 whitespace-pre-line">{aiParsed.instructions}</p>
                 </div>
               </div>
-              {aiParsed.notes && <p className="text-xs text-gray-400 italic mt-3">{aiParsed.notes}</p>}
+              {aiParsed.notes && <p className="text-xs text-gray-400 dark:text-stone-500 italic mt-3">{aiParsed.notes}</p>}
             </div>
           )}
 
           {aiStreaming && !aiParsed && (
-            <div className="bg-white rounded-lg border border-purple-200 p-4 mt-2">
-              <p className="text-xs text-gray-400 mb-1">Generating recipe...</p>
-              <pre className="text-xs text-gray-500 whitespace-pre-wrap max-h-40 overflow-auto">{aiRaw}</pre>
+            <div className="bg-white dark:bg-stone-900 rounded-lg border border-purple-200 dark:border-stone-700 p-4 mt-2">
+              <p className="text-xs text-gray-400 dark:text-stone-500 mb-1">Generating recipe...</p>
+              <pre className="text-xs text-gray-500 dark:text-stone-400 whitespace-pre-wrap max-h-40 overflow-auto">{aiRaw}</pre>
             </div>
           )}
         </div>
@@ -582,53 +582,53 @@ export default function Recipes() {
 
       {/* Add / Edit Form */}
       {showForm && (
-        <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6 shadow-sm">
-          <h2 className="font-semibold text-gray-700 mb-4">{editingId ? "Edit Recipe" : "Add Recipe"}</h2>
+        <div className="bg-white dark:bg-stone-900 border border-gray-200 dark:border-stone-700 rounded-xl p-5 mb-6 shadow-sm">
+          <h2 className="font-semibold text-gray-700 dark:text-stone-200 mb-4">{editingId ? "Edit Recipe" : "Add Recipe"}</h2>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="col-span-2">
-                <label className="text-xs text-gray-500 block mb-1">Title *</label>
+                <label className="text-xs text-gray-500 dark:text-stone-400 block mb-1">Title *</label>
                 <input
                   required
                   value={form.title}
                   onChange={(e) => setForm({ ...form, title: e.target.value })}
-                  className="border rounded-lg px-3 py-1.5 text-sm w-full"
+                  className="border dark:border-stone-600 rounded-lg px-3 py-1.5 text-sm w-full dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
                   placeholder="Recipe name"
                 />
               </div>
               <div>
-                <label className="text-xs text-gray-500 block mb-1">Servings</label>
+                <label className="text-xs text-gray-500 dark:text-stone-400 block mb-1">Servings</label>
                 <input
                   type="number"
                   value={form.servings}
                   onChange={(e) => setForm({ ...form, servings: e.target.value })}
-                  className="border rounded-lg px-3 py-1.5 text-sm w-full"
+                  className="border dark:border-stone-600 rounded-lg px-3 py-1.5 text-sm w-full dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
                 />
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-xs text-gray-500 block mb-1">Prep (min)</label>
+                  <label className="text-xs text-gray-500 dark:text-stone-400 block mb-1">Prep (min)</label>
                   <input
                     type="number"
                     value={form.prep_min}
                     onChange={(e) => setForm({ ...form, prep_min: e.target.value })}
-                    className="border rounded-lg px-3 py-1.5 text-sm w-full"
+                    className="border dark:border-stone-600 rounded-lg px-3 py-1.5 text-sm w-full dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 block mb-1">Cook (min)</label>
+                  <label className="text-xs text-gray-500 dark:text-stone-400 block mb-1">Cook (min)</label>
                   <input
                     type="number"
                     value={form.cook_min}
                     onChange={(e) => setForm({ ...form, cook_min: e.target.value })}
-                    className="border rounded-lg px-3 py-1.5 text-sm w-full"
+                    className="border dark:border-stone-600 rounded-lg px-3 py-1.5 text-sm w-full dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
                   />
                 </div>
               </div>
             </div>
 
             <div>
-              <label className="text-xs text-gray-500 block mb-1">Ingredients</label>
+              <label className="text-xs text-gray-500 dark:text-stone-400 block mb-1">Ingredients</label>
               <IngredientFields
                 ingredients={form.ingredients}
                 onChange={(ings) => setForm({ ...form, ingredients: ings })}
@@ -636,32 +636,32 @@ export default function Recipes() {
             </div>
 
             <div>
-              <label className="text-xs text-gray-500 block mb-1">Instructions</label>
+              <label className="text-xs text-gray-500 dark:text-stone-400 block mb-1">Instructions</label>
               <textarea
                 value={form.instructions}
                 onChange={(e) => setForm({ ...form, instructions: e.target.value })}
                 rows={5}
-                className="border rounded-lg px-3 py-1.5 text-sm w-full"
+                className="border dark:border-stone-600 rounded-lg px-3 py-1.5 text-sm w-full dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
                 placeholder="Step by step instructions..."
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-gray-500 block mb-1">Tags (comma-separated)</label>
+                <label className="text-xs text-gray-500 dark:text-stone-400 block mb-1">Tags (comma-separated)</label>
                 <input
                   value={form.tags}
                   onChange={(e) => setForm({ ...form, tags: e.target.value })}
-                  className="border rounded-lg px-3 py-1.5 text-sm w-full"
+                  className="border dark:border-stone-600 rounded-lg px-3 py-1.5 text-sm w-full dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
                   placeholder="quick, vegetarian..."
                 />
               </div>
               <div>
-                <label className="text-xs text-gray-500 block mb-1">Notes</label>
+                <label className="text-xs text-gray-500 dark:text-stone-400 block mb-1">Notes</label>
                 <input
                   value={form.notes}
                   onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                  className="border rounded-lg px-3 py-1.5 text-sm w-full"
+                  className="border dark:border-stone-600 rounded-lg px-3 py-1.5 text-sm w-full dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
                 />
               </div>
             </div>
@@ -670,7 +670,7 @@ export default function Recipes() {
               <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">
                 {editingId ? "Save Changes" : "Add Recipe"}
               </button>
-              <button type="button" onClick={handleCancel} className="border border-gray-300 px-4 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
+              <button type="button" onClick={handleCancel} className="border border-gray-300 dark:border-stone-600 px-4 py-2 rounded-lg text-sm text-gray-600 dark:text-stone-300 hover:bg-gray-50 dark:hover:bg-stone-800">
                 Cancel
               </button>
             </div>
@@ -679,7 +679,7 @@ export default function Recipes() {
       )}
 
       {/* Tab switcher: My Recipes / Community */}
-      <div className="flex gap-1 mb-5 border-b border-stone-200">
+      <div className="flex gap-1 mb-5 border-b border-stone-200 dark:border-stone-700">
         {[["mine", "My Recipes"], ["community", "🌐 Community"]].map(([key, label]) => (
           <button
             key={key}
@@ -697,9 +697,9 @@ export default function Recipes() {
 
       {tab === "mine" ? (
         loading ? (
-          <p className="text-gray-400 text-sm">Loading...</p>
+          <p className="text-gray-400 dark:text-stone-500 text-sm">Loading...</p>
         ) : filtered.length === 0 ? (
-          <div className="text-center py-16 text-gray-400">
+          <div className="text-center py-16 text-gray-400 dark:text-stone-500">
             <p className="text-lg">No recipes yet.</p>
             <p className="text-sm mt-1">Add one manually or use AI Generate.</p>
           </div>
@@ -707,7 +707,7 @@ export default function Recipes() {
           <div className="space-y-6">
             {favorites.length > 0 && (
               <div>
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Favorites</h3>
+                <h3 className="text-xs font-semibold text-gray-500 dark:text-stone-400 uppercase tracking-wider mb-2">Favorites</h3>
                 <div className="grid sm:grid-cols-2 gap-3 items-start">
                   {favorites.map((r) => (
                     <RecipeCard
@@ -726,7 +726,7 @@ export default function Recipes() {
             {rest.length > 0 && (
               <div>
                 {favorites.length > 0 && (
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">All Recipes</h3>
+                  <h3 className="text-xs font-semibold text-gray-500 dark:text-stone-400 uppercase tracking-wider mb-2">All Recipes</h3>
                 )}
                 <div className="grid sm:grid-cols-2 gap-3 items-start">
                   {rest.map((r) => (
@@ -748,9 +748,9 @@ export default function Recipes() {
       ) : (
         /* Community tab */
         communityLoading ? (
-          <p className="text-gray-400 text-sm">Loading community recipes…</p>
+          <p className="text-gray-400 dark:text-stone-500 text-sm">Loading community recipes…</p>
         ) : communityRecipes.length === 0 ? (
-          <div className="text-center py-16 text-gray-400">
+          <div className="text-center py-16 text-gray-400 dark:text-stone-500">
             <p className="text-lg">No community recipes yet.</p>
             <p className="text-sm mt-1">
               Share your own recipes using the 🌐 button on any recipe card.
