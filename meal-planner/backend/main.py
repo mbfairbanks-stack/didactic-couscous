@@ -964,23 +964,32 @@ def generate_meal_plan(
         )
 
     # Build recent-weeks context — avoid repeating meals from the last 3 weeks
-    three_weeks_ago = (datetime.strptime(body.week_start, "%Y-%m-%d").date() - timedelta(weeks=3)).isoformat()
+    week_start_date = datetime.strptime(body.week_start, "%Y-%m-%d").date()
+    three_weeks_ago = week_start_date - timedelta(weeks=3)
     recent_entries = (
         db.query(models.MealPlanEntry)
         .filter(
             models.MealPlanEntry.user_id == current_user.id,
             models.MealPlanEntry.week_start >= three_weeks_ago,
-            models.MealPlanEntry.week_start < body.week_start,
+            models.MealPlanEntry.week_start < week_start_date,
         )
         .all()
     )
     recent_context = ""
     if recent_entries:
-        recent_meals = sorted({e.meal_name for e in recent_entries if e.meal_name})
-        recent_context = (
-            f"\n\nMeals planned in the last 3 weeks (DO NOT repeat these — choose different dishes):\n"
-            + ", ".join(recent_meals)
-        )
+        meal_names = set()
+        recipe_ids = {e.recipe_id for e in recent_entries if e.recipe_id}
+        if recipe_ids:
+            for r in db.query(models.Recipe).filter(models.Recipe.id.in_(recipe_ids)).all():
+                meal_names.add(r.title)
+        for e in recent_entries:
+            if e.free_text:
+                meal_names.add(e.free_text)
+        if meal_names:
+            recent_context = (
+                f"\n\nMeals planned in the last 3 weeks (DO NOT repeat these — choose different dishes):\n"
+                + ", ".join(sorted(meal_names))
+            )
 
     # Build pantry block — pantry-first when use_pantry is on
     pantry_context = ""
