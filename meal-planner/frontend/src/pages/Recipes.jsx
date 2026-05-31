@@ -60,9 +60,10 @@ function RecipeCard({ recipe, onEdit, onDelete, onToggleFavorite, onTogglePublis
     <div className={`bg-white dark:bg-stone-900 rounded-2xl border shadow-sm overflow-hidden ${recipe.is_favorite ? "border-amber-300" : "border-stone-200 dark:border-stone-700"}`}>
       {(() => { const t = recipeTheme(recipe.title); return (
         <div className={`h-12 bg-gradient-to-r ${t.grad} flex items-center px-4 gap-2 relative`}>
-          <span className="text-xl">{t.emoji}</span>
+          <div className="absolute inset-0 dark:bg-stone-900/60 pointer-events-none" />
+          <span className="text-xl relative z-10">{t.emoji}</span>
           {recipe.is_favorite && (
-            <span className="absolute right-3 text-yellow-400 text-sm drop-shadow">★</span>
+            <span className="absolute right-3 text-yellow-400 text-sm drop-shadow z-10">★</span>
           )}
         </div>
       ); })()}
@@ -762,9 +763,10 @@ export default function Recipes() {
               const theme = recipeTheme(r.title);
               return (
                 <div key={r.id} className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-700 shadow-sm overflow-hidden">
-                  <div className={`h-12 bg-gradient-to-r ${theme.grad} flex items-center px-4 gap-2`}>
-                    <span className="text-xl">{theme.emoji}</span>
-                    <span className="text-xs font-semibold text-stone-500 ml-auto">Community</span>
+                  <div className={`h-12 bg-gradient-to-r ${theme.grad} flex items-center px-4 gap-2 relative`}>
+                    <div className="absolute inset-0 dark:bg-stone-900/60 pointer-events-none" />
+                    <span className="text-xl relative z-10">{theme.emoji}</span>
+                    <span className="text-xs font-semibold text-stone-500 dark:text-stone-400 ml-auto relative z-10">Community</span>
                   </div>
                   <div className="p-4">
                     <p className="font-semibold text-stone-800 dark:text-stone-100">{r.title}</p>
