@@ -1232,6 +1232,11 @@ def get_shopping_list(
         recipe = db.get(models.Recipe, entry.recipe_id)
         if not recipe:
             continue
+        # Skip leftover meal entries — no new ingredients needed
+        if entry.free_text and "leftover" in entry.free_text.lower():
+            continue
+        if recipe.title and "leftover" in recipe.title.lower():
+            continue
         for ing in (recipe.ingredients or []):
             raw_name = ing.get("name", "").strip()
             if not raw_name:
@@ -1239,6 +1244,9 @@ def get_shopping_list(
             raw_unit = str(ing.get("unit", "") or "").strip()
             norm_name, norm_unit = _normalize_ingredient(raw_name, raw_unit)
             if norm_name in _SKIP_INGREDIENTS:
+                continue
+            # Skip leftover ingredients — you already made them
+            if "leftover" in norm_name.lower() or "leftover" in raw_name.lower():
                 continue
             key = (norm_name, norm_unit)
             amt = _parse_amount(ing.get("amount", 0))
