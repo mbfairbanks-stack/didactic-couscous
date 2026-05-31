@@ -1392,6 +1392,10 @@ def refresh_meal_slot(
             pref_lines.append(f"Cuisine preferences: {saved_prefs.cuisine_preferences}")
         if saved_prefs.avoid:
             pref_lines.append(f"Avoid: {saved_prefs.avoid}")
+        if saved_prefs.notes:
+            pref_lines.append(f"Other notes: {saved_prefs.notes}")
+        if saved_prefs.servings:
+            pref_lines.append(f"Household size: {saved_prefs.servings} people")
     if body.preferences:
         pref_lines.append(body.preferences)
 
