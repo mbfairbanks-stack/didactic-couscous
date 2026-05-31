@@ -842,8 +842,6 @@ export default function MealPlan() {
                           >
                             <button
                               onClick={() => {
-                                const linked = entry?.recipe_id ? recipes.find((r) => r.id === entry.recipe_id) : null;
-                                if (linked && !isSkipped(entry)) { setRecipeSheet(linked); return; }
                                 setActiveCell(isActive ? null : { day, meal_type: mealType });
                               }}
                               className={`w-full min-h-[52px] text-left rounded-lg border px-2 py-1.5 text-xs transition-all overflow-hidden ${entryClass(entry)} hover:opacity-80 ${entry ? "cursor-grab active:cursor-grabbing" : ""} ${isActive ? "ring-2 ring-green-400" : ""} ${dragTarget?.day === day && dragTarget?.mealType === mealType ? "ring-2 ring-blue-400 !bg-blue-50" : ""}`}
