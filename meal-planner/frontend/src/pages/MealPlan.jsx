@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { getMealPlan, setMealPlanEntry, deleteMealPlanEntry, clearWeekMealPlan, getRecipes, getPreferences, streamGenerateMealPlan, streamRefreshMealSlot, generateWeekRecipes, markMealCooked, unmarkMealCooked } from "../api";
+import { getMealPlan, setMealPlanEntry, deleteMealPlanEntry, clearWeekMealPlan, getRecipes, getPreferences, streamGenerateMealPlan, streamRefreshMealSlot, generateWeekRecipes, markMealCooked, unmarkMealCooked, getRecipeCost } from "../api";
 import { format, addDays, addWeeks, subWeeks } from "date-fns";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -305,6 +305,196 @@ function RecipeSheet({ recipe, onClose }) {
   );
 }
 
+// ── Day View ─────────────────────────────────────────────────────────────────
+function DayMealCard({ mealType, entry, recipe, cost, isSkipped, isCooked, isFav,
+  onOpenPicker, onCook, onUncook, onRefresh, onEasy, isRefreshing }) {
+  const theme = recipe ? recipeTheme(recipe.title) : null;
+  const [expanded, setExpanded] = useState(true);
+
+  return (
+    <div className={`rounded-2xl border overflow-hidden shadow-sm ${isCooked ? "opacity-70" : ""} ${isFav ? "border-amber-300" : "border-stone-200 dark:border-stone-700"}`}>
+      {/* Meal type header */}
+      <div className={`flex items-center gap-2 px-4 py-2.5 ${recipe ? `bg-gradient-to-r ${theme.grad} dark:bg-none dark:bg-stone-800` : "bg-stone-50 dark:bg-stone-800"}`}>
+        {recipe && <span className="text-xl relative z-10">{theme.emoji}</span>}
+        <div className="flex-1 min-w-0">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-stone-500 dark:text-stone-400">{mealType}</p>
+          {recipe ? (
+            <p className={`font-semibold text-stone-800 dark:text-stone-100 text-sm truncate flex items-center gap-1.5 ${isCooked ? "line-through" : ""}`}>
+              {isFav && <span className="text-amber-400 shrink-0">★</span>}
+              {isCooked && <span className="text-emerald-500 shrink-0 text-xs">✓</span>}
+              {recipe.title}
+            </p>
+          ) : isSkipped ? (
+            <p className="text-sm text-stone-400 italic">Skipped</p>
+          ) : (
+            <button onClick={onOpenPicker} className="text-sm text-stone-400 hover:text-emerald-600 transition-colors">
+              {isRefreshing ? "Getting suggestion…" : "+ Add meal"}
+            </button>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {cost?.cost_per_serving != null && (
+            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
+              title={`~${Math.round((cost.coverage||0)*100)}% of ingredients priced`}>
+              ~${cost.cost_per_serving}/srv
+            </span>
+          )}
+          {recipe && (
+            isCooked ? (
+              <button onClick={onUncook} title="Un-mark cooked" className="text-emerald-500 hover:text-emerald-700 text-base transition-colors">✓</button>
+            ) : (
+              <button onClick={onCook} title="Mark as cooked" className="text-stone-300 hover:text-emerald-500 text-base transition-colors">✓</button>
+            )
+          )}
+          {recipe && !isCooked && (
+            <>
+              <button onClick={onEasy} disabled={isRefreshing} title="Quick easy swap" className="text-stone-300 hover:text-amber-500 text-sm transition-colors disabled:opacity-30">⚡</button>
+              <button onClick={onRefresh} disabled={isRefreshing} title="Suggest different" className={`text-sm transition-colors disabled:opacity-30 ${isRefreshing ? "text-purple-400" : "text-stone-300 hover:text-purple-500"}`}>↻</button>
+            </>
+          )}
+          <button onClick={onOpenPicker} title="Change meal" className="text-stone-300 hover:text-stone-600 dark:hover:text-stone-300 text-lg leading-none transition-colors">⋯</button>
+          {recipe && (
+            <button onClick={() => setExpanded((x) => !x)} className="text-stone-400 text-sm leading-none">
+              {expanded ? "▲" : "▼"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Recipe detail */}
+      {recipe && expanded && (
+        <div className="bg-white dark:bg-stone-900 p-4 space-y-4">
+          {/* Meta row */}
+          <div className="flex gap-4 text-xs text-stone-400 flex-wrap">
+            {recipe.prep_min > 0 && <span>Prep {recipe.prep_min}m</span>}
+            {recipe.cook_min > 0 && <span>Cook {recipe.cook_min}m</span>}
+            {recipe.servings > 0 && <span>Serves {recipe.servings}</span>}
+            {cost?.cost_per_serving != null && (
+              <span className="text-blue-500">~${cost.total_cost} total · ${cost.cost_per_serving}/serving</span>
+            )}
+          </div>
+
+          {/* Timers */}
+          {(recipe.prep_min > 0 || recipe.cook_min > 0) && (
+            <div className="space-y-2">
+              {recipe.prep_min > 0 && <Timer label="Prep" minutes={recipe.prep_min} />}
+              {recipe.cook_min > 0 && <Timer label="Cook" minutes={recipe.cook_min} />}
+            </div>
+          )}
+
+          <div className="grid sm:grid-cols-2 gap-4">
+            {/* Ingredients */}
+            {recipe.ingredients?.length > 0 && (
+              <div>
+                <h4 className="text-xs font-semibold text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-2">Ingredients</h4>
+                <ul className="space-y-1">
+                  {recipe.ingredients.map((ing, i) => (
+                    <li key={i} className="text-sm text-stone-700 dark:text-stone-200 flex gap-2">
+                      {(ing.amount || ing.unit) && (
+                        <span className="font-medium text-stone-400 shrink-0 min-w-[56px] text-right">{ing.amount} {ing.unit}</span>
+                      )}
+                      <span>{ing.name}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Instructions */}
+            {recipe.instructions && (
+              <div>
+                <h4 className="text-xs font-semibold text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-2">Instructions</h4>
+                <p className="text-sm text-stone-700 dark:text-stone-200 whitespace-pre-line leading-relaxed">{recipe.instructions}</p>
+              </div>
+            )}
+          </div>
+
+          {recipe.notes && <p className="text-xs text-stone-400 italic border-t dark:border-stone-700 pt-3">{recipe.notes}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DayView({ day, dayDate, weekStart, DAYS, entries, recipes, weekKey,
+  getEntry, isFavEntry, isSkipped: isSkippedFn, isCooked: isCookedFn,
+  handleSelect, handleClear, handleSkip, handleCook, handleUncook,
+  handleRefreshSlot, handleEasySlot, refreshingSlot,
+  setMobileSheet, onDayChange }) {
+
+  const [costs, setCosts] = useState({});
+
+  useEffect(() => {
+    MEAL_TYPES.forEach((mt) => {
+      const entry = getEntry(day, mt);
+      if (entry?.recipe_id && costs[entry.recipe_id] === undefined) {
+        setCosts((prev) => ({ ...prev, [entry.recipe_id]: null }));
+        getRecipeCost(entry.recipe_id)
+          .then((data) => setCosts((prev) => ({ ...prev, [entry.recipe_id]: data })))
+          .catch(() => setCosts((prev) => ({ ...prev, [entry.recipe_id]: false })));
+      }
+    });
+  }, [day, entries]);
+
+  const dayIdx = DAYS.indexOf(day);
+  const prevDay = () => onDayChange(DAYS[(dayIdx - 1 + DAYS.length) % DAYS.length]);
+  const nextDay = () => onDayChange(DAYS[(dayIdx + 1) % DAYS.length]);
+
+  const totalDailyCost = MEAL_TYPES.reduce((sum, mt) => {
+    const entry = getEntry(day, mt);
+    if (!entry?.recipe_id) return sum;
+    const c = costs[entry.recipe_id];
+    return sum + (c?.cost_per_serving || 0);
+  }, 0);
+
+  return (
+    <div className="space-y-4">
+      {/* Day nav */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <button onClick={prevDay} className="p-1.5 rounded hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-500 text-lg">‹</button>
+        <div className="flex-1 min-w-0">
+          <p className="font-bold text-stone-800 dark:text-stone-100">{day}</p>
+          <p className="text-xs text-stone-400">{format(dayDate, "MMMM d, yyyy")}</p>
+        </div>
+        <button onClick={nextDay} className="p-1.5 rounded hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-500 text-lg">›</button>
+        {totalDailyCost > 0 && (
+          <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border border-blue-100 dark:border-blue-800">
+            ~${totalDailyCost.toFixed(2)} for the day
+          </span>
+        )}
+      </div>
+
+      {/* Meal cards */}
+      {MEAL_TYPES.map((mealType) => {
+        const entry = getEntry(day, mealType);
+        const recipe = entry?.recipe_id ? recipes.find((r) => r.id === entry.recipe_id) : null;
+        const slotKey = `${day}-${mealType}`;
+        return (
+          <DayMealCard
+            key={mealType}
+            mealType={mealType}
+            entry={entry}
+            recipe={recipe}
+            cost={recipe ? costs[recipe.id] : null}
+            isSkipped={isSkippedFn(entry)}
+            isCooked={isCookedFn(entry)}
+            isFav={isFavEntry(entry)}
+            isRefreshing={refreshingSlot === slotKey}
+            onOpenPicker={() => {
+              if (recipe) setMobileSheet({ day, meal_type: mealType });
+              else setMobileSheet({ day, meal_type: mealType });
+            }}
+            onCook={() => handleCook(entry)}
+            onUncook={() => handleUncook(entry)}
+            onRefresh={() => handleRefreshSlot(day, mealType)}
+            onEasy={() => handleEasySlot(day, mealType)}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 export default function MealPlan() {
   const navigate = useNavigate();
   const [weekStartDay, setWeekStartDay] = useState("Monday");
@@ -323,6 +513,7 @@ export default function MealPlan() {
   const [dragTarget, setDragTarget] = useState(null); // {day, mealType} desktop hover
   const [moveMode, setMoveMode] = useState(null); // {day, mealType} mobile two-tap move
 
+  const [viewMode, setViewMode] = useState("week"); // "week" | "day"
   const [showAI, setShowAI] = useState(false);
   const [aiNotes, setAiNotes] = useState("");
   const [usePantry, setUsePantry] = useState(true);
@@ -574,6 +765,20 @@ export default function MealPlan() {
           >
             {publishing ? "Saving recipes…" : "Publish"}
           </button>
+          <div className="flex rounded-lg border border-stone-200 dark:border-stone-700 overflow-hidden text-sm font-medium">
+            <button
+              onClick={() => setViewMode("week")}
+              className={`px-3 py-1.5 transition-colors ${viewMode === "week" ? "bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-900" : "bg-white dark:bg-stone-800 text-stone-500 dark:text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-700"}`}
+            >
+              Week
+            </button>
+            <button
+              onClick={() => setViewMode("day")}
+              className={`px-3 py-1.5 transition-colors border-l border-stone-200 dark:border-stone-700 ${viewMode === "day" ? "bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-900" : "bg-white dark:bg-stone-800 text-stone-500 dark:text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-700"}`}
+            >
+              Day
+            </button>
+          </div>
           <button onClick={() => setShowAI(!showAI)}
             className="bg-purple-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-sm font-medium hover:bg-purple-700">
             AI Generate
@@ -633,6 +838,30 @@ export default function MealPlan() {
 
       {loading ? (
         <p className="text-gray-400 dark:text-stone-500 text-sm">Loading...</p>
+      ) : viewMode === "day" ? (
+        <DayView
+          day={selectedDay}
+          dayDate={addDays(weekStart, DAYS.indexOf(selectedDay))}
+          weekStart={weekStart}
+          DAYS={DAYS}
+          entries={entries}
+          recipes={recipes}
+          weekKey={weekKey}
+          getEntry={getEntry}
+          isFavEntry={isFavEntry}
+          isSkipped={isSkipped}
+          isCooked={isCooked}
+          handleSelect={handleSelect}
+          handleClear={handleClear}
+          handleSkip={handleSkip}
+          handleCook={handleCook}
+          handleUncook={handleUncook}
+          handleRefreshSlot={handleRefreshSlot}
+          handleEasySlot={handleEasySlot}
+          refreshingSlot={refreshingSlot}
+          setMobileSheet={setMobileSheet}
+          onDayChange={setSelectedDay}
+        />
       ) : (
         <>
           {/* ── MOBILE VIEW ── */}
