@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { getShoppingList } from "../api";
+import { getShoppingList, createPantryItem } from "../api";
 import { format, addWeeks, subWeeks } from "date-fns";
 
 function getMonday(d) {
@@ -81,6 +81,19 @@ export default function ShoppingList() {
 
   const toggleCheck = (name) => setChecked((prev) => ({ ...prev, [name]: !prev[name] }));
 
+  const handleHaveIt = async (item) => {
+    const qty = parseFloat(item.amount) || 1;
+    await createPantryItem({
+      name: item.name,
+      quantity: qty,
+      unit: item.unit || "",
+      category: "Pantry",
+      expiry_date: null,
+      notes: null,
+    });
+    load();
+  };
+
   const rawToBuy = data?.to_buy || [];
   const alreadyHave = data?.already_have || [];
   const toBuy = combined ? combineItems(rawToBuy) : rawToBuy;
@@ -133,12 +146,12 @@ export default function ShoppingList() {
               </div>
               <div className="bg-white dark:bg-stone-900 rounded-xl border border-gray-200 dark:border-stone-700 divide-y divide-gray-100 dark:divide-stone-800 shadow-sm">
                 {toBuy.map((item) => (
-                  <div key={item.name} className="flex items-center gap-3 px-4 py-3">
+                  <div key={item.name} className="group flex items-center gap-3 px-4 py-3">
                     <input
                       type="checkbox"
                       checked={!!checked[item.name]}
                       onChange={() => toggleCheck(item.name)}
-                      className="w-4 h-4 rounded accent-green-600 cursor-pointer"
+                      className="w-4 h-4 rounded accent-green-600 cursor-pointer shrink-0"
                     />
                     <span className={`flex-1 text-sm ${checked[item.name] ? "line-through text-gray-400 dark:text-stone-500" : "text-gray-700 dark:text-stone-200"}`}>
                       {item.name}
@@ -148,6 +161,13 @@ export default function ShoppingList() {
                         {[item.amount, item.unit].filter(Boolean).join(" ")}
                       </span>
                     )}
+                    <button
+                      onClick={() => handleHaveIt(item)}
+                      title="I already have this — add to pantry"
+                      className="opacity-0 group-hover:opacity-100 text-xs text-green-600 dark:text-green-400 border border-green-300 dark:border-green-700 rounded-full px-2 py-0.5 hover:bg-green-50 dark:hover:bg-green-900/30 transition-all shrink-0"
+                    >
+                      ✓ Have it
+                    </button>
                   </div>
                 ))}
               </div>
