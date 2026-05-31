@@ -156,16 +156,16 @@ export default function ShoppingList() {
 
           {alreadyHave.length > 0 && (
             <div>
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+              <h3 className="text-xs font-semibold text-gray-500 dark:text-stone-400 uppercase tracking-wider mb-2">
                 Already in Pantry ({alreadyHave.length})
               </h3>
-              <div className="bg-gray-50 rounded-xl border border-gray-200 divide-y divide-gray-100">
+              <div className="bg-gray-50 dark:bg-stone-900 rounded-xl border border-gray-200 dark:border-stone-700 divide-y divide-gray-100 dark:divide-stone-800">
                 {alreadyHave.map((item) => (
                   <div key={item.name} className="flex items-center gap-3 px-4 py-3">
                     <span className="text-green-500 text-sm">✓</span>
-                    <span className="flex-1 text-sm text-gray-400 line-through">{item.name}</span>
+                    <span className="flex-1 text-sm text-gray-400 dark:text-stone-500 line-through">{item.name}</span>
                     {(item.amount || item.unit) && (
-                      <span className="text-xs text-gray-300">
+                      <span className="text-xs text-gray-300 dark:text-stone-600">
                         {[item.amount, item.unit].filter(Boolean).join(" ")}
                       </span>
                     )}

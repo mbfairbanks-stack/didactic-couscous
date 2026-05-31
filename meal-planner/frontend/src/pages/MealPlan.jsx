@@ -510,7 +510,7 @@ export default function MealPlan() {
   const isCooked = (entry) => !!entry?.cooked_at;
 
   const entryClass = (entry) => {
-    if (!entry) return "bg-white border-stone-200 text-stone-400";
+    if (!entry) return "bg-white dark:bg-stone-900 border-stone-200 dark:border-stone-700 text-stone-400";
     if (isSkipped(entry)) return "bg-stone-100 border-stone-200 text-stone-400";
     if (isCooked(entry)) return "bg-stone-100 border-stone-300 text-stone-500";
     return isFavEntry(entry) ? "bg-amber-50 border-amber-200 text-amber-900" : "bg-emerald-50 border-emerald-200 text-emerald-900";

@@ -49,14 +49,14 @@ export default function Preferences() {
 
   const field = (label, key, opts = {}) => (
     <div>
-      <label className="text-sm font-medium text-gray-700 block mb-1">{label}</label>
-      {opts.hint && <p className="text-xs text-gray-400 mb-1">{opts.hint}</p>}
+      <label className="text-sm font-medium text-gray-700 dark:text-stone-200 block mb-1">{label}</label>
+      {opts.hint && <p className="text-xs text-gray-400 dark:text-stone-500 mb-1">{opts.hint}</p>}
       {opts.textarea ? (
         <textarea
           value={form[key]}
           onChange={(e) => setForm({ ...form, [key]: e.target.value })}
           rows={3}
-          className="border rounded-lg px-3 py-2 text-sm w-full"
+          className="border dark:border-stone-600 rounded-lg px-3 py-2 text-sm w-full dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
           placeholder={opts.placeholder}
         />
       ) : (
@@ -64,7 +64,7 @@ export default function Preferences() {
           type={opts.type || "text"}
           value={form[key]}
           onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-          className="border rounded-lg px-3 py-2 text-sm w-full"
+          className="border dark:border-stone-600 rounded-lg px-3 py-2 text-sm w-full dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
           placeholder={opts.placeholder}
           min={opts.min}
           max={opts.max}
@@ -76,8 +76,8 @@ export default function Preferences() {
   return (
     <div className="max-w-2xl">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Household Preferences</h1>
-        <p className="text-sm text-gray-500 mt-1">
+        <h1 className="text-2xl font-bold text-gray-800 dark:text-stone-100">Household Preferences</h1>
+        <p className="text-sm text-gray-500 dark:text-stone-400 mt-1">
           These preferences are used automatically when generating meal plans with AI.
         </p>
       </div>
@@ -85,9 +85,9 @@ export default function Preferences() {
       {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
 
       {loading ? (
-        <p className="text-gray-400 text-sm">Loading...</p>
+        <p className="text-gray-400 dark:text-stone-500 text-sm">Loading...</p>
       ) : (
-        <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="bg-white dark:bg-stone-900 rounded-xl border border-gray-200 dark:border-stone-700 shadow-sm p-6 space-y-5">
 
           {field("Household size (people)", "servings", {
             type: "number",
@@ -122,11 +122,11 @@ export default function Preferences() {
           })}
 
           <div>
-            <label className="text-sm font-medium text-gray-700 block mb-1">Week starts on</label>
+            <label className="text-sm font-medium text-gray-700 dark:text-stone-200 block mb-1">Week starts on</label>
             <select
               value={form.week_start_day}
               onChange={(e) => setForm({ ...form, week_start_day: e.target.value })}
-              className="border rounded-lg px-3 py-2 text-sm w-48"
+              className="border dark:border-stone-600 rounded-lg px-3 py-2 text-sm w-48 dark:bg-stone-800 dark:text-stone-100"
             >
               {["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"].map((d) => (
                 <option key={d} value={d}>{d}</option>
@@ -149,9 +149,9 @@ export default function Preferences() {
         </form>
       )}
 
-      <div className="mt-6 bg-green-50 border border-green-200 rounded-xl p-4 text-sm text-green-800">
+      <div className="mt-6 bg-green-50 dark:bg-stone-900 border border-green-200 dark:border-stone-700 rounded-xl p-4 text-sm text-green-800 dark:text-stone-200">
         <p className="font-medium mb-1">How AI uses these preferences</p>
-        <ul className="space-y-1 text-green-700 list-disc list-inside">
+        <ul className="space-y-1 text-green-700 dark:text-stone-300 list-disc list-inside">
           <li>Dietary restrictions and avoid lists are always respected</li>
           <li>Cuisine preferences guide the variety of meals suggested</li>
           <li>Favourite recipes (starred in Recipes) are scheduled 3–5 times per week</li>
