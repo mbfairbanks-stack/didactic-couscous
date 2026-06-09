@@ -2338,6 +2338,28 @@ def _build_debt_context(db: Session) -> list[str]:
     return lines
 
 
+def _household_header(db: Session) -> list[str]:
+    """Returns prompt lines declaring the household composition from app settings."""
+    p1 = db.get(models.AppSettings, "person_1")
+    p2 = db.get(models.AppSettings, "person_2")
+    p1_name = p1.value if p1 else "Person 1"
+    p2_name = p2.value if p2 else "Person 2"
+    return [
+        f"This is a 2-person Canadian household: {p1_name} and {p2_name}.",
+        "Income records may contain multiple entries per person per month (e.g. bi-weekly paycheques) — treat them as paycheques from the same person, not separate people.",
+        "",
+    ]
+
+
+def _aggregate_income(rows) -> list[tuple[str, str, float]]:
+    """Aggregate raw income rows into (person, income_type, total) tuples."""
+    agg: dict[tuple, float] = {}
+    for r in rows:
+        key = (r.person, r.income_type)
+        agg[key] = agg.get(key, 0) + float(r.amount if hasattr(r, 'amount') else r.total)
+    return [(person, itype, total) for (person, itype), total in sorted(agg.items())]
+
+
 def _build_insights_context(year: int, month: Optional[int], db: Session,
                              start_month: Optional[int] = None, end_month: Optional[int] = None) -> str:
     """Build the AI prompt context. Dispatches to the appropriate builder."""
@@ -2372,15 +2394,14 @@ def _build_multi_month_context(year: int, start_month: int, end_month: int, db: 
         .order_by(func.sum(models.Transaction.amount).desc())
     ).all()
 
-    income_rows = db.execute(
-        select(models.Income.person, models.Income.income_type,
-               func.sum(models.Income.amount).label("total"))
+    raw_income = db.execute(
+        select(models.Income.person, models.Income.income_type, models.Income.amount)
         .where(models.Income.year == year,
                models.Income.month >= start_month,
                models.Income.month <= end_month)
-        .group_by(models.Income.person, models.Income.income_type)
     ).all()
-    total_income = sum(r.total for r in income_rows)
+    income_rows = _aggregate_income(raw_income)
+    total_income = sum(t for _, _, t in income_rows)
 
     monthly_exp = db.execute(
         select(models.Transaction.month, func.sum(models.Transaction.amount).label("total"))
@@ -2416,13 +2437,14 @@ def _build_multi_month_context(year: int, start_month: int, end_month: int, db: 
     lines = [
         "You are a personal finance advisor analyzing a Canadian household budget.",
         "",
+        *_household_header(db),
         f"## Period: {period_label} ({MONTH_NAMES[start_month]} – {MONTH_NAMES[end_month]} {year})",
         "",
         "### Income",
     ]
     if income_rows:
-        for r in income_rows:
-            lines.append(f"- {r.person} ({r.income_type}): ${r.total:,.0f}")
+        for person, itype, total in income_rows:
+            lines.append(f"- {person} ({itype}): ${total:,.0f}")
     else:
         lines.append("- No income recorded for this period")
     lines.append(f"- **Total household income: ${total_income:,.0f}**")
@@ -2493,12 +2515,12 @@ def _build_monthly_context(year: int, month: int, db: Session) -> str:
         .order_by(func.sum(models.Transaction.amount).desc())
     ).all()
 
-    income_rows = db.execute(
+    raw_income = db.execute(
         select(models.Income.person, models.Income.income_type, models.Income.amount)
         .where(models.Income.year == year, models.Income.month == month)
-        .order_by(models.Income.person)
     ).all()
-    total_income = sum(r.amount for r in income_rows)
+    income_rows = _aggregate_income(raw_income)
+    total_income = sum(t for _, _, t in income_rows)
 
     target_rows = db.execute(
         select(models.BudgetTarget.category, models.BudgetTarget.amount)
@@ -2530,13 +2552,14 @@ def _build_monthly_context(year: int, month: int, db: Session) -> str:
     lines = [
         "You are a personal finance advisor analyzing a Canadian household budget.",
         "",
+        *_household_header(db),
         f"## Period: {month_label} {year}",
         "",
         "### Income",
     ]
     if income_rows:
-        for r in income_rows:
-            lines.append(f"- {r.person} ({r.income_type}): ${r.amount:,.0f}")
+        for person, itype, total in income_rows:
+            lines.append(f"- {person} ({itype}): ${total:,.0f}")
     else:
         lines.append("- No income recorded for this month")
     lines.append(f"- **Total household income: ${total_income:,.0f}**")
@@ -2667,6 +2690,7 @@ def _build_annual_context(year: int, db: Session) -> str:
     lines = [
         "You are a personal finance advisor analyzing a Canadian household budget.",
         "",
+        *_household_header(db),
         f"## Period: Full Year {year} (through {last_month_label})",
         "",
         f"### Annual Totals",
