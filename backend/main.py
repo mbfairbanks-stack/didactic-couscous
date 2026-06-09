@@ -2338,12 +2338,150 @@ def _build_debt_context(db: Session) -> list[str]:
     return lines
 
 
-def _build_insights_context(year: int, month: Optional[int], db: Session) -> str:
-    """Build the AI prompt context. month=None means full-year annual analysis."""
-
+def _build_insights_context(year: int, month: Optional[int], db: Session,
+                             start_month: Optional[int] = None, end_month: Optional[int] = None) -> str:
+    """Build the AI prompt context. Dispatches to the appropriate builder."""
+    if start_month and end_month:
+        return _build_multi_month_context(year, start_month, end_month, db)
     if month:
         return _build_monthly_context(year, month, db)
     return _build_annual_context(year, db)
+
+
+def _build_multi_month_context(year: int, start_month: int, end_month: int, db: Session) -> str:
+    """Quarterly or semi-annual analysis context."""
+    num_months = end_month - start_month + 1
+    if num_months == 3:
+        quarter = (start_month - 1) // 3 + 1
+        period_label = f"Q{quarter} {year}"
+        period_type = f"Quarter {quarter}"
+    elif num_months == 6:
+        half = 1 if start_month == 1 else 2
+        period_label = f"H{half} {year}"
+        period_type = f"{'First' if half == 1 else 'Second'} Half"
+    else:
+        period_label = f"{MONTH_NAMES[start_month]}–{MONTH_NAMES[end_month]} {year}"
+        period_type = f"{num_months}-month period"
+
+    cat_rows = db.execute(
+        select(models.Transaction.category, func.sum(models.Transaction.amount).label("total"))
+        .where(models.Transaction.year == year,
+               models.Transaction.month >= start_month,
+               models.Transaction.month <= end_month)
+        .group_by(models.Transaction.category)
+        .order_by(func.sum(models.Transaction.amount).desc())
+    ).all()
+
+    income_rows = db.execute(
+        select(models.Income.person, models.Income.income_type,
+               func.sum(models.Income.amount).label("total"))
+        .where(models.Income.year == year,
+               models.Income.month >= start_month,
+               models.Income.month <= end_month)
+        .group_by(models.Income.person, models.Income.income_type)
+    ).all()
+    total_income = sum(r.total for r in income_rows)
+
+    monthly_exp = db.execute(
+        select(models.Transaction.month, func.sum(models.Transaction.amount).label("total"))
+        .where(models.Transaction.year == year,
+               models.Transaction.month >= start_month,
+               models.Transaction.month <= end_month)
+        .group_by(models.Transaction.month).order_by(models.Transaction.month)
+    ).all()
+    monthly_inc = db.execute(
+        select(models.Income.month, func.sum(models.Income.amount).label("total"))
+        .where(models.Income.year == year,
+               models.Income.month >= start_month,
+               models.Income.month <= end_month)
+        .group_by(models.Income.month).order_by(models.Income.month)
+    ).all()
+    inc_by_month = {r.month: r.total for r in monthly_inc}
+    exp_by_month = {r.month: r.total for r in monthly_exp}
+
+    target_rows = db.execute(
+        select(models.BudgetTarget.category,
+               func.avg(models.BudgetTarget.amount).label("avg_amount"))
+        .where(models.BudgetTarget.year == year,
+               models.BudgetTarget.month >= start_month,
+               models.BudgetTarget.month <= end_month)
+        .group_by(models.BudgetTarget.category)
+    ).all()
+    targets = {r.category: r.avg_amount * num_months for r in target_rows}
+
+    total_expenses = sum(r.total for r in cat_rows)
+    savings = total_income - total_expenses
+    savings_rate = (savings / total_income * 100) if total_income else 0
+
+    lines = [
+        "You are a personal finance advisor analyzing a Canadian household budget.",
+        "",
+        f"## Period: {period_label} ({MONTH_NAMES[start_month]} – {MONTH_NAMES[end_month]} {year})",
+        "",
+        "### Income",
+    ]
+    if income_rows:
+        for r in income_rows:
+            lines.append(f"- {r.person} ({r.income_type}): ${r.total:,.0f}")
+    else:
+        lines.append("- No income recorded for this period")
+    lines.append(f"- **Total household income: ${total_income:,.0f}**")
+
+    lines += ["", "### Month-by-Month Breakdown",
+              "| Month | Income | Expenses | Net |", "|---|---|---|---|"]
+    for m in range(start_month, end_month + 1):
+        inc = inc_by_month.get(m, 0)
+        exp = exp_by_month.get(m, 0)
+        lines.append(f"| {MONTH_NAMES[m]} | ${inc:,.0f} | ${exp:,.0f} | ${inc - exp:,.0f} |")
+
+    lines += [
+        "",
+        f"### Spending by Category (total: ${total_expenses:,.0f}, avg ${total_expenses / num_months:,.0f}/mo)",
+        "| Category | Period Total | Monthly Avg | Budget (period) | vs Budget |",
+        "|---|---|---|---|---|",
+    ]
+    for r in cat_rows:
+        avg = r.total / num_months
+        budget = targets.get(r.category)
+        vs_budget = (f"+${r.total - budget:,.0f} over" if budget and r.total > budget
+                     else (f"${budget - r.total:,.0f} under" if budget else "N/A"))
+        lines.append(f"| {r.category} | ${r.total:,.0f} | ${avg:,.0f}/mo | {'$' + f'{budget:,.0f}' if budget else 'N/A'} | {vs_budget} |")
+
+    lines += [
+        "",
+        f"### {period_label} Summary",
+        f"- Period expenses: ${total_expenses:,.0f} (${total_expenses / num_months:,.0f}/month avg)",
+        f"- Period income: ${total_income:,.0f}",
+        f"- Net savings: ${savings:,.0f} ({savings_rate:.1f}% savings rate)",
+        "",
+        "---",
+        "",
+        f"Please provide actionable, specific financial insights for this {period_type}. Include:",
+        "1. **Overall performance** — how did spending and savings compare to expectations?",
+        "2. **Top spending categories** — which dominated and are they sustainable?",
+        "3. **Month-to-month trends** — how did spending evolve within this period? Any notable spikes or improvements?",
+        "4. **Budget adherence** — which categories were significantly over or under budget?",
+        "5. **Trajectory** — are habits improving or worsening compared to what's typical?",
+        f"6. **Recommendations for next {period_type.lower()}** — specific, actionable changes with realistic targets",
+        "7. **One priority action** — the single most impactful change to make",
+        "",
+        "Keep the tone practical and encouraging. Use Canadian dollar amounts. Be specific with numbers.",
+    ]
+
+    debt_lines = _build_debt_context(db)
+    if debt_lines and total_income > 0:
+        monthly_surplus = savings / num_months
+        lines += debt_lines
+        lines += [
+            "",
+            "---",
+            "",
+            "**Debt Strategy:**",
+            f"Average monthly surplus this period: ${monthly_surplus:,.0f}",
+            "8. **Recommended debt payments** — given this surplus, what's the optimal allocation to each debt?",
+        ]
+
+    return "\n".join(lines)
 
 
 def _build_monthly_context(year: int, month: int, db: Session) -> str:
@@ -2622,14 +2760,20 @@ def _build_annual_context(year: int, db: Session) -> str:
 
 
 @app.get("/insights")
-async def get_insights(year: int, month: Optional[int] = None, db: Session = Depends(get_db)):
+async def get_insights(
+    year: int,
+    month: Optional[int] = None,
+    start_month: Optional[int] = None,
+    end_month: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
     import anthropic as anthropic_sdk
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise HTTPException(400, "ANTHROPIC_API_KEY environment variable is not set")
 
-    context = _build_insights_context(year, month, db)
+    context = _build_insights_context(year, month, db, start_month, end_month)
 
     async def stream_insights():
         client = anthropic_sdk.Anthropic(api_key=api_key)
@@ -2653,6 +2797,8 @@ class InsightsLogCreate(BaseModel):
     year: int
     month: int  # 0 = annual
     content: str
+    start_month: Optional[int] = None
+    end_month: Optional[int] = None
 
 
 @app.post("/insights/log", status_code=201)
@@ -2660,6 +2806,8 @@ def save_insights_log(body: InsightsLogCreate, db: Session = Depends(get_db)):
     entry = models.InsightsLog(
         year=body.year,
         month=body.month,
+        start_month=body.start_month,
+        end_month=body.end_month,
         generated_at=datetime.datetime.now(),
         content=body.content,
     )
@@ -2679,6 +2827,8 @@ def list_insights_log(db: Session = Depends(get_db)):
             "id": r.id,
             "year": r.year,
             "month": r.month,
+            "start_month": getattr(r, "start_month", None),
+            "end_month": getattr(r, "end_month", None),
             "generated_at": r.generated_at.isoformat(),
             "content": r.content,
         }

@@ -141,6 +141,14 @@ def _init_db_extras(eng, seed_demo: bool = False):
             if "liquidity" not in a_cols:
                 conn.execute(sa.text("ALTER TABLE assets ADD COLUMN liquidity TEXT NOT NULL DEFAULT 'liquid'"))
 
+        # insights_log extras
+        if "insights_log" in tables:
+            il_cols = [c["name"] for c in inspector.get_columns("insights_log")]
+            if "start_month" not in il_cols:
+                conn.execute(sa.text("ALTER TABLE insights_log ADD COLUMN start_month INTEGER"))
+            if "end_month" not in il_cols:
+                conn.execute(sa.text("ALTER TABLE insights_log ADD COLUMN end_month INTEGER"))
+
         # debts extras
         if "debts" in tables:
             d_cols = [c["name"] for c in inspector.get_columns("debts")]

@@ -57,12 +57,55 @@ function renderMarkdown(text) {
   return elements;
 }
 
-const cacheKey = (year, month) => month ? `insights_${year}_${month}` : `insights_${year}_annual`;
+const QUARTER_MONTHS = { 1: [1, 3], 2: [4, 6], 3: [7, 9], 4: [10, 12] };
+const HALF_MONTHS = { 1: [1, 6], 2: [7, 12] };
+
+function periodLabel(mode, year, month, quarter, half) {
+  if (mode === "annual") return `Full Year ${year}`;
+  if (mode === "monthly") return `${MONTH_LABELS[month]} ${year}`;
+  if (mode === "quarter") return `Q${quarter} ${year}`;
+  return `H${half} ${year}`;
+}
+
+function cacheKey(mode, year, month, quarter, half) {
+  if (mode === "annual") return `insights_${year}_annual`;
+  if (mode === "monthly") return `insights_${year}_${month}`;
+  if (mode === "quarter") return `insights_${year}_q${quarter}`;
+  return `insights_${year}_h${half}`;
+}
+
+function logEntryLabel(entry) {
+  if (entry.start_month && entry.end_month) {
+    const months = entry.end_month - entry.start_month + 1;
+    if (months === 3) {
+      const q = Math.ceil(entry.start_month / 3);
+      return `Q${q} ${entry.year}`;
+    }
+    if (months === 6) {
+      return `H${entry.start_month === 1 ? 1 : 2} ${entry.year}`;
+    }
+    return `${MONTH_LABELS[entry.start_month]}–${MONTH_LABELS[entry.end_month]} ${entry.year}`;
+  }
+  if (entry.month === 0) return `Full Year ${entry.year}`;
+  return `${MONTH_LABELS[entry.month]} ${entry.year}`;
+}
+
+function logEntryBadge(entry) {
+  if (entry.start_month && entry.end_month) {
+    const months = entry.end_month - entry.start_month + 1;
+    if (months === 3) return { label: "Quarterly", cls: "bg-blue-400/15 text-blue-400" };
+    if (months === 6) return { label: "Semi-Annual", cls: "bg-purple-400/15 text-purple-400" };
+  }
+  if (entry.month === 0) return { label: "Annual", cls: "bg-yellow-400/15 text-yellow-400" };
+  return null;
+}
 
 export default function Insights() {
   const [year, setYear] = useState(currentYear);
   const [month, setMonth] = useState(currentMonth);
-  const [mode, setMode] = useState("annual"); // "monthly" | "annual"
+  const [mode, setMode] = useState("annual");
+  const [quarter, setQuarter] = useState(Math.ceil(currentMonth / 3));
+  const [half, setHalf] = useState(currentMonth <= 6 ? 1 : 2);
   const [years, setYears] = useState([currentYear]);
   const [loading, setLoading] = useState(false);
   const [text, setText] = useState("");
@@ -72,29 +115,31 @@ export default function Insights() {
   const [expandedLog, setExpandedLog] = useState(null);
   const bottomRef = useRef(null);
 
-  const effectiveMonth = mode === "annual" ? null : month;
+  const startMonth = mode === "quarter" ? QUARTER_MONTHS[quarter][0]
+    : mode === "halfyear" ? HALF_MONTHS[half][0] : null;
+  const endMonth = mode === "quarter" ? QUARTER_MONTHS[quarter][1]
+    : mode === "halfyear" ? HALF_MONTHS[half][1] : null;
+  const effectiveMonth = mode === "monthly" ? month : null;
+  const key = cacheKey(mode, year, month, quarter, half);
+  const label = periodLabel(mode, year, month, quarter, half);
 
   useEffect(() => {
     getYears().then((y) => setYears(y.length ? y : [currentYear]));
     getInsightsLog().then(setLog).catch(() => {});
   }, []);
 
-  // Load cache when period changes
   useEffect(() => {
-    const saved = localStorage.getItem(cacheKey(year, effectiveMonth));
+    const saved = localStorage.getItem(key);
     if (saved) { setText(saved); setCached(true); }
     else { setText(""); setCached(false); }
-  }, [year, effectiveMonth]);
+  }, [key]);
 
   useEffect(() => {
     if (loading) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [text, loading]);
 
   const handleGenerate = async () => {
-    setText("");
-    setCached(false);
-    setError("");
-    setLoading(true);
+    setText(""); setCached(false); setError(""); setLoading(true);
     try {
       let full = "";
       await streamInsights(
@@ -104,22 +149,29 @@ export default function Insights() {
         () => {
           setLoading(false);
           if (full) {
-            localStorage.setItem(cacheKey(year, effectiveMonth), full);
-            saveInsightsLog(year, effectiveMonth, full)
+            localStorage.setItem(key, full);
+            saveInsightsLog(year, effectiveMonth, full, startMonth, endMonth)
               .then(() => getInsightsLog().then(setLog))
               .catch(() => {});
           }
         },
-        (err) => { setError(err); setLoading(false); }
+        (err) => { setError(err); setLoading(false); },
+        startMonth,
+        endMonth,
       );
     } catch (e) {
-      setError(e.message);
-      setLoading(false);
+      setError(e.message); setLoading(false);
     }
   };
 
   const selectCls = "bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400/50";
-  const periodLabel = mode === "annual" ? `Full Year ${year}` : `${MONTH_LABELS[month]} ${year}`;
+
+  const MODES = [
+    ["annual", "Full Year"],
+    ["halfyear", "Half Year"],
+    ["quarter", "Quarter"],
+    ["monthly", "Month"],
+  ];
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -128,18 +180,16 @@ export default function Insights() {
       {/* Controls */}
       <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5 space-y-4">
         {/* Mode toggle */}
-        <div className="flex gap-1 bg-zinc-800 p-1 rounded-lg w-fit">
-          {[["annual", "Full Year"], ["monthly", "Single Month"]].map(([val, label]) => (
+        <div className="flex gap-1 bg-zinc-800 p-1 rounded-lg w-fit flex-wrap">
+          {MODES.map(([val, lbl]) => (
             <button
               key={val}
               onClick={() => setMode(val)}
               className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                mode === val
-                  ? "bg-yellow-400 text-black"
-                  : "text-zinc-400 hover:text-zinc-200"
+                mode === val ? "bg-yellow-400 text-black" : "text-zinc-400 hover:text-zinc-200"
               }`}
             >
-              {label}
+              {lbl}
             </button>
           ))}
         </div>
@@ -151,6 +201,43 @@ export default function Insights() {
               {years.map((y) => <option key={y} value={y}>{y}</option>)}
             </select>
           </div>
+
+          {mode === "halfyear" && (
+            <div>
+              <label className="text-xs text-zinc-500 block mb-1">Period</label>
+              <div className="flex gap-1">
+                {[1, 2].map((h) => (
+                  <button key={h} onClick={() => setHalf(h)}
+                    className={`px-4 py-1.5 rounded text-sm font-medium transition-colors border ${
+                      half === h ? "bg-yellow-400 text-black border-yellow-400" : "border-zinc-700 text-zinc-400 hover:text-zinc-200"
+                    }`}>
+                    H{h} <span className="text-xs opacity-70">{h === 1 ? "(Jan–Jun)" : "(Jul–Dec)"}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {mode === "quarter" && (
+            <div>
+              <label className="text-xs text-zinc-500 block mb-1">Quarter</label>
+              <div className="flex gap-1">
+                {[1, 2, 3, 4].map((q) => {
+                  const [s, e] = QUARTER_MONTHS[q];
+                  const mRange = `${MONTH_LABELS[s].slice(0, 3)}–${MONTH_LABELS[e].slice(0, 3)}`;
+                  return (
+                    <button key={q} onClick={() => setQuarter(q)}
+                      className={`px-3 py-1.5 rounded text-sm font-medium transition-colors border ${
+                        quarter === q ? "bg-yellow-400 text-black border-yellow-400" : "border-zinc-700 text-zinc-400 hover:text-zinc-200"
+                      }`}>
+                      Q{q} <span className="text-xs opacity-70">({mRange})</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {mode === "monthly" && (
             <div>
               <label className="text-xs text-zinc-500 block mb-1">Month</label>
@@ -161,6 +248,7 @@ export default function Insights() {
               </select>
             </div>
           )}
+
           <button
             onClick={handleGenerate}
             disabled={loading}
@@ -178,7 +266,10 @@ export default function Insights() {
           )}
           {!cached && (
             <p className="text-xs text-zinc-600 self-center">
-              {mode === "annual" ? "Analyzes all 12 months of data" : "Analyzes a single month"} — powered by Claude
+              {mode === "annual" ? "All 12 months"
+                : mode === "halfyear" ? `6 months (H${half})`
+                : mode === "quarter" ? `3 months (Q${quarter})`
+                : "Single month"} — powered by Claude
             </p>
           )}
         </div>
@@ -189,8 +280,7 @@ export default function Insights() {
           <strong>Error:</strong> {error}
           {error.includes("ANTHROPIC_API_KEY") && (
             <p className="mt-1 text-red-500">
-              Set the <code className="bg-red-900/40 px-1 rounded">ANTHROPIC_API_KEY</code> environment
-              variable before starting the backend server.
+              Set the <code className="bg-red-900/40 px-1 rounded">ANTHROPIC_API_KEY</code> environment variable before starting the backend server.
             </p>
           )}
         </div>
@@ -201,7 +291,7 @@ export default function Insights() {
         <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">
-              {periodLabel} — Financial Analysis
+              {label} — Financial Analysis
             </h2>
             {!loading && (
               <button
@@ -224,13 +314,12 @@ export default function Insights() {
 
       {!text && !loading && !error && (
         <div className="bg-zinc-900 border border-dashed border-zinc-700 rounded-xl p-10 text-center">
-          <p className="text-zinc-500 font-medium mb-1">
-            {mode === "annual" ? `Analyze all of ${year}` : `Analyze ${MONTH_LABELS[month]} ${year}`}
-          </p>
+          <p className="text-zinc-500 font-medium mb-1">Analyze {label}</p>
           <p className="text-zinc-600 text-sm">
-            {mode === "annual"
-              ? "Get a comprehensive annual review: YoY trends, budget adherence, seasonal patterns, and goals for next year."
-              : "Get monthly spending insights, budget alerts, and specific savings recommendations."}
+            {mode === "annual" && "Comprehensive annual review: YoY trends, budget adherence, seasonal patterns, and goals."}
+            {mode === "halfyear" && `Six-month review for ${label}: spending trends, budget adherence, and mid-year adjustments.`}
+            {mode === "quarter" && `Quarterly breakdown for ${label}: category performance, monthly trends, and next-quarter priorities.`}
+            {mode === "monthly" && "Monthly insights: spending vs budget, anomalies, and specific savings recommendations."}
           </p>
         </div>
       )}
@@ -241,10 +330,8 @@ export default function Insights() {
           <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wide">History</h2>
           {log.map((entry) => {
             const dt = new Date(entry.generated_at);
-            const isAnnual = entry.month === 0;
-            const entryLabel = isAnnual
-              ? `Full Year ${entry.year}`
-              : `${MONTH_LABELS[entry.month]} ${entry.year}`;
+            const entryLabel = logEntryLabel(entry);
+            const badge = logEntryBadge(entry);
             const timeLabel = `${dt.toLocaleDateString()} ${dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
             const isExpanded = expandedLog === entry.id;
             return (
@@ -256,7 +343,9 @@ export default function Insights() {
                   >
                     {isExpanded ? "▾" : "▸"}
                     <span>{entryLabel}</span>
-                    {isAnnual && <span className="text-xs bg-yellow-400/15 text-yellow-400 px-1.5 py-0.5 rounded">Annual</span>}
+                    {badge && (
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${badge.cls}`}>{badge.label}</span>
+                    )}
                     <span className="text-zinc-600 text-xs">— {timeLabel}</span>
                   </button>
                   <button

@@ -74,6 +74,8 @@ class InsightsLog(Base):
     id = Column(Integer, primary_key=True, index=True)
     year = Column(Integer, nullable=False)
     month = Column(Integer, nullable=False)
+    start_month = Column(Integer, nullable=True)
+    end_month = Column(Integer, nullable=True)
     generated_at = Column(DateTime, nullable=False)
     content = Column(String, nullable=False)
 
