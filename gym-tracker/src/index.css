@@ -308,6 +308,17 @@ h2:first-child {
   color: var(--text-dim);
 }
 
+.set-row .cardio-variant {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 0.6rem 0.5rem;
+  font-size: 1rem;
+  min-height: 44px;
+  flex-shrink: 0;
+}
+
 .set-row .unit {
   color: var(--text-dim);
   font-size: 0.78rem;

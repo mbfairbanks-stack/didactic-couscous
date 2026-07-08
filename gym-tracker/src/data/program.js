@@ -2,6 +2,7 @@
 //   'weight' -> weight (lb) + reps
 //   'time'   -> seconds
 //   'reps'   -> reps only (bodyweight)
+//   'cardio' -> level + distance (optional `variants` gives a machine picker)
 //
 // Exercise ids are stable across workouts so shared exercises (e.g. the
 // Romanian deadlift in both A and C, or Plank in A and C) build one
@@ -13,6 +14,7 @@ export const PROGRAM = {
     name: 'Workout A',
     dayOfWeek: 2, // Tuesday (0 = Sunday)
     exercises: [
+      { id: 'elliptical', name: 'Elliptical bike (warm-up)', sets: 1, targetLabel: '15 min', type: 'cardio' },
       { id: 'goblet_squat', name: 'Goblet squats', sets: 3, targetLabel: '10', type: 'weight' },
       { id: 'db_bench_press', name: 'Dumbbell bench press', sets: 3, targetLabel: '10', type: 'weight' },
       { id: 'lat_pulldown', name: 'Lat pulldown', sets: 3, targetLabel: '10', type: 'weight' },
@@ -26,6 +28,7 @@ export const PROGRAM = {
     name: 'Workout B',
     dayOfWeek: 4, // Thursday
     exercises: [
+      { id: 'stairmaster', name: 'Stairmaster (warm-up)', sets: 1, targetLabel: '15 min', type: 'cardio' },
       { id: 'leg_press', name: 'Leg press', sets: 3, targetLabel: '12', type: 'weight' },
       { id: 'seated_cable_row', name: 'Seated cable row', sets: 3, targetLabel: '10', type: 'weight' },
       { id: 'incline_db_press', name: 'Incline dumbbell press', sets: 3, targetLabel: '10', type: 'weight' },
@@ -39,6 +42,7 @@ export const PROGRAM = {
     name: 'Workout C',
     dayOfWeek: 6, // Saturday
     exercises: [
+      { id: 'row_or_jog', name: 'Row / Jog (warm-up)', sets: 1, targetLabel: '15 min', type: 'cardio', variants: ['Row', 'Jog'] },
       { id: 'smith_squat', name: 'Smith machine squats', sets: 3, targetLabel: '10', type: 'weight' },
       { id: 'assisted_pullup_latpulldown', name: 'Assisted pull-ups / lat pulldown', sets: 3, targetLabel: '10', type: 'weight' },
       { id: 'machine_chest_press', name: 'Machine chest press', sets: 3, targetLabel: '10', type: 'weight' },

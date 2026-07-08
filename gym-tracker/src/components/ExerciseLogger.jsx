@@ -1,6 +1,41 @@
 import { formatDateLabel, topSetMetric } from '../lib/stats'
 
-function SetInputs({ type, set, onChange }) {
+function SetInputs({ exercise, set, onChange }) {
+  const type = exercise.type
+  if (type === 'cardio') {
+    return (
+      <>
+        {exercise.variants && (
+          <select
+            className="cardio-variant"
+            value={set.variant ?? exercise.variants[0]}
+            onChange={(e) => onChange({ ...set, variant: e.target.value })}
+          >
+            {exercise.variants.map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+        )}
+        <input
+          type="number"
+          inputMode="decimal"
+          placeholder="lvl"
+          value={set.level ?? ''}
+          onChange={(e) => onChange({ ...set, level: e.target.value })}
+        />
+        <span className="x">·</span>
+        <input
+          type="number"
+          inputMode="decimal"
+          placeholder="dist"
+          value={set.distance ?? ''}
+          onChange={(e) => onChange({ ...set, distance: e.target.value })}
+        />
+      </>
+    )
+  }
   if (type === 'weight') {
     return (
       <>
@@ -55,7 +90,7 @@ export default function ExerciseLogger({ exercise, sets, onChangeSet, lastEntry 
       <div className="ex-header">
         <span className="ex-name">{exercise.name}</span>
         <span className="ex-target">
-          {exercise.sets} x {exercise.targetLabel}
+          {exercise.type === 'cardio' ? exercise.targetLabel : `${exercise.sets} x ${exercise.targetLabel}`}
         </span>
       </div>
 
@@ -72,7 +107,7 @@ export default function ExerciseLogger({ exercise, sets, onChangeSet, lastEntry 
       {sets.map((set, i) => (
         <div className="set-row" key={i}>
           <span className="set-num">{i + 1}</span>
-          <SetInputs type={exercise.type} set={set} onChange={(next) => onChangeSet(i, next)} />
+          <SetInputs exercise={exercise} set={set} onChange={(next) => onChangeSet(i, next)} />
         </div>
       ))}
     </div>

@@ -19,7 +19,18 @@ function hasData(set, type) {
   if (type === 'weight') return set.reps != null && set.reps !== ''
   if (type === 'time') return set.seconds != null && set.seconds !== ''
   if (type === 'reps') return set.reps != null && set.reps !== ''
+  if (type === 'cardio')
+    return (set.distance != null && set.distance !== '') || (set.level != null && set.level !== '')
   return false
+}
+
+// Human label for a cardio set, e.g. "Row — Lvl 8 · 2.3".
+function cardioDisplay(s) {
+  const parts = []
+  if (s.level != null && s.level !== '') parts.push(`Lvl ${s.level}`)
+  if (s.distance != null && s.distance !== '') parts.push(`${s.distance} dist`)
+  const body = parts.join(' · ') || '—'
+  return s.variant ? `${s.variant} — ${body}` : body
 }
 
 // The "top set" metric used for best/progress comparisons:
@@ -48,6 +59,12 @@ export function topSetMetric(sets, type) {
     let best = valid[0]
     for (const s of valid) if (Number(s.reps) > Number(best.reps)) best = s
     return { value: Number(best.reps) || 0, display: `${best.reps} reps`, set: best }
+  }
+  if (type === 'cardio') {
+    // Distance is the progression metric ("go farther in 15 min").
+    let best = valid[0]
+    for (const s of valid) if ((Number(s.distance) || 0) > (Number(best.distance) || 0)) best = s
+    return { value: Number(best.distance) || 0, display: cardioDisplay(best), set: best }
   }
   return null
 }

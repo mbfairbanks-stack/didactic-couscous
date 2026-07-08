@@ -7,6 +7,7 @@ function blankSets(exercise) {
   return Array.from({ length: exercise.sets }, () => {
     if (exercise.type === 'weight') return { weight: '', reps: '' }
     if (exercise.type === 'time') return { seconds: '' }
+    if (exercise.type === 'cardio') return { level: '', distance: '', variant: exercise.variants?.[0] ?? '' }
     return { reps: '' }
   })
 }
@@ -20,6 +21,13 @@ function normalizeSet(set, type) {
   }
   if (type === 'time') {
     return { seconds: set.seconds === '' || set.seconds == null ? null : Number(set.seconds) }
+  }
+  if (type === 'cardio') {
+    return {
+      level: set.level === '' || set.level == null ? null : Number(set.level),
+      distance: set.distance === '' || set.distance == null ? null : Number(set.distance),
+      variant: set.variant || null,
+    }
   }
   return { reps: set.reps === '' || set.reps == null ? null : Number(set.reps) }
 }
@@ -35,6 +43,9 @@ export default function LogWorkout({ workoutKey, sessions, existingSession, onSa
             weight: s.weight ?? '',
             reps: s.reps ?? '',
             seconds: s.seconds ?? '',
+            level: s.level ?? '',
+            distance: s.distance ?? '',
+            variant: s.variant ?? (ex.variants?.[0] ?? ''),
           }))
         : blankSets(ex)
     }
