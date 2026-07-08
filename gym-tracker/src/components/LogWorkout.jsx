@@ -3,13 +3,15 @@ import { PROGRAM } from '../data/program'
 import { todayISO, findLastEntry } from '../lib/stats'
 import ExerciseLogger from './ExerciseLogger'
 
+function blankSet(exercise) {
+  if (exercise.type === 'weight') return { weight: '', reps: '' }
+  if (exercise.type === 'time') return { seconds: '' }
+  if (exercise.type === 'cardio') return { level: '', distance: '', variant: exercise.variants?.[0] ?? '' }
+  return { reps: '' }
+}
+
 function blankSets(exercise) {
-  return Array.from({ length: exercise.sets }, () => {
-    if (exercise.type === 'weight') return { weight: '', reps: '' }
-    if (exercise.type === 'time') return { seconds: '' }
-    if (exercise.type === 'cardio') return { level: '', distance: '', variant: exercise.variants?.[0] ?? '' }
-    return { reps: '' }
-  })
+  return Array.from({ length: exercise.sets }, () => blankSet(exercise))
 }
 
 function normalizeSet(set, type) {
@@ -38,16 +40,23 @@ export default function LogWorkout({ workoutKey, sessions, existingSession, onSa
   const [entries, setEntries] = useState(() => {
     const init = {}
     for (const ex of workout.exercises) {
-      init[ex.id] = existingSession?.entries?.[ex.id]
-        ? existingSession.entries[ex.id].map((s) => ({
-            weight: s.weight ?? '',
-            reps: s.reps ?? '',
-            seconds: s.seconds ?? '',
-            level: s.level ?? '',
-            distance: s.distance ?? '',
-            variant: s.variant ?? (ex.variants?.[0] ?? ''),
-          }))
-        : blankSets(ex)
+      if (!existingSession?.entries?.[ex.id]) {
+        init[ex.id] = blankSets(ex)
+        continue
+      }
+      // Rehydrate saved sets, then pad up to the program's current target so
+      // a session logged before the target grew (e.g. 2x12 -> 3x12) still
+      // exposes the extra set rows for editing.
+      const saved = existingSession.entries[ex.id].map((s) => ({
+        weight: s.weight ?? '',
+        reps: s.reps ?? '',
+        seconds: s.seconds ?? '',
+        level: s.level ?? '',
+        distance: s.distance ?? '',
+        variant: s.variant ?? (ex.variants?.[0] ?? ''),
+      }))
+      while (saved.length < ex.sets) saved.push(blankSet(ex))
+      init[ex.id] = saved
     }
     return init
   })
@@ -60,6 +69,13 @@ export default function LogWorkout({ workoutKey, sessions, existingSession, onSa
     setEntries((prev) => ({
       ...prev,
       [exerciseId]: prev[exerciseId].map((s, i) => (i === index ? next : s)),
+    }))
+  }
+
+  function addSet(exercise) {
+    setEntries((prev) => ({
+      ...prev,
+      [exercise.id]: [...prev[exercise.id], blankSet(exercise)],
     }))
   }
 
@@ -112,6 +128,7 @@ export default function LogWorkout({ workoutKey, sessions, existingSession, onSa
             sets={entries[ex.id]}
             lastEntry={lastEntry}
             onChangeSet={(i, next) => updateSet(ex.id, i, next)}
+            onAddSet={() => addSet(ex)}
           />
         )
       })}

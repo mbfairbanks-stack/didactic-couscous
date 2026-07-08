@@ -80,7 +80,7 @@ function SetInputs({ exercise, set, onChange }) {
   )
 }
 
-export default function ExerciseLogger({ exercise, sets, onChangeSet, lastEntry }) {
+export default function ExerciseLogger({ exercise, sets, onChangeSet, onAddSet, lastEntry }) {
   const currentTop = topSetMetric(sets, exercise.type)
   const lastTop = lastEntry ? topSetMetric(lastEntry.sets, lastEntry.type) : null
   const isNewBest = currentTop && lastTop && currentTop.value > lastTop.value
@@ -110,6 +110,12 @@ export default function ExerciseLogger({ exercise, sets, onChangeSet, lastEntry 
           <SetInputs exercise={exercise} set={set} onChange={(next) => onChangeSet(i, next)} />
         </div>
       ))}
+
+      {exercise.type !== 'cardio' && onAddSet && (
+        <button type="button" className="add-set-btn" onClick={onAddSet}>
+          + Add set
+        </button>
+      )}
     </div>
   )
 }

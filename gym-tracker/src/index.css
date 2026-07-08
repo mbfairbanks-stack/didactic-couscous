@@ -319,6 +319,23 @@ h2:first-child {
   flex-shrink: 0;
 }
 
+.add-set-btn {
+  background: none;
+  border: 1px dashed var(--border);
+  color: var(--text-dim);
+  border-radius: 10px;
+  padding: 0.5rem;
+  font-size: 0.9rem;
+  width: 100%;
+  min-height: 40px;
+  margin-top: 0.25rem;
+}
+
+.add-set-btn:active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .set-row .unit {
   color: var(--text-dim);
   font-size: 0.78rem;
