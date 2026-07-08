@@ -19,7 +19,7 @@ export const PROGRAM = {
       { id: 'db_bench_press', name: 'Dumbbell bench press', sets: 3, targetLabel: '10', type: 'weight' },
       { id: 'lat_pulldown', name: 'Lat pulldown', sets: 3, targetLabel: '10', type: 'weight' },
       { id: 'db_rdl', name: 'Dumbbell Romanian deadlift', sets: 3, targetLabel: '10', type: 'weight' },
-      { id: 'seated_shoulder_press', name: 'Seated shoulder press', sets: 2, targetLabel: '12', type: 'weight' },
+      { id: 'seated_shoulder_press', name: 'Seated shoulder press', sets: 3, targetLabel: '12', type: 'weight' },
       { id: 'plank', name: 'Plank', sets: 3, targetLabel: '30-45 sec', type: 'time' },
     ],
   },
