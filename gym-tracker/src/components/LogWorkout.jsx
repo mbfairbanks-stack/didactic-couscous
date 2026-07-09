@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { PROGRAM } from '../data/program'
 import { todayISO, findLastEntry } from '../lib/stats'
 import ExerciseLogger from './ExerciseLogger'
@@ -61,9 +61,31 @@ export default function LogWorkout({ workoutKey, sessions, existingSession, onSa
     return init
   })
 
+  const [doneKeys, setDoneKeys] = useState(() => new Set())
   const sessionId = useMemo(() => existingSession?.id || crypto.randomUUID(), [existingSession])
   const today = todayISO()
   const dateIsInFuture = date > today
+
+  // Keep the screen awake while logging so it doesn't sleep between sets.
+  useEffect(() => {
+    let lock = null
+    const request = async () => {
+      try {
+        if ('wakeLock' in navigator) lock = await navigator.wakeLock.request('screen')
+      } catch {
+        // Wake Lock unsupported or blocked (e.g. low battery) — harmless.
+      }
+    }
+    request()
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') request()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      lock?.release().catch(() => {})
+    }
+  }, [])
 
   function updateSet(exerciseId, index, next) {
     setEntries((prev) => ({
@@ -77,6 +99,38 @@ export default function LogWorkout({ workoutKey, sessions, existingSession, onSa
       ...prev,
       [exercise.id]: [...prev[exercise.id], blankSet(exercise)],
     }))
+  }
+
+  // Fill each set from the matching set of the last session for this exercise.
+  function prefillFromLast(exercise, lastEntry) {
+    if (!lastEntry) return
+    setEntries((prev) => ({
+      ...prev,
+      [exercise.id]: prev[exercise.id].map((s, i) => {
+        const src = lastEntry.sets[i]
+        if (!src) return s
+        if (exercise.type === 'weight') return { ...s, weight: src.weight ?? '', reps: src.reps ?? '' }
+        if (exercise.type === 'time') return { ...s, seconds: src.seconds ?? '' }
+        if (exercise.type === 'cardio')
+          return { ...s, level: src.level ?? '', distance: src.distance ?? '', variant: src.variant ?? s.variant }
+        return { ...s, reps: src.reps ?? '' }
+      }),
+    }))
+  }
+
+  function toggleDone(exerciseId, index) {
+    const key = `${exerciseId}:${index}`
+    setDoneKeys((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+        // Auto-start the rest timer when a set is marked complete.
+        window.dispatchEvent(new CustomEvent('gym:rest-start', { detail: 90 }))
+      }
+      return next
+    })
   }
 
   function handleSave() {
@@ -129,6 +183,9 @@ export default function LogWorkout({ workoutKey, sessions, existingSession, onSa
             lastEntry={lastEntry}
             onChangeSet={(i, next) => updateSet(ex.id, i, next)}
             onAddSet={() => addSet(ex)}
+            onPrefill={lastEntry ? () => prefillFromLast(ex, lastEntry) : null}
+            isDone={(i) => doneKeys.has(`${ex.id}:${i}`)}
+            onToggleDone={(i) => toggleDone(ex.id, i)}
           />
         )
       })}

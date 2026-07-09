@@ -73,6 +73,28 @@ export function entryHasAnyData(sets, type) {
   return (sets || []).some((s) => hasData(s, type))
 }
 
+// Per-set "volume" contribution used for the total-volume trend:
+//   weight -> weight * reps      time -> seconds
+//   reps   -> reps               cardio -> distance
+function setVolume(set, type) {
+  if (type === 'weight') return (Number(set.weight) || 0) * (Number(set.reps) || 0)
+  if (type === 'time') return Number(set.seconds) || 0
+  if (type === 'reps') return Number(set.reps) || 0
+  if (type === 'cardio') return Number(set.distance) || 0
+  return 0
+}
+
+export function entryVolume(sets, type) {
+  return (sets || []).filter((s) => hasData(s, type)).reduce((sum, s) => sum + setVolume(s, type), 0)
+}
+
+function formatVolume(value, type) {
+  if (type === 'time') return `${value.toLocaleString()}s total`
+  if (type === 'reps') return `${value.toLocaleString()} reps total`
+  if (type === 'cardio') return `${value.toLocaleString()} dist`
+  return `${value.toLocaleString()} lb vol`
+}
+
 // Most recent session for this exercise strictly before `beforeDate`
 // (or same date but logged earlier, per createdAt) that has data logged.
 // `excludeId` skips the session currently being edited. `selfCreatedAt`
@@ -101,16 +123,74 @@ export function findLastEntry(sessions, exerciseId, { beforeDate, excludeId, sel
   return best
 }
 
-// All sessions containing data for an exercise, oldest to newest, with
-// their top-set metric, for progress charts.
-export function progressSeries(sessions, exerciseId) {
+// All sessions containing data for an exercise, oldest to newest, with a
+// per-session value for progress charts. `metric` is 'top' (top-set) or
+// 'volume' (total work that session).
+export function progressSeries(sessions, exerciseId, metric = 'top') {
   const out = []
   for (const session of sessions) {
     const sets = session.entries?.[exerciseId]
     const type = session.entryTypes?.[exerciseId]
     if (!sets || !type || !entryHasAnyData(sets, type)) continue
-    const top = topSetMetric(sets, type)
-    if (top) out.push({ date: session.date, value: top.value, display: top.display })
+    if (metric === 'volume') {
+      const value = entryVolume(sets, type)
+      out.push({ date: session.date, value, display: formatVolume(value, type) })
+    } else {
+      const top = topSetMetric(sets, type)
+      if (top) out.push({ date: session.date, value: top.value, display: top.display })
+    }
   }
   return out
+}
+
+// Best-ever top set for every exercise that has any logged data.
+export function personalBests(sessions, exercises) {
+  const out = []
+  for (const ex of exercises) {
+    const series = progressSeries(sessions, ex.id)
+    if (series.length === 0) continue
+    // On ties, keep the most recent (series is oldest->newest) so e.g. a later
+    // 50x10 is shown over an earlier 50x8.
+    const best = series.reduce((a, b) => (b.value >= a.value ? b : a))
+    out.push({ id: ex.id, name: ex.name, display: best.display, date: best.date })
+  }
+  return out
+}
+
+// Monday (local) of the week containing an ISO date, as its own ISO string.
+function mondayOf(iso) {
+  const [y, m, d] = iso.split('-').map(Number)
+  const dt = new Date(y, m - 1, d)
+  dt.setDate(dt.getDate() - ((dt.getDay() + 6) % 7))
+  const mm = String(dt.getMonth() + 1).padStart(2, '0')
+  const dd = String(dt.getDate()).padStart(2, '0')
+  return `${dt.getFullYear()}-${mm}-${dd}`
+}
+
+// Count of consecutive weeks up to and including this week that have >=1
+// session. Breaks as soon as a week is skipped.
+export function weeklyStreak(sessions) {
+  const weeks = new Set(sessions.map((s) => mondayOf(s.date)))
+  let count = 0
+  let cur = mondayOf(todayISO())
+  while (weeks.has(cur)) {
+    count++
+    const [y, m, d] = cur.split('-').map(Number)
+    const dt = new Date(y, m - 1, d)
+    dt.setDate(dt.getDate() - 7)
+    const mm = String(dt.getMonth() + 1).padStart(2, '0')
+    const dd = String(dt.getDate()).padStart(2, '0')
+    cur = `${dt.getFullYear()}-${mm}-${dd}`
+  }
+  return count
+}
+
+export function sessionStats(sessions) {
+  const total = sessions.length
+  const now = new Date()
+  const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const thisMonth = sessions.filter((s) => s.date.startsWith(ym)).length
+  // sessions are stored sorted ascending, so the last one is the newest.
+  const last = total ? sessions[sessions.length - 1].date : null
+  return { total, thisMonth, last, streak: weeklyStreak(sessions) }
 }

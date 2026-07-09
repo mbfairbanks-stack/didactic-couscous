@@ -1,0 +1,12 @@
+# Serves the built static app and reverse-proxies the backup API.
+# handle_path strips the /api prefix, so the backend receives /backup.
+49.12.212.50.sslip.io {
+	handle_path /api/* {
+		reverse_proxy 127.0.0.1:8787
+	}
+	handle {
+		root * /var/www/gym-tracker
+		file_server
+		try_files {path} /index.html
+	}
+}

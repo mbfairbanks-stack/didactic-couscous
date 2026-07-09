@@ -1,5 +1,34 @@
 import { formatDateLabel, topSetMetric } from '../lib/stats'
 
+// Number input flanked by -/+ steppers so you can adjust weight/reps with a
+// thumb instead of opening the keyboard mid-set.
+function NumberField({ value, onChange, step, placeholder, inputMode = 'numeric' }) {
+  function adjust(delta) {
+    const n = value === '' || value == null ? 0 : Number(value)
+    let next = n + delta
+    if (next < 0) next = 0
+    next = Math.round(next * 100) / 100
+    onChange(String(next))
+  }
+  return (
+    <div className="numfield">
+      <button type="button" className="step" onClick={() => adjust(-step)} aria-label="decrease" tabIndex={-1}>
+        −
+      </button>
+      <input
+        type="number"
+        inputMode={inputMode}
+        placeholder={placeholder}
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <button type="button" className="step" onClick={() => adjust(step)} aria-label="increase" tabIndex={-1}>
+        +
+      </button>
+    </div>
+  )
+}
+
 function SetInputs({ exercise, set, onChange }) {
   const type = exercise.type
   if (type === 'cardio') {
@@ -18,20 +47,19 @@ function SetInputs({ exercise, set, onChange }) {
             ))}
           </select>
         )}
-        <input
-          type="number"
-          inputMode="decimal"
+        <NumberField
+          value={set.level}
+          step={1}
           placeholder="lvl"
-          value={set.level ?? ''}
-          onChange={(e) => onChange({ ...set, level: e.target.value })}
+          onChange={(v) => onChange({ ...set, level: v })}
         />
         <span className="x">·</span>
-        <input
-          type="number"
-          inputMode="decimal"
+        <NumberField
+          value={set.distance}
+          step={0.1}
           placeholder="dist"
-          value={set.distance ?? ''}
-          onChange={(e) => onChange({ ...set, distance: e.target.value })}
+          inputMode="decimal"
+          onChange={(v) => onChange({ ...set, distance: v })}
         />
       </>
     )
@@ -39,64 +67,57 @@ function SetInputs({ exercise, set, onChange }) {
   if (type === 'weight') {
     return (
       <>
-        <input
-          type="number"
-          inputMode="decimal"
+        <NumberField
+          value={set.weight}
+          step={5}
           placeholder="lb"
-          value={set.weight ?? ''}
-          onChange={(e) => onChange({ ...set, weight: e.target.value })}
+          inputMode="decimal"
+          onChange={(v) => onChange({ ...set, weight: v })}
         />
         <span className="x">x</span>
-        <input
-          type="number"
-          inputMode="numeric"
-          placeholder="reps"
-          value={set.reps ?? ''}
-          onChange={(e) => onChange({ ...set, reps: e.target.value })}
-        />
+        <NumberField value={set.reps} step={1} placeholder="reps" onChange={(v) => onChange({ ...set, reps: v })} />
       </>
     )
   }
   if (type === 'time') {
     return (
-      <input
-        type="number"
-        inputMode="numeric"
+      <NumberField
+        value={set.seconds}
+        step={5}
         placeholder="seconds"
-        value={set.seconds ?? ''}
-        onChange={(e) => onChange({ ...set, seconds: e.target.value })}
+        onChange={(v) => onChange({ ...set, seconds: v })}
       />
     )
   }
   // reps only
-  return (
-    <input
-      type="number"
-      inputMode="numeric"
-      placeholder="reps"
-      value={set.reps ?? ''}
-      onChange={(e) => onChange({ ...set, reps: e.target.value })}
-    />
-  )
+  return <NumberField value={set.reps} step={1} placeholder="reps" onChange={(v) => onChange({ ...set, reps: v })} />
 }
 
-export default function ExerciseLogger({ exercise, sets, onChangeSet, onAddSet, lastEntry }) {
+export default function ExerciseLogger({ exercise, sets, onChangeSet, onAddSet, onPrefill, isDone, onToggleDone, lastEntry }) {
   const currentTop = topSetMetric(sets, exercise.type)
   const lastTop = lastEntry ? topSetMetric(lastEntry.sets, lastEntry.type) : null
   const isNewBest = currentTop && lastTop && currentTop.value > lastTop.value
+  const isCardio = exercise.type === 'cardio'
 
   return (
     <div className="card exercise-card">
       <div className="ex-header">
         <span className="ex-name">{exercise.name}</span>
         <span className="ex-target">
-          {exercise.type === 'cardio' ? exercise.targetLabel : `${exercise.sets} x ${exercise.targetLabel}`}
+          {isCardio ? exercise.targetLabel : `${exercise.sets} x ${exercise.targetLabel}`}
         </span>
       </div>
 
       {lastEntry && lastTop ? (
         <div className="last-time">
-          Last time ({formatDateLabel(lastEntry.date)}): <strong>{lastTop.display}</strong>
+          <span>
+            Last time ({formatDateLabel(lastEntry.date)}): <strong>{lastTop.display}</strong>
+          </span>
+          {onPrefill && (
+            <button type="button" className="prefill-btn" onClick={onPrefill}>
+              Prefill
+            </button>
+          )}
         </div>
       ) : (
         <div className="last-time">No previous data yet &mdash; log your first set.</div>
@@ -105,13 +126,23 @@ export default function ExerciseLogger({ exercise, sets, onChangeSet, onAddSet, 
       {isNewBest && <div className="new-best">New best!</div>}
 
       {sets.map((set, i) => (
-        <div className="set-row" key={i}>
+        <div className={`set-row${isDone && isDone(i) ? ' done' : ''}`} key={i}>
           <span className="set-num">{i + 1}</span>
           <SetInputs exercise={exercise} set={set} onChange={(next) => onChangeSet(i, next)} />
+          {!isCardio && onToggleDone && (
+            <button
+              type="button"
+              className="set-done"
+              onClick={() => onToggleDone(i)}
+              aria-label={isDone && isDone(i) ? 'Mark set not done' : 'Mark set done, start rest'}
+            >
+              ✓
+            </button>
+          )}
         </div>
       ))}
 
-      {exercise.type !== 'cardio' && onAddSet && (
+      {!isCardio && onAddSet && (
         <button type="button" className="add-set-btn" onClick={onAddSet}>
           + Add set
         </button>

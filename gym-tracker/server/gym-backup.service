@@ -1,0 +1,20 @@
+[Unit]
+Description=Gym Tracker backup API
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/gym-tracker/backup.env
+Environment=GYM_BACKUP_FILE=/var/lib/gym-tracker/backup.json
+ExecStart=/usr/bin/python3 /opt/gym-tracker/backup_server.py
+Restart=on-failure
+# Run as an isolated, unprivileged dynamic user; StateDirectory creates and
+# owns /var/lib/gym-tracker for it.
+DynamicUser=yes
+StateDirectory=gym-tracker
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target

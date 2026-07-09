@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
+const DEFAULT_REST = 90
+
 function beep() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)()
@@ -48,6 +50,16 @@ export default function RestTimer() {
     setEndAt(Date.now() + seconds * 1000)
     setOpen(true)
   }
+
+  // Auto-start when a set is marked done in the logger. Kept in a ref so the
+  // listener is registered once and always calls the latest `start`.
+  const startRef = useRef(start)
+  startRef.current = start
+  useEffect(() => {
+    const handler = (e) => startRef.current(typeof e.detail === 'number' ? e.detail : DEFAULT_REST)
+    window.addEventListener('gym:rest-start', handler)
+    return () => window.removeEventListener('gym:rest-start', handler)
+  }, [])
 
   function reset() {
     firedRef.current = false
