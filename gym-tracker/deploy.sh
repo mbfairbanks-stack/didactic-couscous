@@ -30,8 +30,11 @@ fi
 chmod 600 /etc/gym-tracker/backup.env
 cp /opt/gym-tracker/gym-backup.service /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable --now gym-backup
+systemctl enable gym-backup
+systemctl restart gym-backup
 systemctl reload caddy
+sleep 1
+echo "gym-backup service is: $(systemctl is-active gym-backup)"
 echo
 echo "Your backup token (paste into the app's Backup tab):"
 cat /etc/gym-tracker/backup.env
