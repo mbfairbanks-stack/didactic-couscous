@@ -13,12 +13,12 @@ SERVER="${GYM_SERVER:-root@49.12.212.50}"
 SITE="https://49.12.212.50.sslip.io"
 
 server_setup() {
-  echo "==> Uploading backup API + Caddy config to $SERVER…"
+  echo "==> Uploading backup API + Caddy config to ${SERVER}"
   ssh "$SERVER" 'mkdir -p /opt/gym-tracker /etc/gym-tracker'
   rsync -avz server/backup_server.py server/gym-backup.service "$SERVER":/opt/gym-tracker/
   rsync -avz server/Caddyfile "$SERVER":/etc/caddy/Caddyfile
 
-  echo "==> Configuring the service (idempotent; existing token is kept)…"
+  echo "==> Configuring the service (idempotent; existing token is kept)"
   ssh "$SERVER" 'bash -s' <<'REMOTE'
 set -euo pipefail
 if [ ! -f /etc/gym-tracker/backup.env ]; then
@@ -46,10 +46,10 @@ if [ "${1:-}" = "--server-setup" ]; then
   server_setup
 fi
 
-echo "==> Building…"
+echo "==> Building"
 npm run build
 
-echo "==> Syncing app to $SERVER…"
+echo "==> Syncing app to ${SERVER}"
 rsync -avz --delete dist/ "$SERVER":/var/www/gym-tracker/
 
-echo "==> Done → $SITE"
+echo "==> Done -> ${SITE}"
