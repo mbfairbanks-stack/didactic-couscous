@@ -4,7 +4,20 @@ A tiny, single-user backup endpoint so the app can back up / restore your
 workout JSON to your own Hetzner box. Stdlib Python only (no pip), token-auth,
 runs as an isolated systemd service behind Caddy at `/api/backup`.
 
-## One-time setup on the server
+## Quick setup (one command)
+
+From the `gym-tracker/` folder on your Mac:
+
+```bash
+./deploy.sh --server-setup
+```
+
+This uploads the API + Caddy config, generates a token (only if one doesn't
+already exist), starts the service, reloads Caddy, and prints the token to
+paste into the app's **Backup** tab. It also builds and syncs the app. The
+manual steps below are just the fallback / explanation of what it does.
+
+## One-time setup on the server (manual)
 
 SSH in as root, then:
 
