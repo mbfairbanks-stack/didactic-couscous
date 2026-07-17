@@ -24,6 +24,7 @@ services:
       - BUDGET_PASSWORD=${BUDGET_PASSWORD:-}
       - DEMO_PASSWORD=${DEMO_PASSWORD:-demo}
       - MULTI_USER=true
+      - DB_PATH=/data/budget.db
       - AUTH_DB_PATH=/data/auth.db
       - USER_DB_DIR=/data/users
     restart: unless-stopped
