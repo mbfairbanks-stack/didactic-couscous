@@ -1,9 +1,9 @@
-# Your private instance (password-protected)
-your-domain.com {
+# Private instance (password-protected)
+77-42-64-184.sslip.io {
     reverse_proxy app:80
 }
 
-# Public demo (read-only, no login required)
-demo.your-domain.com {
+# Public demo (read-only)
+demo.77-42-64-184.sslip.io {
     reverse_proxy demo:80
 }
