@@ -4,88 +4,80 @@
  */
 
 /**
- * Compute monthly allocation across RRSP → TFSA → taxable.
+ * Project portfolio balance year-by-year to retirement.
  *
- * @param {object} profile  RetirementProfile from API
- * @param {number} monthlyFreeCash  Monthly surplus after expenses
- * @returns {{ rrsp, tfsa, taxable, taxSavings }}
+ * @param {object} profile            RetirementProfile from API
+ * @param {number} currentAssets      Current investable assets (excl. house)
+ * @param {number} monthlyRrsp        Avg monthly RRSP contribution (employee + employer), from income records
+ * @param {number} monthlyEspp        Avg monthly ESPP deduction, from income records
+ * @param {Array}  vestEvents         [{year, value}] one-time bumps (RSUs, bonuses)
+ * @param {number} startYear          Current calendar year
+ * @returns {Array<{year, age, balance, target}>}
  */
-export function allocate(profile, monthlyFreeCash) {
-  const rrspRoom = (profile?.rrsp_room ?? 0) / 12;
-  const tfsaRoom = (profile?.tfsa_room ?? 0) / 12;
-  const marginalRate = profile?.marginal_rate ?? 0;
-
-  let remaining = Math.max(monthlyFreeCash, 0);
-  const rrsp = Math.min(remaining, rrspRoom);
-  remaining -= rrsp;
-  const tfsa = Math.min(remaining, tfsaRoom);
-  remaining -= tfsa;
-  const taxable = remaining;
-  const taxSavings = rrsp * marginalRate;
-
-  return { rrsp, tfsa, taxable, taxSavings };
-}
-
-/**
- * Project portfolio balance year-by-year from now until retirement.
- *
- * @param {object} profile         RetirementProfile from API
- * @param {number} currentAssets   Current investable net worth
- * @param {number} monthlyAdd      Monthly savings addition
- * @param {Array}  vestEvents      [{year, value}] from RSUs/bonuses (after-tax estimate)
- * @param {number} startYear       Current calendar year
- * @returns {Array<{year, balance, target}>}
- */
-export function project(profile, currentAssets, monthlyAdd, vestEvents = [], startYear) {
+export function project(profile, currentAssets, monthlyRrsp, monthlyEspp, vestEvents = [], startYear) {
   const returnRate = profile?.expected_return ?? 0.06;
   const inflation = profile?.expected_inflation ?? 0.025;
-  const yearsToRetire = Math.max((profile?.target_retirement_age ?? 60) - (profile?.current_age ?? 40), 1);
+  const currentAge = profile?.current_age ?? 40;
+  const retireAge = profile?.target_retirement_age ?? 60;
+  const yearsToRetire = Math.max(retireAge - currentAge, 1);
   const targetAnnual = profile?.target_annual_income ?? 0;
   const govtAnnual = ((profile?.cpp_monthly ?? 0) + (profile?.oas_monthly ?? 0)) * 12;
 
   const vestByYear = {};
   for (const ev of vestEvents) {
-    vestByYear[ev.year] = (vestByYear[ev.year] ?? 0) + (ev.value ?? 0);
+    if (ev.year) vestByYear[ev.year] = (vestByYear[ev.year] ?? 0) + (ev.value ?? 0);
   }
 
+  // Monthly addition from payroll savings
+  const monthlyAdd = monthlyRrsp + monthlyEspp;
   const monthlyRate = returnRate / 12;
+
   let balance = currentAssets;
   const points = [];
 
   for (let i = 0; i <= yearsToRetire; i++) {
     const year = startYear + i;
-    // Compound monthly then add vesting windfall at year end
+    const age = currentAge + i;
+
+    // Compound monthly then add year-end windfalls
     for (let m = 0; m < 12; m++) {
       balance = balance * (1 + monthlyRate) + monthlyAdd;
     }
     balance += vestByYear[year] ?? 0;
 
-    // Required portfolio using 4% SWR, inflation-adjusted target income
+    // Required portfolio: 4% SWR on inflation-adjusted net need
     const inflatedTarget = targetAnnual * Math.pow(1 + inflation, i);
     const netNeeded = Math.max(inflatedTarget - govtAnnual, 0);
     const required = netNeeded / 0.04;
 
-    points.push({ year, balance: Math.round(balance), target: Math.round(required) });
+    points.push({ year, age, balance: Math.round(balance), target: Math.round(required) });
   }
 
   return points;
 }
 
 /**
- * Find the first year in projection where balance >= target (retirement achievable).
- * Returns null if never achieved within the projection window.
+ * Find the first projection point where balance >= target.
+ * Returns null if never achieved within the window.
  */
-export function findRetirementYear(projectionPoints) {
-  for (const pt of projectionPoints) {
-    if (pt.balance >= pt.target && pt.target > 0) return pt.year;
+export function findRetirementYear(points) {
+  for (const pt of points) {
+    if (pt.target > 0 && pt.balance >= pt.target) return pt.year;
   }
   return null;
 }
 
 /**
- * Estimate after-tax value of an RSU vest (rough: apply marginal rate to full value).
+ * For each goal, find the first projection year where balance >= target.
+ * Returns array of {goal, hitYear, hitAge}.
  */
-export function rsuAfterTax(units, price, marginalRate) {
-  const gross = units * price;
-  return gross * (1 - marginalRate);
+export function goalTimeline(goals, points) {
+  return goals.map((g) => {
+    const hit = points.find((pt) => pt.balance >= g.target_amount);
+    return {
+      goal: g,
+      hitYear: hit?.year ?? null,
+      hitAge: hit ? (hit.age ?? null) : null,
+    };
+  });
 }

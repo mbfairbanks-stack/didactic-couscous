@@ -3816,52 +3816,79 @@ def delete_retirement_goal(goal_id: int, db: Session = Depends(get_db)):
 @app.get("/retirement/summary")
 def retirement_summary(db: Session = Depends(get_db)):
     """Compute retirement readiness metrics from live DB data."""
-    import calendar as cal
+
+    today = datetime.date.today()
 
     # Latest profile
     profile = db.execute(
         select(models.RetirementProfile).order_by(models.RetirementProfile.year.desc())
     ).scalar_one_or_none()
 
-    # Current assets total
-    total_assets = db.execute(select(func.sum(models.Asset.balance))).scalar() or 0
+    # Investable assets: exclude property (house stays; assumed paid off at retirement)
+    investable_assets_raw = db.execute(
+        select(func.sum(models.Asset.balance))
+        .where(models.Asset.asset_type != "property")
+    ).scalar() or 0
 
-    # Current debts total (exclude mortgage principal — keep as illiquid equity)
+    # Subtract non-mortgage debts from investable pool
     total_debts = db.execute(
         select(func.sum(models.Debt.current_balance)).where(models.Debt.debt_type != "mortgage")
     ).scalar() or 0
 
-    investable_assets = max(total_assets - total_debts, 0)
+    total_assets = db.execute(select(func.sum(models.Asset.balance))).scalar() or 0
+    investable_assets = max(investable_assets_raw - total_debts, 0)
 
-    # 12-month avg income and expenses
-    today = datetime.date.today()
+    # ── Payroll savings: actual RRSP + ESPP from income records ──────────────
+    # All-time per-month rows for averaging
+    payroll_rows = db.execute(
+        select(
+            models.Income.year,
+            models.Income.month,
+            func.sum(models.Income.rrsp_employee + models.Income.rrsp_employer).label("rrsp"),
+            func.sum(models.Income.espp_deduction).label("espp"),
+        )
+        .group_by(models.Income.year, models.Income.month)
+        .order_by(models.Income.year, models.Income.month)
+    ).all()
+
+    # Only use months that had at least some savings activity for the average
+    active_months = [r for r in payroll_rows if (r.rrsp or 0) > 0 or (r.espp or 0) > 0]
+    payroll_monthly_rrsp = (sum(r.rrsp or 0 for r in active_months) / len(active_months)) if active_months else 0
+    payroll_monthly_espp = (sum(r.espp or 0 for r in active_months) / len(active_months)) if active_months else 0
+
+    # YTD actuals for current year
+    ytd_rows = db.execute(
+        select(
+            func.sum(models.Income.rrsp_employee).label("rrsp_emp"),
+            func.sum(models.Income.rrsp_employer).label("rrsp_er"),
+            func.sum(models.Income.espp_deduction).label("espp"),
+        )
+        .where(models.Income.year == today.year)
+    ).one()
+    ytd_rrsp_employee = ytd_rows.rrsp_emp or 0
+    ytd_rrsp_employer = ytd_rows.rrsp_er or 0
+    ytd_espp = ytd_rows.espp or 0
+
+    # ── Monthly surplus (extra beyond payroll savings) ────────────────────────
     cutoff_year = today.year - 1 if today.month <= 6 else today.year
-    income_rows = db.execute(
+    income_by_month = db.execute(
         select(models.Income.year, models.Income.month, func.sum(models.Income.amount).label("total"))
         .where(models.Income.year >= cutoff_year)
         .group_by(models.Income.year, models.Income.month)
     ).all()
-    avg_monthly_income = (sum(r.total for r in income_rows) / len(income_rows)) if income_rows else 0
-
-    expense_rows = db.execute(
+    expense_by_month = db.execute(
         select(models.Transaction.year, models.Transaction.month, func.sum(models.Transaction.amount).label("total"))
         .where(models.Transaction.year >= cutoff_year)
         .group_by(models.Transaction.year, models.Transaction.month)
     ).all()
-    avg_monthly_expenses = (sum(r.total for r in expense_rows) / len(expense_rows)) if expense_rows else 0
-
+    avg_monthly_income = (sum(r.total for r in income_by_month) / len(income_by_month)) if income_by_month else 0
+    avg_monthly_expenses = (sum(r.total for r in expense_by_month) / len(expense_by_month)) if expense_by_month else 0
     monthly_surplus = max(avg_monthly_income - avg_monthly_expenses, 0)
 
-    # RRSP contributions already being made via payroll
-    current_year_rrsp = db.execute(
-        select(func.sum(models.Income.rrsp_employee + models.Income.rrsp_employer))
-        .where(models.Income.year == today.year)
-    ).scalar() or 0
-
-    # Upcoming vesting events (RSUs + bonuses within 12 months)
+    # ── Upcoming vest events (RSUs + unpaid bonuses, next 12 months) ─────────
     upcoming_cutoff = (today + datetime.timedelta(days=365)).isoformat()
     rsu_grants = db.execute(select(models.RsuGrant)).scalars().all()
-    bonuses = db.execute(
+    upcoming_bonuses = db.execute(
         select(models.RetentionBonus)
         .where(models.RetentionBonus.is_paid == False)  # noqa: E712
         .where(models.RetentionBonus.vest_date != None)  # noqa: E711
@@ -3884,15 +3911,13 @@ def retirement_summary(db: Session = Depends(get_db)):
                         })
             except (json.JSONDecodeError, TypeError):
                 pass
-
-    for b in bonuses:
+    for b in upcoming_bonuses:
         upcoming_vests.append({
             "type": "bonus",
             "name": b.name,
             "date": b.vest_date,
             "gross_amount": b.gross_amount,
         })
-
     upcoming_vests.sort(key=lambda x: x["date"])
 
     result = {
@@ -3902,24 +3927,24 @@ def retirement_summary(db: Session = Depends(get_db)):
         "avg_monthly_income": round(avg_monthly_income, 2),
         "avg_monthly_expenses": round(avg_monthly_expenses, 2),
         "monthly_surplus": round(monthly_surplus, 2),
-        "current_year_rrsp": round(current_year_rrsp, 2),
+        # Payroll savings — sourced from income records
+        "payroll_monthly_rrsp": round(payroll_monthly_rrsp, 2),
+        "payroll_monthly_espp": round(payroll_monthly_espp, 2),
+        "payroll_monthly_total": round(payroll_monthly_rrsp + payroll_monthly_espp, 2),
+        "ytd_rrsp_employee": round(ytd_rrsp_employee, 2),
+        "ytd_rrsp_employer": round(ytd_rrsp_employer, 2),
+        "ytd_rrsp_total": round(ytd_rrsp_employee + ytd_rrsp_employer, 2),
+        "ytd_espp": round(ytd_espp, 2),
         "upcoming_vests": upcoming_vests,
         "profile": None,
     }
 
     if profile:
-        years_to_retirement = (profile.target_retirement_age or 60) - (profile.current_age or 40)
-        rrsp_monthly = (profile.rrsp_room or 0) / 12
-        tfsa_monthly = (profile.tfsa_room or 0) / 12
-        rrsp_alloc = min(monthly_surplus, rrsp_monthly)
-        remaining_after_rrsp = max(monthly_surplus - rrsp_alloc, 0)
-        tfsa_alloc = min(remaining_after_rrsp, tfsa_monthly)
-        taxable_alloc = max(remaining_after_rrsp - tfsa_alloc, 0)
-        tax_savings = rrsp_alloc * (profile.marginal_rate or 0)
-
+        years_to_retirement = max((profile.target_retirement_age or 60) - (profile.current_age or 40), 0)
         govt_annual = ((profile.cpp_monthly or 0) + (profile.oas_monthly or 0)) * 12
         net_annual_needed = max((profile.target_annual_income or 0) - govt_annual, 0)
         required_portfolio = net_annual_needed / 0.04 if net_annual_needed > 0 else 0
+        tax_savings_monthly = payroll_monthly_rrsp * (profile.marginal_rate or 0)
 
         result["profile"] = {
             "id": profile.id,
@@ -3935,12 +3960,9 @@ def retirement_summary(db: Session = Depends(get_db)):
             "cpp_monthly": profile.cpp_monthly,
             "oas_monthly": profile.oas_monthly,
             "years_to_retirement": years_to_retirement,
-            "rrsp_alloc": round(rrsp_alloc, 2),
-            "tfsa_alloc": round(tfsa_alloc, 2),
-            "taxable_alloc": round(taxable_alloc, 2),
-            "tax_savings": round(tax_savings, 2),
             "required_portfolio": round(required_portfolio, 2),
             "govt_annual_income": round(govt_annual, 2),
+            "tax_savings_monthly": round(tax_savings_monthly, 2),
         }
 
     return result
