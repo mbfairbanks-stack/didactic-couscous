@@ -360,3 +360,34 @@ export const getMilestones = () => req("/net-worth/milestones");
 export const createMilestone = (body) =>
   req("/net-worth/milestones", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 export const deleteMilestone = (id) => req(`/net-worth/milestones/${id}`, { method: "DELETE" });
+
+// Retirement module
+export const getRetirementSummary = () => req("/retirement/summary");
+
+export const getRetirementProfiles = () => req("/retirement/profiles");
+export const upsertRetirementProfile = (body) =>
+  req("/retirement/profiles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const updateRetirementProfile = (id, body) =>
+  req(`/retirement/profiles/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteRetirementProfile = (id) => req(`/retirement/profiles/${id}`, { method: "DELETE" });
+
+export const getRsuGrants = () => req("/retirement/rsu-grants");
+export const createRsuGrant = (body) =>
+  req("/retirement/rsu-grants", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const updateRsuGrant = (id, body) =>
+  req(`/retirement/rsu-grants/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteRsuGrant = (id) => req(`/retirement/rsu-grants/${id}`, { method: "DELETE" });
+
+export const getRetentionBonuses = () => req("/retirement/retention-bonuses");
+export const createRetentionBonus = (body) =>
+  req("/retirement/retention-bonuses", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const updateRetentionBonus = (id, body) =>
+  req(`/retirement/retention-bonuses/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteRetentionBonus = (id) => req(`/retirement/retention-bonuses/${id}`, { method: "DELETE" });
+
+export const getRetirementGoals = () => req("/retirement/goals");
+export const createRetirementGoal = (body) =>
+  req("/retirement/goals", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const updateRetirementGoal = (id, body) =>
+  req(`/retirement/goals/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteRetirementGoal = (id) => req(`/retirement/goals/${id}`, { method: "DELETE" });

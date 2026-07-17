@@ -12,6 +12,7 @@ import Debts from "./pages/Debts";
 import CategoryAudit from "./pages/CategoryAudit";
 import NetWorth from "./pages/NetWorth";
 import Settings from "./pages/Settings";
+import Retirement from "./pages/Retirement";
 import Onboarding from "./pages/Onboarding";
 import Login from "./pages/Login";
 import { SettingsProvider } from "./contexts/SettingsContext";
@@ -85,6 +86,7 @@ export default function App() {
                         <Route path="/debts" element={<Debts />} />
                         <Route path="/category-audit" element={<CategoryAudit />} />
                         <Route path="/net-worth" element={<NetWorth />} />
+                        <Route path="/retirement" element={<Retirement />} />
                         <Route path="/settings" element={<Settings />} />
                       </Routes>
                     </main>

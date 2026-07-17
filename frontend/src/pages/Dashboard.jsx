@@ -4,7 +4,9 @@ import {
   AreaChart, Area,
 } from "recharts";
 import StatCard from "../components/StatCard";
-import { getMonthlySummary, getTotals, getCategorySummary, getYears, getProjections, getBudgetTargets, getCategoryDefinitions, getDebts, getTransactions, createTransaction, getCategories, getMissingRecurring, getMultiCategoryTrend } from "../api";
+import { getMonthlySummary, getTotals, getCategorySummary, getYears, getProjections, getBudgetTargets, getCategoryDefinitions, getDebts, getTransactions, createTransaction, getCategories, getMissingRecurring, getMultiCategoryTrend, getRetirementSummary } from "../api";
+import { NavLink } from "react-router-dom";
+import { project, findRetirementYear } from "../lib/retirementEngine";
 import { getCategoryGroup, updateCategoryGroups } from "../constants";
 import { MONTH_LABELS, currentYear, currentMonth, fmt } from "../utils";
 
@@ -298,6 +300,63 @@ function Sparkline({ data, color = "#facc15" }) {
     <svg width={w} height={h} className="inline-block align-middle opacity-60">
       <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
     </svg>
+  );
+}
+
+// ── Retirement Snapshot Tile ─────────────────────────────────────────────────
+function RetirementTile() {
+  const [data, setData] = useState(null);
+
+  useEffect(() => {
+    getRetirementSummary().then(setData).catch(() => {});
+  }, []);
+
+  if (!data) return null;
+  const p = data.profile;
+  if (!p) {
+    return (
+      <NavLink to="/retirement" className="block bg-zinc-900 border border-zinc-800 rounded-xl p-4 hover:border-yellow-400/30 transition-colors">
+        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Retirement</p>
+        <p className="text-sm text-zinc-400 mt-1">Set up your retirement profile →</p>
+      </NavLink>
+    );
+  }
+
+  const projPoints = project(p, data.investable_assets, data.monthly_surplus, [], currentYear);
+  const retireYear = findRetirementYear(projPoints);
+  const lastPt = projPoints[projPoints.length - 1];
+  const targetPct = lastPt?.target > 0
+    ? Math.min(Math.round((data.investable_assets / lastPt.target) * 100), 100)
+    : 0;
+
+  return (
+    <NavLink to="/retirement" className="block bg-zinc-900 border border-zinc-800 rounded-xl p-4 hover:border-yellow-400/30 transition-colors">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Retirement</p>
+        <span className="text-xs text-zinc-600">age {p.current_age} → {p.target_retirement_age}</span>
+      </div>
+      <div className="grid grid-cols-3 gap-4 mb-3">
+        <div>
+          <p className="text-xs text-zinc-500">Years Left</p>
+          <p className="text-lg font-bold text-yellow-400">{Math.max(p.years_to_retirement, 0)}</p>
+        </div>
+        <div>
+          <p className="text-xs text-zinc-500">Investable</p>
+          <p className="text-lg font-bold text-zinc-200">{fmt(data.investable_assets)}</p>
+        </div>
+        <div>
+          <p className="text-xs text-zinc-500">Target</p>
+          <p className="text-lg font-bold text-blue-400">{fmt(p.required_portfolio)}</p>
+        </div>
+      </div>
+      <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden mb-1">
+        <div className="h-full bg-yellow-400 rounded-full" style={{ width: `${targetPct}%` }} />
+      </div>
+      <div className="flex justify-between text-xs text-zinc-600">
+        <span>{targetPct}% to target</span>
+        {retireYear && <span className="text-green-400">on track for {retireYear}</span>}
+      </div>
+    </NavLink>
   );
 }
 
@@ -749,6 +808,9 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Retirement Snapshot */}
+      <RetirementTile />
 
       {/* Quick Add Transaction Button */}
       <button

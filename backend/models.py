@@ -198,3 +198,56 @@ class MerchantRule(Base):
     merchant_pattern = Column(String, nullable=False, unique=True)
     category = Column(String, nullable=False)
     updated_at = Column(String, nullable=True)
+
+
+class RetirementProfile(Base):
+    """Annual retirement planning inputs — one row per year (entered when NOA arrives)."""
+    __tablename__ = "retirement_profiles"
+    id = Column(Integer, primary_key=True, index=True)
+    year = Column(Integer, nullable=False, unique=True)
+    marginal_rate = Column(Float, default=0.0)           # e.g. 0.435 = 43.5% combined rate
+    rrsp_room = Column(Float, default=0.0)               # unused RRSP room from NOA
+    tfsa_room = Column(Float, default=0.0)               # unused TFSA room from NOA
+    current_age = Column(Integer, nullable=True)
+    target_retirement_age = Column(Integer, default=60)
+    target_annual_income = Column(Float, default=0.0)    # desired income/yr in retirement (today's $)
+    expected_return = Column(Float, default=0.06)        # annual portfolio return
+    expected_inflation = Column(Float, default=0.025)    # inflation rate
+    cpp_monthly = Column(Float, default=0.0)             # CPP payment estimate at retirement
+    oas_monthly = Column(Float, default=0.0)             # OAS payment estimate (~$727/mo at 65)
+    notes = Column(String, nullable=True)
+
+
+class RsuGrant(Base):
+    """RSU grant with vesting schedule."""
+    __tablename__ = "rsu_grants"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    grant_date = Column(String, nullable=True)           # "2024-03-01"
+    ticker = Column(String, nullable=True)
+    total_units = Column(Float, default=0.0)
+    unvested_units = Column(Float, default=0.0)
+    current_price = Column(Float, default=0.0)
+    vest_schedule_json = Column(String, nullable=True)   # JSON: [{date, units}, ...]
+    notes = Column(String, nullable=True)
+
+
+class RetentionBonus(Base):
+    """Retention bonus tranche."""
+    __tablename__ = "retention_bonuses"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    gross_amount = Column(Float, default=0.0)
+    vest_date = Column(String, nullable=True)            # "2025-03-01"
+    is_paid = Column(Boolean, default=False)
+    notes = Column(String, nullable=True)
+
+
+class RetirementGoal(Base):
+    """Specific retirement milestone or target."""
+    __tablename__ = "retirement_goals"
+    id = Column(Integer, primary_key=True, index=True)
+    label = Column(String, nullable=False)
+    target_amount = Column(Float, nullable=False)
+    target_year = Column(Integer, nullable=True)
+    notes = Column(String, nullable=True)

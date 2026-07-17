@@ -12,6 +12,7 @@ const mainLinks = [
   { to: "/income", label: "Income" },
   { to: "/insights", label: "AI Insights" },
   { to: "/net-worth", label: "Net Worth" },
+  { to: "/retirement", label: "Retirement" },
   { to: "/settings", label: "Settings" },
 ];
 
