@@ -60,7 +60,7 @@ const emptyPayday = () => ({
 });
 
 // Convert existing DB records for a pay_date into payday form state
-function recordsToPayday(dateKey, entries, p1Name, p2Name) {
+function recordsToPayday(dateKey, entries, p1Name, p2Name, entryYear, entryMonth) {
   const find = (person, type) => entries.find((r) => r.person === person && r.income_type === type);
   const findByType = (person, type) => entries.find(
     (r) => (r.person === person || r.person === p1Name || r.person === p2Name) &&
@@ -83,6 +83,8 @@ function recordsToPayday(dateKey, entries, p1Name, p2Name) {
     p2_rrsp_employee: p2b ? String(p2b.rrsp_employee || "") : "",
     p2_rrsp_employer: p2b ? String(p2b.rrsp_employer || "") : "",
     _existingRecords: entries,
+    _year: entryYear,
+    _month: entryMonth,
   };
 }
 
@@ -243,6 +245,11 @@ export default function Income() {
   const [otherSaved, setOtherSaved] = useState(false);
   const [otherError, setOtherError] = useState("");
 
+  // Year view
+  const [yearView, setYearView] = useState(false);
+  const [yearRecords, setYearRecords] = useState([]);
+  const [yearLoading, setYearLoading] = useState(false);
+
   // Income history
   const [historyData, setHistoryData] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -256,6 +263,14 @@ export default function Income() {
   }, [year, month]);
 
   useEffect(() => { load(); setSaved(false); }, [load]);
+
+  const loadYear = useCallback(() => {
+    if (!yearView) return;
+    setYearLoading(true);
+    getIncome({ year }).then(setYearRecords).finally(() => setYearLoading(false));
+  }, [yearView, year]);
+
+  useEffect(() => { loadYear(); }, [loadYear]);
 
   useEffect(() => {
     if (!years.length) return;
@@ -273,6 +288,8 @@ export default function Income() {
   };
 
   const savePaydayEntries = async (payday, existingRecords = []) => {
+    const targetYear = payday._year ?? year;
+    const targetMonth = payday._month ?? month;
     const entries = [
       {
         person: p1, income_type: "base",
@@ -302,12 +319,12 @@ export default function Income() {
       const hasValue = entry.amount > 0 || entry.rrsp_employee > 0 || entry.espp_deduction > 0;
       if (existing) {
         if (hasValue) {
-          await updateIncome(existing.id, { year, month, pay_date: payday.date, ...entry });
+          await updateIncome(existing.id, { year: targetYear, month: targetMonth, pay_date: payday.date, ...entry });
         } else {
           await deleteIncome(existing.id);
         }
       } else if (hasValue) {
-        await createIncome({ year, month, pay_date: payday.date, ...entry });
+        await createIncome({ year: targetYear, month: targetMonth, pay_date: payday.date, ...entry });
       }
     }
   };
@@ -343,6 +360,7 @@ export default function Income() {
       await savePaydayEntries(editPayday, editPayday._existingRecords || []);
       setEditPayday(null);
       load();
+      loadYear();
     } catch (err) {
       setEditError(err.message);
     } finally {
@@ -422,20 +440,32 @@ export default function Income() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-zinc-100">Income</h1>
 
-      {/* Month selector */}
-      <div className="flex gap-3 flex-wrap">
+      {/* Month/year selector */}
+      <div className="flex gap-3 flex-wrap items-center">
         <select className={selectCls} value={year}
           onChange={(e) => { setYear(Number(e.target.value)); setSaved(false); }}>
           {[...new Set([...years, currentYear])].sort().map((y) => (
             <option key={y} value={y}>{y}</option>
           ))}
         </select>
-        <select className={selectCls} value={month}
-          onChange={(e) => { setMonth(Number(e.target.value)); setSaved(false); }}>
-          {MONTH_LABELS.slice(1).map((m, i) => (
-            <option key={i + 1} value={i + 1}>{m}</option>
-          ))}
-        </select>
+        {!yearView && (
+          <select className={selectCls} value={month}
+            onChange={(e) => { setMonth(Number(e.target.value)); setSaved(false); }}>
+            {MONTH_LABELS.slice(1).map((m, i) => (
+              <option key={i + 1} value={i + 1}>{m}</option>
+            ))}
+          </select>
+        )}
+        <button
+          onClick={() => setYearView((v) => !v)}
+          className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
+            yearView
+              ? "bg-yellow-400/15 text-yellow-400 border-yellow-400/30"
+              : "border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500"
+          }`}
+        >
+          {yearView ? "Month View" : "Full Year"}
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
@@ -477,7 +507,7 @@ export default function Income() {
         </form>
 
         {/* Recorded payroll income for month */}
-        {payrollRecords.length > 0 && (
+        {!yearView && payrollRecords.length > 0 && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
             <div className="px-4 py-3 border-b border-zinc-700 flex justify-between items-center bg-zinc-800">
               <span className="text-xs text-zinc-500 uppercase tracking-wide">{MONTH_LABELS[month]} {year} — Payroll</span>
@@ -537,6 +567,84 @@ export default function Income() {
           </div>
         )}
       </div>
+
+      {/* Full-year log */}
+      {yearView && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-zinc-700 flex justify-between items-center bg-zinc-800">
+            <span className="text-xs text-zinc-500 uppercase tracking-wide">{year} — All Income</span>
+            {yearLoading
+              ? <span className="text-xs text-zinc-600">Loading…</span>
+              : <span className="text-sm font-bold text-yellow-400">
+                  {fmt(yearRecords.filter((r) => PAYROLL_TYPES.has(r.income_type)).reduce((s, r) => s + r.amount, 0))} payroll
+                </span>}
+          </div>
+          {!yearLoading && (() => {
+            const payrollYr = yearRecords.filter((r) => PAYROLL_TYPES.has(r.income_type));
+            if (!payrollYr.length) return <p className="px-4 py-4 text-xs text-zinc-600 italic">No payroll records for {year}.</p>;
+
+            // group by month then by date
+            const byMonthDate = {};
+            for (const r of payrollYr) {
+              const m = r.month ?? 1;
+              if (!byMonthDate[m]) byMonthDate[m] = {};
+              const dk = r.pay_date || "unspecified";
+              if (!byMonthDate[m][dk]) byMonthDate[m][dk] = [];
+              byMonthDate[m][dk].push(r);
+            }
+
+            return Object.keys(byMonthDate).sort((a, b) => Number(a) - Number(b)).map((m) => {
+              const mNum = Number(m);
+              const mTotal = Object.values(byMonthDate[m]).flat().reduce((s, r) => s + r.amount, 0);
+              return (
+                <div key={m} className="border-b border-zinc-800 last:border-0">
+                  <div className="px-4 py-2 flex justify-between items-center bg-zinc-800/30">
+                    <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">{MONTH_LABELS[mNum]}</span>
+                    <span className="text-xs text-yellow-400 font-medium">{fmt(mTotal)}</span>
+                  </div>
+                  {Object.entries(byMonthDate[m]).sort(([a], [b]) => a.localeCompare(b)).map(([dateKey, entries]) => {
+                    const dateTotal = entries.reduce((s, r) => s + r.amount, 0);
+                    const totalRrsp = entries.reduce((s, r) => s + (r.rrsp_employee || 0) + (r.rrsp_employer || 0), 0);
+                    const totalEspp = entries.reduce((s, r) => s + (r.espp_deduction || 0), 0);
+                    return (
+                      <div key={dateKey} className="border-b border-zinc-800/50 last:border-0">
+                        <div className="px-4 py-2 bg-zinc-800/20 flex items-center justify-between gap-2">
+                          <span className="text-xs font-semibold text-zinc-400">
+                            {dateKey === "unspecified" ? "No date" : new Date(dateKey + "T12:00:00").toLocaleDateString("en-CA", { weekday: "short", month: "short", day: "numeric" })}
+                          </span>
+                          <div className="flex items-center gap-3">
+                            {totalRrsp > 0 && <span className="text-xs text-blue-400">RRSP {fmt(totalRrsp)}</span>}
+                            {totalEspp > 0 && <span className="text-xs text-purple-400">ESPP {fmt(totalEspp)}</span>}
+                            <span className="text-xs text-zinc-400 font-medium">{fmt(dateTotal)}</span>
+                            <button
+                              onClick={() => setEditPayday(recordsToPayday(dateKey, entries, p1, p2, year, mNum))}
+                              className="text-xs text-yellow-500 hover:text-yellow-400 px-2 py-0.5 rounded border border-yellow-500/30 hover:border-yellow-400/50 transition-colors"
+                            >Edit</button>
+                            <button
+                              onClick={async () => { await handleDeletePayday(entries); loadYear(); }}
+                              className="text-xs text-red-600 hover:text-red-400"
+                            >Delete</button>
+                          </div>
+                        </div>
+                        {entries.map((r) => (
+                          <div key={r.id} className="px-4 py-1.5 flex items-center justify-between hover:bg-zinc-800/40 text-xs gap-2">
+                            <span className="text-zinc-400">{resolvePerson(r.person)}</span>
+                            <span className="text-zinc-600 capitalize">{r.income_type}</span>
+                            {(r.rrsp_employee || 0) > 0 && <span className="text-blue-400">RRSP {fmt(r.rrsp_employee)}</span>}
+                            {(r.rrsp_employer || 0) > 0 && <span className="text-green-400">+{fmt(r.rrsp_employer)}</span>}
+                            {(r.espp_deduction || 0) > 0 && <span className="text-purple-400">ESPP {fmt(r.espp_deduction)}</span>}
+                            <span className="text-zinc-100 font-medium ml-auto">{fmt(r.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            });
+          })()}
+        </div>
+      )}
 
       {/* Other Income Section */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
