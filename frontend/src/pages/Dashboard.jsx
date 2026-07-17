@@ -322,7 +322,7 @@ function RetirementTile() {
     );
   }
 
-  const projPoints = project(p, data.investable_assets, data.monthly_surplus, [], currentYear);
+  const projPoints = project(p, data.investable_assets, data.payroll_monthly_rrsp ?? 0, data.payroll_monthly_espp ?? 0, [], currentYear);
   const retireYear = findRetirementYear(projPoints);
   const lastPt = projPoints[projPoints.length - 1];
   const targetPct = lastPt?.target > 0
