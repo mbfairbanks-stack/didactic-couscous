@@ -3603,10 +3603,12 @@ class RetirementProfileCreate(BaseModel):
     current_age: Optional[int] = None
     target_retirement_age: int = 60
     target_annual_income: float = 0.0
-    expected_return: float = 0.06
+    expected_return: float = 0.075
     expected_inflation: float = 0.025
     cpp_monthly: float = 0.0
     oas_monthly: float = 0.0
+    cpp_start_age: int = 65
+    swr: float = 0.035
     notes: Optional[str] = None
 
 
@@ -3941,11 +3943,40 @@ def retirement_summary(db: Session = Depends(get_db)):
 
     if profile:
         years_to_retirement = max((profile.target_retirement_age or 60) - (profile.current_age or 40), 0)
-        govt_annual = ((profile.cpp_monthly or 0) + (profile.oas_monthly or 0)) * 12
+        r_nominal = profile.expected_return or 0.075
         inflation = profile.expected_inflation or 0.025
-        inflated_target = (profile.target_annual_income or 0) * ((1 + inflation) ** years_to_retirement)
-        net_annual_needed = max(inflated_target - govt_annual, 0)
-        required_portfolio = net_annual_needed / 0.04 if net_annual_needed > 0 else 0
+        r_real = (1 + r_nominal) / (1 + inflation) - 1
+        swr = profile.swr or 0.035
+        retire_age = profile.target_retirement_age or 60
+        cpp_start_age = profile.cpp_start_age or 65
+        gross_spending = profile.target_annual_income or 0
+
+        # CPP adjustment for early/late take-up
+        if cpp_start_age < 65:
+            cpp_factor = 1 - 0.006 * (65 - cpp_start_age) * 12
+        elif cpp_start_age > 65:
+            cpp_factor = 1 + 0.007 * (cpp_start_age - 65) * 12
+        else:
+            cpp_factor = 1.0
+        cpp_adjusted = (profile.cpp_monthly or 0) * 12 * cpp_factor
+        oas_annual = (profile.oas_monthly or 0) * 12
+        govt_annual = cpp_adjusted + oas_annual
+
+        # Two-phase target in real (today's) dollars
+        if retire_age >= 65:
+            net_needed = max(gross_spending - govt_annual, 0)
+            required_portfolio = net_needed / swr if swr > 0 else 0
+        else:
+            bridge_years = 65 - retire_age
+            if r_real > 0.001:
+                bridge_capital = gross_spending * (1 - (1 + r_real) ** -bridge_years) / r_real
+            else:
+                bridge_capital = gross_spending * bridge_years
+            net_steady = max(gross_spending - govt_annual, 0)
+            capital_at_65 = net_steady / swr if swr > 0 else 0
+            capital_at_65_disc = capital_at_65 / (1 + r_real) ** bridge_years
+            required_portfolio = bridge_capital + capital_at_65_disc
+
         tax_savings_monthly = payroll_monthly_rrsp * (profile.marginal_rate or 0)
 
         result["profile"] = {
@@ -3961,9 +3992,13 @@ def retirement_summary(db: Session = Depends(get_db)):
             "expected_inflation": profile.expected_inflation,
             "cpp_monthly": profile.cpp_monthly,
             "oas_monthly": profile.oas_monthly,
+            "cpp_start_age": cpp_start_age,
+            "cpp_adjustment_factor": round(cpp_factor, 4),
+            "swr": swr,
             "years_to_retirement": years_to_retirement,
             "required_portfolio": round(required_portfolio, 2),
             "govt_annual_income": round(govt_annual, 2),
+            "cpp_annual_adjusted": round(cpp_adjusted, 2),
             "tax_savings_monthly": round(tax_savings_monthly, 2),
         }
 

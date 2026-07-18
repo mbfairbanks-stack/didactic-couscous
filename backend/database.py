@@ -149,6 +149,14 @@ def _init_db_extras(eng, seed_demo: bool = False):
             if "end_month" not in il_cols:
                 conn.execute(sa.text("ALTER TABLE insights_log ADD COLUMN end_month INTEGER"))
 
+        # retirement_profiles extras
+        if "retirement_profiles" in tables:
+            rp_cols = [c["name"] for c in inspector.get_columns("retirement_profiles")]
+            if "cpp_start_age" not in rp_cols:
+                conn.execute(sa.text("ALTER TABLE retirement_profiles ADD COLUMN cpp_start_age INTEGER NOT NULL DEFAULT 65"))
+            if "swr" not in rp_cols:
+                conn.execute(sa.text("ALTER TABLE retirement_profiles ADD COLUMN swr REAL NOT NULL DEFAULT 0.035"))
+
         # debts extras
         if "debts" in tables:
             d_cols = [c["name"] for c in inspector.get_columns("debts")]

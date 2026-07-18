@@ -114,7 +114,7 @@ function OverviewTab({ summary, projPoints, goals }) {
           <div>
             <p className="text-xs text-zinc-500 mb-0.5">Retirement Target</p>
             <p className="text-2xl font-bold text-blue-400">{fmt(p.required_portfolio)}</p>
-            <p className="text-xs text-zinc-600 mt-0.5">{fmt(p.target_annual_income)}/yr today · inflation-adj · 4% SWR</p>
+            <p className="text-xs text-zinc-600 mt-0.5">{fmt(p.target_annual_income)}/yr · real-dollar two-phase · {((p.swr ?? 0.035) * 100).toFixed(1)}% SWR</p>
           </div>
           <div>
             <p className="text-xs text-zinc-500 mb-0.5">Years to Retirement</p>
@@ -250,9 +250,9 @@ function OverviewTab({ summary, projPoints, goals }) {
 
 // ── Projection ────────────────────────────────────────────────────────────────
 const SENSITIVITY = [
-  { label: "Bear 4%", rate: 0.04, color: "#f87171" },
-  { label: "Base 6%", rate: 0.06, color: "#facc15" },
-  { label: "Bull 8%", rate: 0.08, color: "#4ade80" },
+  { label: "Bear 5%", rate: 0.05, color: "#f87171" },
+  { label: "Base 7.5%", rate: 0.075, color: "#facc15" },
+  { label: "Bull 9%", rate: 0.09, color: "#4ade80" },
 ];
 
 function ProjectionTab({ projPoints, summary, goals, vestEvents }) {
@@ -265,7 +265,7 @@ function ProjectionTab({ projPoints, summary, goals, vestEvents }) {
 
   const enableWhatIf = () => {
     if (!whatIfOn && p) {
-      setWiReturn(String(Math.round((p.expected_return ?? 0.06) * 100)));
+      setWiReturn(String(Math.round((p.expected_return ?? 0.075) * 100)));
       setWiMonthly(String(Math.round((summary.payroll_monthly_rrsp ?? 0) + (summary.payroll_monthly_espp ?? 0))));
       setWiRetireAge(String(p.target_retirement_age ?? 60));
     }
@@ -340,7 +340,7 @@ function ProjectionTab({ projPoints, summary, goals, vestEvents }) {
           <div>
             <h3 className="text-sm font-semibold text-zinc-300">Portfolio Projection</h3>
             <p className="text-xs text-zinc-600 mt-0.5">
-              {fmt(baseMonthly)}/mo payroll savings · {Math.round((p.expected_return ?? 0.06) * 100)}% return · house excluded
+              {fmt(baseMonthly)}/mo payroll savings · {Math.round((p.expected_return ?? 0.075) * 100)}% nominal · today's dollars · house excluded
             </p>
           </div>
           <div className="flex items-center gap-3 shrink-0 ml-4">
@@ -439,11 +439,13 @@ function ProjectionTab({ projPoints, summary, goals, vestEvents }) {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
           <div><p className="text-zinc-500">Starting</p><p className="text-zinc-200 font-medium">{fmt(summary.investable_assets)}</p></div>
           <div><p className="text-zinc-500">Monthly savings</p><p className="text-zinc-200 font-medium">{fmt(baseMonthly)}</p></div>
-          <div><p className="text-zinc-500">Annual return</p><p className="text-zinc-200 font-medium">{Math.round((p.expected_return ?? 0) * 100)}%</p></div>
+          <div><p className="text-zinc-500">Annual return (nominal)</p><p className="text-zinc-200 font-medium">{Math.round((p.expected_return ?? 0) * 100)}%</p></div>
           <div><p className="text-zinc-500">Inflation</p><p className="text-zinc-200 font-medium">{Math.round((p.expected_inflation ?? 0) * 100)}%</p></div>
           <div><p className="text-zinc-500">Target income/yr</p><p className="text-zinc-200 font-medium">{fmt(p.target_annual_income)}</p></div>
-          <div><p className="text-zinc-500">CPP + OAS/yr (household)</p><p className="text-zinc-200 font-medium">{fmt(p.govt_annual_income)}</p></div>
+          <div><p className="text-zinc-500">CPP + OAS/yr (adj.)</p><p className="text-zinc-200 font-medium">{fmt(p.govt_annual_income)}</p></div>
           <div><p className="text-zinc-500">Required portfolio</p><p className="text-zinc-200 font-medium">{fmt(p.required_portfolio)}</p></div>
+          <div><p className="text-zinc-500">SWR</p><p className="text-zinc-200 font-medium">{((p.swr ?? 0.035) * 100).toFixed(1)}%</p></div>
+          <div><p className="text-zinc-500">CPP start age</p><p className="text-zinc-200 font-medium">age {p.cpp_start_age ?? 65} ({p.cpp_adjustment_factor != null ? `${((p.cpp_adjustment_factor - 1) * 100).toFixed(0)}%` : "0%"})</p></div>
           <div><p className="text-zinc-500">Years remaining</p><p className="text-zinc-200 font-medium">{p.years_to_retirement}</p></div>
         </div>
       </div>
@@ -494,8 +496,8 @@ function InputsTab({ profiles, goals, onRefresh }) {
   const blankForm = {
     year: currentYear, marginal_rate: "", rrsp_room: "", tfsa_room: "",
     current_age: "", target_retirement_age: "60", target_annual_income: "",
-    expected_return: "0.06", expected_inflation: "0.025",
-    cpp_monthly: "0", oas_monthly: "727", notes: "",
+    expected_return: "0.075", expected_inflation: "0.025",
+    cpp_monthly: "0", oas_monthly: "1504", cpp_start_age: "65", swr: "0.035", notes: "",
   };
 
   const [form, setForm] = useState(blankForm);
@@ -519,10 +521,12 @@ function InputsTab({ profiles, goals, onRefresh }) {
       current_age: pr.current_age != null ? String(pr.current_age) : "",
       target_retirement_age: String(pr.target_retirement_age ?? 60),
       target_annual_income: String(pr.target_annual_income ?? ""),
-      expected_return: String(pr.expected_return ?? 0.06),
+      expected_return: String(pr.expected_return ?? 0.075),
       expected_inflation: String(pr.expected_inflation ?? 0.025),
       cpp_monthly: String(pr.cpp_monthly ?? 0),
-      oas_monthly: String(pr.oas_monthly ?? 727),
+      oas_monthly: String(pr.oas_monthly ?? 1504),
+      cpp_start_age: String(pr.cpp_start_age ?? 65),
+      swr: String(pr.swr ?? 0.035),
       notes: pr.notes ?? "",
     });
   };
@@ -541,10 +545,12 @@ function InputsTab({ profiles, goals, onRefresh }) {
         current_age: form.current_age ? parseInt(form.current_age) : null,
         target_retirement_age: parseInt(form.target_retirement_age) || 60,
         target_annual_income: parseFloat(form.target_annual_income) || 0,
-        expected_return: parseFloat(form.expected_return) || 0.06,
+        expected_return: parseFloat(form.expected_return) || 0.075,
         expected_inflation: parseFloat(form.expected_inflation) || 0.025,
         cpp_monthly: parseFloat(form.cpp_monthly) || 0,
         oas_monthly: parseFloat(form.oas_monthly) || 0,
+        cpp_start_age: parseInt(form.cpp_start_age) || 65,
+        swr: parseFloat(form.swr) || 0.035,
         notes: form.notes || null,
       });
       reset(); onRefresh();
@@ -583,8 +589,10 @@ function InputsTab({ profiles, goals, onRefresh }) {
             <div><label className={labelCls}>Target Annual Income ($)</label><input className={inputCls} type="number" step="1000" placeholder="120000" {...f("target_annual_income")} /></div>
             <div><label className={labelCls}>CPP Monthly — household total ($)</label><input className={inputCls} type="number" step="1" placeholder="2600" {...f("cpp_monthly")} /></div>
             <div><label className={labelCls}>OAS Monthly — household total ($)</label><input className={inputCls} type="number" step="1" placeholder="1454" {...f("oas_monthly")} /></div>
-            <div><label className={labelCls}>Expected Return (e.g. 0.06)</label><input className={inputCls} type="number" step="0.005" placeholder="0.06" {...f("expected_return")} /></div>
+            <div><label className={labelCls}>Expected Return (e.g. 0.075)</label><input className={inputCls} type="number" step="0.005" placeholder="0.075" {...f("expected_return")} /></div>
             <div><label className={labelCls}>Inflation Rate (e.g. 0.025)</label><input className={inputCls} type="number" step="0.005" placeholder="0.025" {...f("expected_inflation")} /></div>
+            <div><label className={labelCls}>CPP Start Age (60–70)</label><input className={inputCls} type="number" min="60" max="70" step="1" placeholder="65" {...f("cpp_start_age")} /></div>
+            <div><label className={labelCls}>Safe Withdrawal Rate (e.g. 0.035)</label><input className={inputCls} type="number" step="0.0025" placeholder="0.035" {...f("swr")} /></div>
             <div><label className={labelCls}>Notes</label><input className={inputCls} placeholder="Optional" {...f("notes")} /></div>
           </div>
           {err && <p className="text-xs text-red-400 mb-2">{err}</p>}

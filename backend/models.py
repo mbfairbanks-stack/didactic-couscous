@@ -210,11 +210,13 @@ class RetirementProfile(Base):
     tfsa_room = Column(Float, default=0.0)               # unused TFSA room from NOA
     current_age = Column(Integer, nullable=True)
     target_retirement_age = Column(Integer, default=60)
-    target_annual_income = Column(Float, default=0.0)    # desired income/yr in retirement (today's $)
-    expected_return = Column(Float, default=0.06)        # annual portfolio return
+    target_annual_income = Column(Float, default=0.0)    # desired gross income/yr in today's $
+    expected_return = Column(Float, default=0.075)       # nominal annual portfolio return
     expected_inflation = Column(Float, default=0.025)    # inflation rate
-    cpp_monthly = Column(Float, default=0.0)             # CPP payment estimate at retirement
-    oas_monthly = Column(Float, default=0.0)             # OAS payment estimate (~$727/mo at 65)
+    cpp_monthly = Column(Float, default=0.0)             # household CPP estimate, unadjusted at 65
+    oas_monthly = Column(Float, default=0.0)             # household OAS estimate (~$751.97×2/mo at 65)
+    cpp_start_age = Column(Integer, default=65)          # age CPP begins (60-70, affects amount)
+    swr = Column(Float, default=0.035)                   # safe withdrawal rate (3.5% for 35+ yr horizon)
     notes = Column(String, nullable=True)
 
 
