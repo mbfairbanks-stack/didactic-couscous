@@ -114,7 +114,7 @@ function OverviewTab({ summary, projPoints, goals }) {
           <div>
             <p className="text-xs text-zinc-500 mb-0.5">Retirement Target</p>
             <p className="text-2xl font-bold text-blue-400">{fmt(p.required_portfolio)}</p>
-            <p className="text-xs text-zinc-600 mt-0.5">{fmt(p.target_annual_income)}/yr at 4% SWR</p>
+            <p className="text-xs text-zinc-600 mt-0.5">{fmt(p.target_annual_income)}/yr today · inflation-adj · 4% SWR</p>
           </div>
           <div>
             <p className="text-xs text-zinc-500 mb-0.5">Years to Retirement</p>
@@ -442,7 +442,7 @@ function ProjectionTab({ projPoints, summary, goals, vestEvents }) {
           <div><p className="text-zinc-500">Annual return</p><p className="text-zinc-200 font-medium">{Math.round((p.expected_return ?? 0) * 100)}%</p></div>
           <div><p className="text-zinc-500">Inflation</p><p className="text-zinc-200 font-medium">{Math.round((p.expected_inflation ?? 0) * 100)}%</p></div>
           <div><p className="text-zinc-500">Target income/yr</p><p className="text-zinc-200 font-medium">{fmt(p.target_annual_income)}</p></div>
-          <div><p className="text-zinc-500">CPP + OAS/yr</p><p className="text-zinc-200 font-medium">{fmt(p.govt_annual_income)}</p></div>
+          <div><p className="text-zinc-500">CPP + OAS/yr (household)</p><p className="text-zinc-200 font-medium">{fmt(p.govt_annual_income)}</p></div>
           <div><p className="text-zinc-500">Required portfolio</p><p className="text-zinc-200 font-medium">{fmt(p.required_portfolio)}</p></div>
           <div><p className="text-zinc-500">Years remaining</p><p className="text-zinc-200 font-medium">{p.years_to_retirement}</p></div>
         </div>
@@ -581,8 +581,8 @@ function InputsTab({ profiles, goals, onRefresh }) {
             <div><label className={labelCls}>Your Age</label><input className={inputCls} type="number" placeholder="38" {...f("current_age")} /></div>
             <div><label className={labelCls}>Target Retirement Age</label><input className={inputCls} type="number" placeholder="60" {...f("target_retirement_age")} /></div>
             <div><label className={labelCls}>Target Annual Income ($)</label><input className={inputCls} type="number" step="1000" placeholder="120000" {...f("target_annual_income")} /></div>
-            <div><label className={labelCls}>CPP Monthly at Retirement ($)</label><input className={inputCls} type="number" step="1" placeholder="1300" {...f("cpp_monthly")} /></div>
-            <div><label className={labelCls}>OAS Monthly at Retirement ($)</label><input className={inputCls} type="number" step="1" placeholder="727" {...f("oas_monthly")} /></div>
+            <div><label className={labelCls}>CPP Monthly — household total ($)</label><input className={inputCls} type="number" step="1" placeholder="2600" {...f("cpp_monthly")} /></div>
+            <div><label className={labelCls}>OAS Monthly — household total ($)</label><input className={inputCls} type="number" step="1" placeholder="1454" {...f("oas_monthly")} /></div>
             <div><label className={labelCls}>Expected Return (e.g. 0.06)</label><input className={inputCls} type="number" step="0.005" placeholder="0.06" {...f("expected_return")} /></div>
             <div><label className={labelCls}>Inflation Rate (e.g. 0.025)</label><input className={inputCls} type="number" step="0.005" placeholder="0.025" {...f("expected_inflation")} /></div>
             <div><label className={labelCls}>Notes</label><input className={inputCls} placeholder="Optional" {...f("notes")} /></div>

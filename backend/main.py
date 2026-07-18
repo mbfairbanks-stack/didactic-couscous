@@ -3942,7 +3942,9 @@ def retirement_summary(db: Session = Depends(get_db)):
     if profile:
         years_to_retirement = max((profile.target_retirement_age or 60) - (profile.current_age or 40), 0)
         govt_annual = ((profile.cpp_monthly or 0) + (profile.oas_monthly or 0)) * 12
-        net_annual_needed = max((profile.target_annual_income or 0) - govt_annual, 0)
+        inflation = profile.expected_inflation or 0.025
+        inflated_target = (profile.target_annual_income or 0) * ((1 + inflation) ** years_to_retirement)
+        net_annual_needed = max(inflated_target - govt_annual, 0)
         required_portfolio = net_annual_needed / 0.04 if net_annual_needed > 0 else 0
         tax_savings_monthly = payroll_monthly_rrsp * (profile.marginal_rate or 0)
 
