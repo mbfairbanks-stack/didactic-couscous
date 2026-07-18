@@ -865,13 +865,23 @@ def onboarding_status(db: Session = Depends(get_db)):
 
 @app.get("/categories")
 def list_categories(db: Session = Depends(get_db)):
-    rows = db.execute(
+    # Categories from the definitions table (user-managed, excludes hidden)
+    defined = db.execute(
+        select(models.Category.name)
+        .where(models.Category.is_hidden == False)  # noqa: E712
+        .order_by(models.Category.name)
+    ).scalars().all()
+    defined_set = set(defined)
+
+    # Any categories already on transactions that aren't in the definitions table
+    tx_only = db.execute(
         select(distinct(models.Transaction.category))
         .where(models.Transaction.category != None)  # noqa: E711
         .where(models.Transaction.category != "")
-        .order_by(models.Transaction.category)
     ).scalars().all()
-    return rows
+    extra = [c for c in tx_only if c not in defined_set]
+
+    return sorted(defined + extra)
 
 
 @app.get("/years")
