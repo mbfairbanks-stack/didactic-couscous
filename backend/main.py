@@ -1255,8 +1255,12 @@ def sync_savings_assets(db: Session = Depends(get_db)):
 
 RRSP_ANNUAL_MAX = 8400.0  # employee portion; with 50% employer match total = $12,600
 RRSP_MATCH_RATE = 0.50
-ESPP_DEDUCTION_RATE = 0.10
 ESPP_DISCOUNT_RATE = 0.15
+
+
+def espp_deduction_rate(pay_date: str) -> float:
+    """10% of gross before May 2026, 15% from May 2026 onwards."""
+    return 0.15 if pay_date >= "2026-05" else 0.10
 
 
 class SavingsContributionCreate(BaseModel):
@@ -1283,8 +1287,9 @@ class EsppPurchaseCreate(BaseModel):
     shares_purchased: float = 0.0
     purchase_price: float = 0.0
     market_price: float = 0.0
-    current_price: float = 0.0
+    current_price: float = 0.0  # kept for DB compat; always 0 for sell-on-purchase
     notes: Optional[str] = None
+    allocation_json: Optional[str] = None
 
 
 class EsppPurchaseOut(EsppPurchaseCreate):
@@ -1307,7 +1312,7 @@ def create_savings_contribution(body: SavingsContributionCreate, db: Session = D
     if data["rrsp_employer"] is None:
         data["rrsp_employer"] = round(data["rrsp_employee"] * RRSP_MATCH_RATE, 2)
     if data["espp_deduction"] is None:
-        data["espp_deduction"] = round(data["gross_income"] * ESPP_DEDUCTION_RATE, 2)
+        data["espp_deduction"] = round(data["gross_income"] * espp_deduction_rate(data["pay_date"]), 2)
     contrib = models.SavingsContribution(**data)
     db.add(contrib)
     db.commit()
@@ -1324,7 +1329,7 @@ def update_savings_contribution(contrib_id: int, body: SavingsContributionCreate
     if data["rrsp_employer"] is None:
         data["rrsp_employer"] = round(data["rrsp_employee"] * RRSP_MATCH_RATE, 2)
     if data["espp_deduction"] is None:
-        data["espp_deduction"] = round(data["gross_income"] * ESPP_DEDUCTION_RATE, 2)
+        data["espp_deduction"] = round(data["gross_income"] * espp_deduction_rate(data["pay_date"]), 2)
     for field, val in data.items():
         setattr(contrib, field, val)
     db.commit()

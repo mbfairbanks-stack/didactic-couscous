@@ -11,7 +11,11 @@ const selectCls = "bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-s
 const smallInput = `${inputCls} text-xs py-1`;
 
 const MATCH_RATE = 0.50;
-const ESPP_RATE = 0.10;
+
+function esppRate(dateStr) {
+  if (!dateStr) return 0.15;
+  return dateStr >= "2026-05" ? 0.15 : 0.10;
+}
 
 const PAYROLL_TYPES = new Set(["base", "commission"]);
 
@@ -93,9 +97,10 @@ function PaydaySlot({ state, onChange, onRemove, p1, p2, canRemove, isEdit = fal
     const base = parseFloat(val) || 0;
     const commission = parseFloat(state.p1_commission) || 0;
     const gross = base + commission;
+    const rate = esppRate(state.date);
     onChange({
       ...state, p1_base: val,
-      p1_espp: gross > 0 ? String((gross * ESPP_RATE).toFixed(2)) : state.p1_espp,
+      p1_espp: gross > 0 ? String((gross * rate).toFixed(2)) : state.p1_espp,
     });
   };
 
@@ -103,9 +108,10 @@ function PaydaySlot({ state, onChange, onRemove, p1, p2, canRemove, isEdit = fal
     const base = parseFloat(state.p1_base) || 0;
     const commission = parseFloat(val) || 0;
     const gross = base + commission;
+    const rate = esppRate(state.date);
     onChange({
       ...state, p1_commission: val,
-      p1_espp: gross > 0 ? String((gross * ESPP_RATE).toFixed(2)) : state.p1_espp,
+      p1_espp: gross > 0 ? String((gross * rate).toFixed(2)) : state.p1_espp,
     });
   };
 
@@ -182,7 +188,7 @@ function PaydaySlot({ state, onChange, onRemove, p1, p2, canRemove, isEdit = fal
               onChange={(e) => onChange({ ...state, p1_rrsp_employer: e.target.value })} />
           </div>
           <div>
-            <label className="text-xs text-purple-400 block mb-1">ESPP (auto 10% of pay)</label>
+            <label className="text-xs text-purple-400 block mb-1">ESPP (auto {(esppRate(state.date) * 100).toFixed(0)}% of gross)</label>
             <input type="number" step="0.01" min="0" placeholder="auto"
               className={smallInput} value={state.p1_espp}
               onChange={(e) => onChange({ ...state, p1_espp: e.target.value })} />

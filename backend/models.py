@@ -140,9 +140,10 @@ class EsppPurchase(Base):
     total_deducted = Column(Float, default=0.0)     # total $ deducted during period
     shares_purchased = Column(Float, default=0.0)
     purchase_price = Column(Float, default=0.0)     # price paid (after 15% discount)
-    market_price = Column(Float, default=0.0)       # fair market value at purchase
-    current_price = Column(Float, default=0.0)      # current stock price (manual update)
+    market_price = Column(Float, default=0.0)       # fair market value at purchase (sell price)
+    current_price = Column(Float, default=0.0)      # kept for legacy; always 0 for sell-on-purchase
     notes = Column(String, nullable=True)
+    allocation_json = Column(String, nullable=True)  # JSON: {"rrsp":0,"tfsa":0,"other":0,"other_label":""}
 
 
 class NetWorthSnapshot(Base):

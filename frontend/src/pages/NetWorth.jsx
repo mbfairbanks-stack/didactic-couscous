@@ -189,7 +189,9 @@ export default function NetWorth() {
     purchase_date: new Date().toISOString().slice(0, 10),
     period_start: "", period_end: "",
     total_deducted: "", shares_purchased: "",
-    purchase_price: "", market_price: "", current_price: "", notes: "",
+    purchase_price: "", market_price: "",
+    notes: "",
+    alloc_rrsp: "", alloc_tfsa: "", alloc_other: "", alloc_other_label: "",
   };
   const [purchaseForm, setPurchaseForm] = useState(emptyPurchase);
   const [editPurchaseId, setEditPurchaseId] = useState(null);
@@ -303,13 +305,23 @@ export default function NetWorth() {
   // ── ESPP actions ──
   const handlePurchaseSubmit = async (e) => {
     e.preventDefault(); setSavingPurchase(true); setError("");
+    const allocObj = {
+      rrsp: parseFloat(purchaseForm.alloc_rrsp) || 0,
+      tfsa: parseFloat(purchaseForm.alloc_tfsa) || 0,
+      other: parseFloat(purchaseForm.alloc_other) || 0,
+      other_label: purchaseForm.alloc_other_label || "",
+    };
     const body = {
-      ...purchaseForm,
+      purchase_date: purchaseForm.purchase_date,
+      period_start: purchaseForm.period_start || null,
+      period_end: purchaseForm.period_end || null,
       total_deducted: parseFloat(purchaseForm.total_deducted) || 0,
       shares_purchased: parseFloat(purchaseForm.shares_purchased) || 0,
       purchase_price: parseFloat(purchaseForm.purchase_price) || 0,
       market_price: parseFloat(purchaseForm.market_price) || 0,
-      current_price: parseFloat(purchaseForm.current_price) || 0,
+      current_price: 0,
+      notes: purchaseForm.notes || null,
+      allocation_json: JSON.stringify(allocObj),
     };
     try {
       if (editPurchaseId) await updateEsppPurchase(editPurchaseId, body);
@@ -320,11 +332,17 @@ export default function NetWorth() {
     finally { setSavingPurchase(false); }
   };
   const handleEditPurchase = (p) => {
+    let alloc = {};
+    try { alloc = JSON.parse(p.allocation_json || "{}"); } catch {}
     setPurchaseForm({
       purchase_date: p.purchase_date, period_start: p.period_start || "", period_end: p.period_end || "",
       total_deducted: String(p.total_deducted), shares_purchased: String(p.shares_purchased),
       purchase_price: String(p.purchase_price), market_price: String(p.market_price),
-      current_price: String(p.current_price), notes: p.notes || "",
+      notes: p.notes || "",
+      alloc_rrsp: alloc.rrsp ? String(alloc.rrsp) : "",
+      alloc_tfsa: alloc.tfsa ? String(alloc.tfsa) : "",
+      alloc_other: alloc.other ? String(alloc.other) : "",
+      alloc_other_label: alloc.other_label || "",
     });
     setEditPurchaseId(p.id); setShowPurchaseForm(true);
   };
@@ -772,10 +790,32 @@ export default function NetWorth() {
                     + Log Purchase
                   </button>
                 </div>
+                {(() => {
+                  const today = new Date();
+                  const y = today.getFullYear(), m = today.getMonth() + 1, d = today.getDate();
+                  const lastEvent = (m > 11 || (m === 11 && d >= 15)) ? `${y}-11-15`
+                    : (m > 5 || (m === 5 && d >= 15)) ? `${y}-05-15`
+                    : `${y - 1}-11-15`;
+                  const hasEntry = purchases.some(p => (p.purchase_date || "").startsWith(lastEvent.slice(0, 7)));
+                  if (hasEntry) return null;
+                  return (
+                    <div className="flex items-center justify-between gap-3 bg-purple-950/50 border border-purple-800/60 rounded-lg px-4 py-3">
+                      <div>
+                        <p className="text-xs font-semibold text-purple-300">Purchase event on {lastEvent} — not yet logged</p>
+                        <p className="text-xs text-purple-500 mt-0.5">Log this purchase and allocate the proceeds to your savings goals.</p>
+                      </div>
+                      <button
+                        onClick={() => { setPurchaseForm({ ...emptyPurchase, purchase_date: lastEvent }); setEditPurchaseId(null); setShowPurchaseForm(true); }}
+                        className="flex-shrink-0 text-xs bg-purple-700 hover:bg-purple-600 text-white px-3 py-1.5 rounded font-medium">
+                        Log Now
+                      </button>
+                    </div>
+                  );
+                })()}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  <div><p className="text-xs text-zinc-500 mb-0.5">Deducted YTD ({savingsYear})</p><p className="text-xl font-bold text-zinc-100">{fmt(savingsSummary.espp_deducted_ytd)}</p><p className="text-xs text-zinc-600 mt-0.5">10% of net pay</p></div>
-                  <div><p className="text-xs text-zinc-500 mb-0.5">Pending Balance</p><p className="text-xl font-bold text-yellow-400">{fmt(savingsSummary.espp_pending_all_time)}</p><p className="text-xs text-zinc-600 mt-0.5">not yet converted</p></div>
-                  <div><p className="text-xs text-zinc-500 mb-0.5">Stock Holdings</p><p className="text-xl font-bold text-purple-400">{fmt(savingsSummary.espp_current_value)}</p><p className="text-xs text-zinc-600 mt-0.5">at current prices</p></div>
+                  <div><p className="text-xs text-zinc-500 mb-0.5">Deducted YTD ({savingsYear})</p><p className="text-xl font-bold text-zinc-100">{fmt(savingsSummary.espp_deducted_ytd)}</p><p className="text-xs text-zinc-600 mt-0.5">10%/15% of gross pay</p></div>
+                  <div><p className="text-xs text-zinc-500 mb-0.5">Pending Balance</p><p className="text-xl font-bold text-yellow-400">{fmt(savingsSummary.espp_pending_all_time)}</p><p className="text-xs text-zinc-600 mt-0.5">not yet purchased</p></div>
+                  <div><p className="text-xs text-zinc-500 mb-0.5">Proceeds YTD</p><p className="text-xl font-bold text-purple-400">{fmt(savingsSummary.espp_current_value)}</p><p className="text-xs text-zinc-600 mt-0.5">sold on purchase</p></div>
                   <div><p className="text-xs text-zinc-500 mb-0.5">Discount Benefit</p><p className="text-xl font-bold text-green-400">15%</p><p className="text-xs text-zinc-600 mt-0.5">~17.6% instant gain</p></div>
                 </div>
                 {purchases.length > 0 && (
@@ -786,27 +826,28 @@ export default function NetWorth() {
                         <thead>
                           <tr className="border-b border-zinc-800 text-left text-zinc-600 text-xs">
                             <th className="pb-2 pr-4">Date</th><th className="pb-2 pr-4 text-right">Deducted</th>
-                            <th className="pb-2 pr-4 text-right">Shares</th><th className="pb-2 pr-4 text-right">Buy</th>
-                            <th className="pb-2 pr-4 text-right">Market</th><th className="pb-2 pr-4 text-right">Current</th>
-                            <th className="pb-2 pr-4 text-right text-green-400">Gain</th><th className="pb-2"></th>
+                            <th className="pb-2 pr-4 text-right">Shares</th><th className="pb-2 pr-4 text-right">Sell $</th>
+                            <th className="pb-2 pr-4 text-right">Proceeds</th>
+                            <th className="pb-2 pr-4 text-right text-green-400">Profit</th><th className="pb-2"></th>
                           </tr>
                         </thead>
                         <tbody>
                           {purchases.map((p) => {
-                            const costBasis = p.shares_purchased * p.purchase_price;
-                            const currentVal = p.shares_purchased * (p.current_price || p.market_price);
-                            const gain = currentVal - costBasis;
-                            const gainPct = costBasis > 0 ? (gain / costBasis * 100).toFixed(1) : 0;
+                            const proceeds = p.shares_purchased * p.market_price;
+                            const profit = proceeds - p.total_deducted;
+                            let alloc = {};
+                            try { alloc = JSON.parse(p.allocation_json || "{}"); } catch {}
+                            const allocTotal = (alloc.rrsp || 0) + (alloc.tfsa || 0) + (alloc.other || 0);
                             return (
                               <tr key={p.id} className="border-b border-zinc-800/50 last:border-0 hover:bg-zinc-800/30">
                                 <td className="py-2 pr-4 text-zinc-400">{p.purchase_date}</td>
                                 <td className="py-2 pr-4 text-right text-zinc-300">{fmt(p.total_deducted)}</td>
                                 <td className="py-2 pr-4 text-right text-zinc-300">{p.shares_purchased}</td>
-                                <td className="py-2 pr-4 text-right text-zinc-300">${p.purchase_price?.toFixed(2)}</td>
                                 <td className="py-2 pr-4 text-right text-zinc-300">${p.market_price?.toFixed(2)}</td>
-                                <td className="py-2 pr-4 text-right text-zinc-100">${(p.current_price || p.market_price)?.toFixed(2)}</td>
-                                <td className={`py-2 pr-4 text-right font-medium ${gain >= 0 ? "text-green-400" : "text-red-400"}`}>
-                                  {gain >= 0 ? "+" : ""}{fmt(gain)}<span className="text-xs ml-1 opacity-70">({gainPct}%)</span>
+                                <td className="py-2 pr-4 text-right text-zinc-100">{fmt(proceeds)}</td>
+                                <td className={`py-2 pr-4 text-right font-medium ${profit >= 0 ? "text-green-400" : "text-red-400"}`}>
+                                  {profit >= 0 ? "+" : ""}{fmt(profit)}
+                                  {allocTotal > 0 && <span className="block text-xs text-zinc-600 font-normal">{fmt(allocTotal)} allocated</span>}
                                 </td>
                                 <td className="py-2 text-right">
                                   <button onClick={() => handleEditPurchase(p)} className="text-yellow-400 hover:text-yellow-300 text-xs mr-2">Edit</button>
@@ -842,7 +883,7 @@ export default function NetWorth() {
                     <tr className="border-b border-zinc-700 text-left text-zinc-500 text-xs bg-zinc-800/50">
                       <th className="px-4 py-2">Pay Date</th><th className="px-4 py-2 text-right">Net Pay</th>
                       <th className="px-4 py-2 text-right text-blue-400">RRSP (You)</th><th className="px-4 py-2 text-right text-green-400">RRSP Match</th>
-                      <th className="px-4 py-2 text-right text-purple-400">ESPP (10%)</th><th className="px-4 py-2 text-right text-yellow-400">Total Saved</th>
+                      <th className="px-4 py-2 text-right text-purple-400">ESPP</th><th className="px-4 py-2 text-right text-yellow-400">Total Saved</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -902,10 +943,57 @@ export default function NetWorth() {
               <div className="grid grid-cols-3 gap-3">
                 <div><label className="text-xs text-zinc-500">Shares Purchased</label><input type="number" step="0.0001" min="0" className={`w-full mt-0.5 ${inputClsLg}`} value={purchaseForm.shares_purchased} onChange={(e) => setPurchaseForm({ ...purchaseForm, shares_purchased: e.target.value })} placeholder="0" /></div>
                 <div><label className="text-xs text-zinc-500">Buy Price / Share</label><input type="number" step="0.01" min="0" className={`w-full mt-0.5 ${inputClsLg}`} value={purchaseForm.purchase_price} onChange={(e) => setPurchaseForm({ ...purchaseForm, purchase_price: e.target.value })} placeholder="0.00" /></div>
-                <div><label className="text-xs text-zinc-500">Market Price / Share</label><input type="number" step="0.01" min="0" className={`w-full mt-0.5 ${inputClsLg}`} value={purchaseForm.market_price} onChange={(e) => setPurchaseForm({ ...purchaseForm, market_price: e.target.value })} placeholder="0.00" /></div>
+                <div><label className="text-xs text-zinc-500">Sell Price / Share</label><input type="number" step="0.01" min="0" className={`w-full mt-0.5 ${inputClsLg}`} value={purchaseForm.market_price} onChange={(e) => setPurchaseForm({ ...purchaseForm, market_price: e.target.value })} placeholder="0.00" /></div>
               </div>
-              <div><label className="text-xs text-zinc-500">Current Stock Price (for valuation)</label><input type="number" step="0.01" min="0" className={`w-full mt-0.5 ${inputClsLg}`} value={purchaseForm.current_price} onChange={(e) => setPurchaseForm({ ...purchaseForm, current_price: e.target.value })} placeholder="0.00" /></div>
+              {/* Computed proceeds summary */}
+              {(() => {
+                const shares = parseFloat(purchaseForm.shares_purchased) || 0;
+                const sellPrice = parseFloat(purchaseForm.market_price) || 0;
+                const deducted = parseFloat(purchaseForm.total_deducted) || 0;
+                const proceeds = shares * sellPrice;
+                const profit = proceeds - deducted;
+                if (!proceeds) return null;
+                return (
+                  <div className="bg-zinc-800/60 rounded-lg px-4 py-3 flex gap-6 text-sm">
+                    <div><p className="text-xs text-zinc-500">Proceeds</p><p className="font-semibold text-zinc-100">{fmt(proceeds)}</p></div>
+                    <div><p className="text-xs text-zinc-500">Profit</p><p className={`font-semibold ${profit >= 0 ? "text-green-400" : "text-red-400"}`}>{profit >= 0 ? "+" : ""}{fmt(profit)}</p></div>
+                  </div>
+                );
+              })()}
               <div><label className="text-xs text-zinc-500">Notes (optional)</label><input type="text" className={`w-full mt-0.5 ${inputClsLg}`} value={purchaseForm.notes} onChange={(e) => setPurchaseForm({ ...purchaseForm, notes: e.target.value })} /></div>
+              {/* Allocation section */}
+              <div className="border border-zinc-800 rounded-lg p-3 space-y-2">
+                <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Allocate Proceeds</p>
+                <p className="text-xs text-zinc-600">Where did you put the proceeds from selling? (optional)</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-xs text-blue-400 block mb-0.5">RRSP</label>
+                    <input type="number" step="0.01" min="0" className={`w-full ${inputClsLg} text-xs py-1`} value={purchaseForm.alloc_rrsp} onChange={(e) => setPurchaseForm({ ...purchaseForm, alloc_rrsp: e.target.value })} placeholder="0.00" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-green-400 block mb-0.5">TFSA</label>
+                    <input type="number" step="0.01" min="0" className={`w-full ${inputClsLg} text-xs py-1`} value={purchaseForm.alloc_tfsa} onChange={(e) => setPurchaseForm({ ...purchaseForm, alloc_tfsa: e.target.value })} placeholder="0.00" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-yellow-400 block mb-0.5">Other</label>
+                    <input type="number" step="0.01" min="0" className={`w-full ${inputClsLg} text-xs py-1`} value={purchaseForm.alloc_other} onChange={(e) => setPurchaseForm({ ...purchaseForm, alloc_other: e.target.value })} placeholder="0.00" />
+                  </div>
+                </div>
+                {(parseFloat(purchaseForm.alloc_other) > 0) && (
+                  <input type="text" className={`w-full ${inputClsLg} text-xs py-1`} value={purchaseForm.alloc_other_label} onChange={(e) => setPurchaseForm({ ...purchaseForm, alloc_other_label: e.target.value })} placeholder='Label for "Other" (e.g. Emergency Fund)' />
+                )}
+                {(() => {
+                  const total = (parseFloat(purchaseForm.alloc_rrsp) || 0) + (parseFloat(purchaseForm.alloc_tfsa) || 0) + (parseFloat(purchaseForm.alloc_other) || 0);
+                  const proceeds = (parseFloat(purchaseForm.shares_purchased) || 0) * (parseFloat(purchaseForm.market_price) || 0);
+                  if (!total) return null;
+                  const unallocated = proceeds - total;
+                  return (
+                    <p className={`text-xs ${unallocated < -0.01 ? "text-red-400" : "text-zinc-500"}`}>
+                      {fmt(total)} allocated{proceeds > 0 ? ` · ${fmt(Math.abs(unallocated))} ${unallocated < -0.01 ? "over" : "unallocated"}` : ""}
+                    </p>
+                  );
+                })()}
+              </div>
               <div className="flex gap-3 pt-1">
                 <button type="submit" disabled={savingPurchase} className="flex-1 bg-yellow-400 text-black py-2 rounded-lg text-sm font-medium hover:bg-yellow-300 disabled:opacity-40">
                   {savingPurchase ? "Saving..." : editPurchaseId ? "Save Changes" : "Log Purchase"}

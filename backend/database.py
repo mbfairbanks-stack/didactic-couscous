@@ -157,6 +157,12 @@ def _init_db_extras(eng, seed_demo: bool = False):
             if "swr" not in rp_cols:
                 conn.execute(sa.text("ALTER TABLE retirement_profiles ADD COLUMN swr REAL NOT NULL DEFAULT 0.035"))
 
+        # espp_purchases extras
+        if "espp_purchases" in tables:
+            ep_cols = [c["name"] for c in inspector.get_columns("espp_purchases")]
+            if "allocation_json" not in ep_cols:
+                conn.execute(sa.text("ALTER TABLE espp_purchases ADD COLUMN allocation_json TEXT"))
+
         # debts extras
         if "debts" in tables:
             d_cols = [c["name"] for c in inspector.get_columns("debts")]
