@@ -93,7 +93,17 @@ function SetInputs({ exercise, set, onChange }) {
   return <NumberField value={set.reps} step={1} placeholder="reps" onChange={(v) => onChange({ ...set, reps: v })} />
 }
 
-export default function ExerciseLogger({ exercise, sets, onChangeSet, onAddSet, onPrefill, isDone, onToggleDone, lastEntry }) {
+export default function ExerciseLogger({
+  exercise,
+  sets,
+  onChangeSet,
+  onAddSet,
+  onPrefill,
+  isDone,
+  onToggleDone,
+  lastEntry,
+  choice,
+}) {
   const currentTop = topSetMetric(sets, exercise.type)
   const lastTop = lastEntry ? topSetMetric(lastEntry.sets, lastEntry.type) : null
   const isNewBest = currentTop && lastTop && currentTop.value > lastTop.value
@@ -101,6 +111,21 @@ export default function ExerciseLogger({ exercise, sets, onChangeSet, onAddSet, 
 
   return (
     <div className="card exercise-card">
+      {choice && (
+        <div className="choice-seg">
+          {choice.options.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              className={o.id === choice.selectedId ? 'active' : ''}
+              onClick={() => choice.onSelect(o.id)}
+            >
+              {o.name}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="ex-header">
         <span className="ex-name">{exercise.name}</span>
         <span className="ex-target">

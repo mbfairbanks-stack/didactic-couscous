@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { PROGRAM } from '../data/program'
+import { PROGRAM, isChoice, itemExercises } from '../data/program'
 import { todayISO, findLastEntry } from '../lib/stats'
 import ExerciseLogger from './ExerciseLogger'
 
@@ -39,7 +39,9 @@ export default function LogWorkout({ workoutKey, sessions, existingSession, onSa
   const [date, setDate] = useState(existingSession?.date || todayISO())
   const [entries, setEntries] = useState(() => {
     const init = {}
-    for (const ex of workout.exercises) {
+    // Expand choice slots to their options so every alternative has its own
+    // editable set rows even before you pick one.
+    for (const ex of workout.exercises.flatMap(itemExercises)) {
       if (!existingSession?.entries?.[ex.id]) {
         init[ex.id] = blankSets(ex)
         continue
@@ -59,6 +61,18 @@ export default function LogWorkout({ workoutKey, sessions, existingSession, onSa
       init[ex.id] = saved
     }
     return init
+  })
+
+  // For each choice slot, which option is selected. Defaults to whichever
+  // option the existing session logged, else the first option.
+  const [selection, setSelection] = useState(() => {
+    const sel = {}
+    for (const item of workout.exercises) {
+      if (!isChoice(item)) continue
+      const logged = item.options.find((o) => existingSession?.entries?.[o.id])
+      sel[item.id] = (logged || item.options[0]).id
+    }
+    return sel
   })
 
   const [doneKeys, setDoneKeys] = useState(() => new Set())
@@ -137,7 +151,9 @@ export default function LogWorkout({ workoutKey, sessions, existingSession, onSa
     if (dateIsInFuture) return
     const savedEntries = {}
     const entryTypes = {}
-    for (const ex of workout.exercises) {
+    for (const item of workout.exercises) {
+      // For a choice slot, only the selected option is logged.
+      const ex = isChoice(item) ? item.options.find((o) => o.id === selection[item.id]) : item
       savedEntries[ex.id] = entries[ex.id].map((s) => normalizeSet(s, ex.type))
       entryTypes[ex.id] = ex.type
     }
@@ -169,7 +185,9 @@ export default function LogWorkout({ workoutKey, sessions, existingSession, onSa
         </div>
       )}
 
-      {workout.exercises.map((ex) => {
+      {workout.exercises.map((item) => {
+        const selectedId = isChoice(item) ? selection[item.id] : item.id
+        const ex = isChoice(item) ? item.options.find((o) => o.id === selectedId) : item
         const lastEntry = findLastEntry(sessions, ex.id, {
           beforeDate: date,
           excludeId: sessionId,
@@ -177,7 +195,7 @@ export default function LogWorkout({ workoutKey, sessions, existingSession, onSa
         })
         return (
           <ExerciseLogger
-            key={ex.id}
+            key={item.id}
             exercise={ex}
             sets={entries[ex.id]}
             lastEntry={lastEntry}
@@ -186,6 +204,15 @@ export default function LogWorkout({ workoutKey, sessions, existingSession, onSa
             onPrefill={lastEntry ? () => prefillFromLast(ex, lastEntry) : null}
             isDone={(i) => doneKeys.has(`${ex.id}:${i}`)}
             onToggleDone={(i) => toggleDone(ex.id, i)}
+            choice={
+              isChoice(item)
+                ? {
+                    options: item.options,
+                    selectedId,
+                    onSelect: (id) => setSelection((s) => ({ ...s, [item.id]: id })),
+                  }
+                : null
+            }
           />
         )
       })}

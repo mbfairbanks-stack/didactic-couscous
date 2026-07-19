@@ -233,6 +233,32 @@ h2:first-child {
   min-height: 44px;
 }
 
+.choice-seg {
+  display: flex;
+  gap: 0.3rem;
+  margin-bottom: 0.6rem;
+  background: var(--bg-input);
+  border-radius: 10px;
+  padding: 0.25rem;
+}
+
+.choice-seg button {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  border-radius: 8px;
+  padding: 0.5rem 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  min-height: 40px;
+}
+
+.choice-seg button.active {
+  background: var(--accent);
+  color: #06231a;
+}
+
 .exercise-card .ex-header {
   display: flex;
   justify-content: space-between;
