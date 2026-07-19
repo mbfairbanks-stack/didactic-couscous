@@ -315,6 +315,27 @@ h2:first-child {
   margin: 0.35rem 0 0.5rem;
 }
 
+.beat-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--warn);
+  font-weight: 600;
+  font-size: 0.8rem;
+  margin: 0.35rem 0 0.5rem;
+}
+
+.stall-hint {
+  background: rgba(240, 193, 79, 0.12);
+  border: 1px solid var(--warn);
+  color: var(--warn);
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  margin-top: 0.6rem;
+}
+
 .set-row {
   display: flex;
   align-items: center;

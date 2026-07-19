@@ -88,6 +88,40 @@ export function entryVolume(sets, type) {
   return (sets || []).filter((s) => hasData(s, type)).reduce((sum, s) => sum + setVolume(s, type), 0)
 }
 
+// Estimated one-rep max (Epley). Rounded to the nearest pound.
+export function estimate1RM(weight, reps) {
+  const w = Number(weight)
+  const r = Number(reps)
+  if (!w || !r) return 0
+  return Math.round(w * (1 + r / 30))
+}
+
+// Last integer in a target label, used as the rep goal: '10' -> 10,
+// '8-10' -> 10, '10 per leg' -> 10.
+function repGoal(targetLabel) {
+  const m = String(targetLabel ?? '').match(/\d+/g)
+  return m ? Number(m[m.length - 1]) : null
+}
+
+// A concrete "beat it" suggestion for today, from last time's top set.
+export function suggestTarget(lastEntry, exercise) {
+  if (!lastEntry) return null
+  const top = topSetMetric(lastEntry.sets, lastEntry.type)
+  if (!top) return null
+  const type = exercise.type
+  if (type === 'weight') {
+    const goal = repGoal(exercise.targetLabel) ?? Number(top.set.reps)
+    if (Number(top.set.reps) >= goal) {
+      return `Try ${(Number(top.set.weight) || 0) + 5} lb x ${goal}`
+    }
+    return `Try ${top.set.weight} lb x ${Number(top.set.reps) + 1}`
+  }
+  if (type === 'reps') return `Try ${Number(top.set.reps) + 1} reps`
+  if (type === 'time') return `Try ${Number(top.set.seconds) + 5}s`
+  if (type === 'cardio') return `Go past ${top.set.distance} dist`
+  return null
+}
+
 function formatVolume(value, type) {
   if (type === 'time') return `${value.toLocaleString()}s total`
   if (type === 'reps') return `${value.toLocaleString()} reps total`
@@ -132,7 +166,11 @@ export function progressSeries(sessions, exerciseId, metric = 'top') {
     const sets = session.entries?.[exerciseId]
     const type = session.entryTypes?.[exerciseId]
     if (!sets || !type || !entryHasAnyData(sets, type)) continue
-    if (metric === 'volume') {
+    if (metric === 'e1rm' && type === 'weight') {
+      let best = 0
+      for (const s of sets) if (hasData(s, type)) best = Math.max(best, estimate1RM(s.weight, s.reps))
+      if (best) out.push({ date: session.date, value: best, display: `${best} lb est. 1RM` })
+    } else if (metric === 'volume') {
       const value = entryVolume(sets, type)
       out.push({ date: session.date, value, display: formatVolume(value, type) })
     } else {
@@ -141,6 +179,17 @@ export function progressSeries(sessions, exerciseId, metric = 'top') {
     }
   }
   return out
+}
+
+// Flags a plateau: the all-time best top set was `windowN`+ sessions ago.
+// Returns { since } or null. Needs enough history to be meaningful.
+export function stallInfo(sessions, exerciseId, windowN = 3) {
+  const series = progressSeries(sessions, exerciseId, 'top')
+  if (series.length < windowN + 1) return null
+  let bestIdx = 0
+  for (let i = 1; i < series.length; i++) if (series[i].value >= series[bestIdx].value) bestIdx = i
+  const since = series.length - 1 - bestIdx
+  return since >= windowN ? { since } : null
 }
 
 // Best-ever top set for every exercise that has any logged data.

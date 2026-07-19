@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { getAllExercises } from '../data/program'
-import { progressSeries, personalBests, formatDateLabel } from '../lib/stats'
+import { progressSeries, personalBests, stallInfo, formatDateLabel } from '../lib/stats'
 import Sparkline from './Sparkline'
 
 export default function Progress({ sessions }) {
@@ -10,7 +10,11 @@ export default function Progress({ sessions }) {
   const exercise = exercises.find((e) => e.id === exerciseId)
 
   const bests = personalBests(sessions, exercises)
-  const series = progressSeries(sessions, exerciseId, metric)
+  // est. 1RM only applies to weight lifts; fall back to top set otherwise.
+  const canE1rm = exercise.type === 'weight'
+  const effMetric = metric === 'e1rm' && !canE1rm ? 'top' : metric
+  const stall = stallInfo(sessions, exerciseId)
+  const series = progressSeries(sessions, exerciseId, effMetric)
   const chartPoints = series.map((p) => ({ date: p.date, value: p.value }))
   const best = series.length ? series.reduce((a, b) => (b.value > a.value ? b : a)) : null
   const latest = series.length ? series[series.length - 1] : null
@@ -41,13 +45,25 @@ export default function Progress({ sessions }) {
       </select>
 
       <div className="metric-toggle">
-        <button className={metric === 'top' ? 'active' : ''} onClick={() => setMetric('top')}>
+        <button className={effMetric === 'top' ? 'active' : ''} onClick={() => setMetric('top')}>
           Top set
         </button>
-        <button className={metric === 'volume' ? 'active' : ''} onClick={() => setMetric('volume')}>
+        <button className={effMetric === 'volume' ? 'active' : ''} onClick={() => setMetric('volume')}>
           Volume
         </button>
+        {canE1rm && (
+          <button className={effMetric === 'e1rm' ? 'active' : ''} onClick={() => setMetric('e1rm')}>
+            Est. 1RM
+          </button>
+        )}
       </div>
+
+      {stall && (
+        <div className="stall-hint">
+          Plateau: no new top set in {stall.since} session{stall.since === 1 ? '' : 's'}. Consider a deload, a rep
+          change, or the alternate exercise.
+        </div>
+      )}
 
       <div className="card" style={{ marginTop: '0.85rem' }}>
         {series.length === 0 ? (

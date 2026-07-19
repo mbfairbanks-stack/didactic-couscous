@@ -1,4 +1,4 @@
-import { formatDateLabel, topSetMetric } from '../lib/stats'
+import { formatDateLabel, topSetMetric, suggestTarget } from '../lib/stats'
 
 // Number input flanked by -/+ steppers so you can adjust weight/reps with a
 // thumb instead of opening the keyboard mid-set.
@@ -108,6 +108,7 @@ export default function ExerciseLogger({
   const lastTop = lastEntry ? topSetMetric(lastEntry.sets, lastEntry.type) : null
   const isNewBest = currentTop && lastTop && currentTop.value > lastTop.value
   const isCardio = exercise.type === 'cardio'
+  const suggestion = lastEntry ? suggestTarget(lastEntry, exercise) : null
 
   return (
     <div className="card exercise-card">
@@ -148,7 +149,11 @@ export default function ExerciseLogger({
         <div className="last-time">No previous data yet &mdash; log your first set.</div>
       )}
 
-      {isNewBest && <div className="new-best">New best!</div>}
+      {isNewBest ? (
+        <div className="new-best">New best!</div>
+      ) : (
+        suggestion && <div className="beat-target">🎯 {suggestion}</div>
+      )}
 
       {sets.map((set, i) => (
         <div className={`set-row${isDone && isDone(i) ? ' done' : ''}`} key={i}>
