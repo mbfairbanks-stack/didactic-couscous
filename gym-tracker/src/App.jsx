@@ -5,6 +5,7 @@ import Progress from './components/Progress'
 import DataManager from './components/DataManager'
 import ProgramEditor from './components/ProgramEditor'
 import RestTimer from './components/RestTimer'
+import UpdatePrompt from './components/UpdatePrompt'
 import { loadSessions, upsertSession, deleteSession } from './lib/storage'
 import { loadProgram, saveProgram } from './lib/programStore'
 
@@ -50,6 +51,7 @@ export default function App() {
 
   return (
     <>
+      <UpdatePrompt />
       <header className="app-header">
         {logging ? (
           <button className="icon-btn" onClick={() => setLogging(null)} aria-label="Back">
