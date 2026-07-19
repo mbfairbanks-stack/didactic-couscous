@@ -3,19 +3,27 @@ import Home from './components/Home'
 import LogWorkout from './components/LogWorkout'
 import Progress from './components/Progress'
 import DataManager from './components/DataManager'
+import ProgramEditor from './components/ProgramEditor'
 import RestTimer from './components/RestTimer'
 import { loadSessions, upsertSession, deleteSession } from './lib/storage'
+import { loadProgram, saveProgram } from './lib/programStore'
 
 const TABS = [
   { key: 'home', label: 'Home', icon: '🏠' },
   { key: 'progress', label: 'Progress', icon: '📈' },
+  { key: 'program', label: 'Program', icon: '⚙️' },
   { key: 'data', label: 'Backup', icon: '💾' },
 ]
 
 export default function App() {
   const [sessions, setSessions] = useState(() => loadSessions())
+  const [program, setProgram] = useState(() => loadProgram())
   const [tab, setTab] = useState('home')
   const [logging, setLogging] = useState(null) // { workoutKey, existingSession } | null
+
+  function handleProgramSave(next) {
+    setProgram(saveProgram(next))
+  }
 
   function openNewSession(workoutKey) {
     setLogging({ workoutKey, existingSession: null })
@@ -64,14 +72,22 @@ export default function App() {
         {logging ? (
           <LogWorkout
             workoutKey={logging.workoutKey}
+            program={program}
             sessions={sessions}
             existingSession={logging.existingSession}
             onSave={handleSave}
           />
         ) : tab === 'home' ? (
-          <Home sessions={sessions} onPickWorkout={openNewSession} onOpenSession={openExistingSession} />
+          <Home
+            program={program}
+            sessions={sessions}
+            onPickWorkout={openNewSession}
+            onOpenSession={openExistingSession}
+          />
         ) : tab === 'progress' ? (
-          <Progress sessions={sessions} />
+          <Progress program={program} sessions={sessions} />
+        ) : tab === 'program' ? (
+          <ProgramEditor program={program} onSave={handleProgramSave} />
         ) : (
           <DataManager sessions={sessions} onDataChanged={setSessions} />
         )}

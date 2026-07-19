@@ -3,8 +3,8 @@ import { getAllExercises } from '../data/program'
 import { progressSeries, personalBests, stallInfo, formatDateLabel } from '../lib/stats'
 import Sparkline from './Sparkline'
 
-export default function Progress({ sessions }) {
-  const exercises = getAllExercises()
+export default function Progress({ program, sessions }) {
+  const exercises = getAllExercises(program)
   const [exerciseId, setExerciseId] = useState(exercises[0].id)
   const [metric, setMetric] = useState('top')
   const exercise = exercises.find((e) => e.id === exerciseId)

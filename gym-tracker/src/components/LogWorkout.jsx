@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { PROGRAM, isChoice, itemExercises } from '../data/program'
+import { isChoice, itemExercises } from '../data/program'
 import { todayISO, findLastEntry } from '../lib/stats'
 import ExerciseLogger from './ExerciseLogger'
 
@@ -34,8 +34,8 @@ function normalizeSet(set, type) {
   return { reps: set.reps === '' || set.reps == null ? null : Number(set.reps) }
 }
 
-export default function LogWorkout({ workoutKey, sessions, existingSession, onSave }) {
-  const workout = PROGRAM[workoutKey]
+export default function LogWorkout({ workoutKey, program, sessions, existingSession, onSave }) {
+  const workout = program[workoutKey]
   const [date, setDate] = useState(existingSession?.date || todayISO())
   const [entries, setEntries] = useState(() => {
     const init = {}

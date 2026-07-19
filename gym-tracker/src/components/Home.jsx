@@ -1,8 +1,8 @@
-import { PROGRAM, WORKOUT_KEYS, getTodaysWorkoutKey } from '../data/program'
+import { WORKOUT_KEYS, getTodaysWorkoutKey } from '../data/program'
 import { formatDateLabel, sessionStats } from '../lib/stats'
 
-export default function Home({ sessions, onPickWorkout, onOpenSession }) {
-  const todayKey = getTodaysWorkoutKey()
+export default function Home({ program, sessions, onPickWorkout, onOpenSession }) {
+  const todayKey = getTodaysWorkoutKey(program)
   const recent = [...sessions].reverse().slice(0, 8)
   const stats = sessionStats(sessions)
 
@@ -34,7 +34,7 @@ export default function Home({ sessions, onPickWorkout, onOpenSession }) {
             onClick={() => onPickWorkout(key)}
           >
             {key}
-            <span className="sub">{key === todayKey ? "Today" : PROGRAM[key].exercises.length + ' ex'}</span>
+            <span className="sub">{key === todayKey ? 'Today' : program[key].exercises.length + ' ex'}</span>
           </button>
         ))}
       </div>

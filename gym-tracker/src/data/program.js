@@ -14,7 +14,10 @@
 // so each alternative keeps its own separate history and metric. The slot `id`
 // is only used for UI state — it is never stored on a session.
 
-export const PROGRAM = {
+// The seed program. The active program lives in localStorage (see
+// lib/programStore.js) and can be edited in the app; this is what a fresh
+// install starts from and what "Reset to default" restores.
+export const DEFAULT_PROGRAM = {
   A: {
     key: 'A',
     name: 'Workout A',
@@ -96,10 +99,10 @@ export function itemExercises(item) {
 // All distinct exercises across the whole program (choice options included),
 // for the Progress picker. When an id repeats (db_rdl, lat_pulldown, plank)
 // keep the first definition's name.
-export function getAllExercises() {
+export function getAllExercises(program) {
   const seen = new Map()
   for (const key of WORKOUT_KEYS) {
-    for (const item of PROGRAM[key].exercises) {
+    for (const item of program[key].exercises) {
       for (const ex of itemExercises(item)) {
         if (!seen.has(ex.id)) seen.set(ex.id, ex)
       }
@@ -108,10 +111,10 @@ export function getAllExercises() {
   return Array.from(seen.values())
 }
 
-export function getTodaysWorkoutKey(date = new Date()) {
+export function getTodaysWorkoutKey(program, date = new Date()) {
   const day = date.getDay()
   for (const key of WORKOUT_KEYS) {
-    if (PROGRAM[key].dayOfWeek === day) return key
+    if (program[key].dayOfWeek === day) return key
   }
   return null
 }
