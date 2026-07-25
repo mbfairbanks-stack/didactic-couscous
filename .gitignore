@@ -11,3 +11,7 @@ frontend/dist/
 # Misc
 .DS_Store
 *.env
+.claude/
+
+# Personal budget spreadsheets — never commit
+*.xlsx

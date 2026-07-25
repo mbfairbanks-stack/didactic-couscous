@@ -1,14 +1,108 @@
 const BASE = "/api";
+const TOKEN_KEY = "budget_token";
 
-async function req(path, options = {}) {
-  const res = await fetch(`${BASE}${path}`, options);
+const getToken = () => localStorage.getItem(TOKEN_KEY) || "";
+
+async function doFetch(path, options = {}) {
+  const token = getToken();
+  const headers = {
+    ...(options.headers || {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+  const res = await fetch(`${BASE}${path}`, { ...options, headers });
+  if (res.status === 401) {
+    localStorage.removeItem(TOKEN_KEY);
+    window.location.replace("/");
+    return;
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || "Request failed");
+    const detail = err.detail;
+    const msg = Array.isArray(detail)
+      ? detail.map((e) => {
+          const loc = Array.isArray(e.loc) ? e.loc.join(".") : "";
+          return loc ? `[${loc}] ${e.msg}` : (e.msg || JSON.stringify(e));
+        }).join("; ")
+      : detail || "Request failed";
+    throw new Error(msg);
   }
   if (res.status === 204) return null;
   return res.json();
 }
+
+// ── GET cache ────────────────────────────────────────────────────────────────
+// Dedupes concurrent identical requests (pages fire the same lookups from
+// several effects) and serves recent results on re-navigation. Any mutation
+// clears the whole cache, so this client's own writes are always visible.
+const CACHE_TTL_MS = 30_000;
+const _cache = new Map(); // path -> { time, data }
+const _inflight = new Map(); // path -> Promise<data>
+
+function invalidateCache() {
+  _cache.clear();
+  _inflight.clear();
+}
+
+async function req(path, options = {}) {
+  const method = (options.method || "GET").toUpperCase();
+  if (method !== "GET") {
+    try {
+      return await doFetch(path, options);
+    } finally {
+      invalidateCache();
+    }
+  }
+
+  const hit = _cache.get(path);
+  if (hit && Date.now() - hit.time < CACHE_TTL_MS) return structuredClone(hit.data);
+
+  if (!_inflight.has(path)) {
+    const p = doFetch(path, options)
+      .then((data) => {
+        if (data !== undefined) _cache.set(path, { time: Date.now(), data });
+        return data;
+      })
+      .finally(() => _inflight.delete(path));
+    _inflight.set(path, p);
+  }
+  // Clone per consumer so callers can sort/mutate results without corrupting the cache
+  return _inflight.get(path).then((data) => (data === undefined ? data : structuredClone(data)));
+}
+
+// Auth
+export const loginApi = (username, password) =>
+  fetch(`${BASE}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  }).then(async (r) => {
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || "Incorrect username or password");
+    }
+    return r.json();
+  });
+
+export const registerApi = (username, password) =>
+  fetch(`${BASE}/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  }).then(async (r) => {
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || "Registration failed");
+    }
+    return r.json();
+  });
+
+export const checkAuth = () =>
+  fetch(`${BASE}/auth/check`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  }).then(async (r) => {
+    if (!r.ok) return { ok: false, demo: false };
+    return r.json();
+  });
 
 // Transactions
 export const getTransactions = (params = {}) => {
@@ -45,6 +139,10 @@ export const updateBudgetTarget = (id, body) =>
   req(`/budget-targets/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 export const deleteBudgetTarget = (id) =>
   req(`/budget-targets/${id}`, { method: "DELETE" });
+export const autoPopulateBudget = (body) =>
+  req("/budget-targets/auto-populate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const copyBudgetFromMonth = (body) =>
+  req("/budget-targets/copy-from-month", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 // Analytics
 export const getMonthlySummary = (year) => req(`/summary/monthly?year=${year}`);
@@ -52,22 +150,95 @@ export const getCategorySummary = (year, month) => {
   const qs = month ? `?year=${year}&month=${month}` : `?year=${year}`;
   return req(`/summary/categories${qs}`);
 };
-export const getTotals = (year, month) => {
-  const qs = month ? `?year=${year}&month=${month}` : `?year=${year}`;
-  return req(`/summary/totals${qs}`);
+export const getTotals = (year, month, throughMonth) => {
+  const params = new URLSearchParams({ year });
+  if (month) params.set("month", month);
+  if (throughMonth) params.set("through_month", throughMonth);
+  return req(`/summary/totals?${params}`);
 };
 export const getCategoryTrend = (category) =>
   req(`/summary/category-trend?category=${encodeURIComponent(category)}`);
+export const getProjections = (year, month) =>
+  req(`/summary/projections?year=${year}&month=${month}`);
+export const getDailySummary = (year, month) => {
+  const qs = month ? `?year=${year}&month=${month}` : `?year=${year}`;
+  return req(`/summary/daily${qs}`);
+};
+
+// Settings
+export const getSettings = () => req("/settings");
+export const updateSettings = (body) =>
+  req("/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+// Onboarding
+export const getOnboardingStatus = () => req("/onboarding-status");
+
+// Category definitions
+export const getCategoryDefinitions = () => req("/category-definitions");
+export const createCategoryDefinition = (body) =>
+  req("/category-definitions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const updateCategoryDefinition = (id, body) =>
+  req(`/category-definitions/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteCategoryDefinition = (id) =>
+  req(`/category-definitions/${id}`, { method: "DELETE" });
 
 // Meta
 export const getCategories = () => req("/categories");
 export const getYears = () => req("/years");
+export const getMissingRecurring = () => req("/transactions/missing-recurring");
+
+// Debts
+export const getDebts = () => req("/debts");
+export const createDebt = (body) =>
+  req("/debts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const updateDebt = (id, body) =>
+  req(`/debts/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteDebt = (id) =>
+  req(`/debts/${id}`, { method: "DELETE" });
+export const getDebtTransactions = (id) => req(`/debts/${id}/transactions`);
+export const getDebtPaymentsSummary = (year, month) =>
+  req(`/debts/payments-summary?year=${year}&month=${month}`);
+
+// Merchant categories (audit)
+export const getMerchantCategories = () => req("/merchant-categories");
+export const bulkUpdateCategory = (body) =>
+  req("/transactions/bulk-category", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const setMerchantCategory = (body) =>
+  req("/transactions/set-merchant-category", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 // Import
 export const importFile = (file) => {
   const fd = new FormData();
   fd.append("file", file);
   return req("/import", { method: "POST", body: fd });
+};
+export const parseCsv = ({ csv_text, format, source }) =>
+  req("/parse-csv", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: csv_text, format, source }) });
+export const importCsvRows = ({ rows }) =>
+  req("/import-csv-rows", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(rows) });
+
+// Deduplicate
+export const deduplicate = () => req("/deduplicate", { method: "POST" });
+export const cleanupSummary = () => req("/cleanup-summary", { method: "POST" });
+
+// Category migration
+export const getSuggestedRenames = () => req("/categories/suggested-renames");
+export const migrateCategories = () => req("/categories/migrate", { method: "POST" });
+
+// Export CSV (transactions)
+export const exportTransactionsCsv = (params) => {
+  const token = getToken();
+  return fetch(BASE + "/transactions/export?" + new URLSearchParams(params), {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+    .then((r) => r.blob())
+    .then((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "transactions.csv";
+      a.click();
+    });
 };
 
 // Export
@@ -77,8 +248,15 @@ export const exportUrl = (year, month) => {
 };
 
 // AI Insights (streaming SSE)
-export const streamInsights = async (year, month, onChunk, onDone, onError) => {
-  const res = await fetch(`${BASE}/insights?year=${year}&month=${month}`);
+// month=null means annual mode; startMonth+endMonth means quarterly/semi-annual
+export const streamInsights = async (year, month, onChunk, onDone, onError, startMonth = null, endMonth = null) => {
+  const token = getToken();
+  let qs = `year=${year}`;
+  if (month) qs += `&month=${month}`;
+  if (startMonth && endMonth) qs += `&start_month=${startMonth}&end_month=${endMonth}`;
+  const res = await fetch(`${BASE}/insights?${qs}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     onError(err.detail || "Request failed");
@@ -106,3 +284,151 @@ export const streamInsights = async (year, month, onChunk, onDone, onError) => {
   }
   onDone();
 };
+
+
+// month=0 means annual
+export const saveInsightsLog = (year, month, content, startMonth = null, endMonth = null) =>
+  req("/insights/log", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ year, month: month ?? 0, content, start_month: startMonth, end_month: endMonth }) });
+
+export const getInsightsLog = () => req("/insights/log");
+
+export const deleteInsightsLog = (id) => req(`/insights/log/${id}`, { method: "DELETE" });
+
+export const mergeCategories = (source_names, target_name) =>
+  req("/category-definitions/merge", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source_names, target_name }) });
+
+// Assets (DB-backed net worth)
+export const getAssets = () => req("/assets");
+export const createAsset = (body) =>
+  req("/assets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const updateAsset = (id, body) =>
+  req(`/assets/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteAsset = (id) => req(`/assets/${id}`, { method: "DELETE" });
+export const syncSavingsAssets = () => req("/assets/sync-savings", { method: "POST" });
+
+// Savings contributions (RRSP + ESPP)
+export const getSavingsContributions = (year) =>
+  req(`/savings-contributions${year ? `?year=${year}` : ""}`);
+export const createSavingsContribution = (body) =>
+  req("/savings-contributions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const updateSavingsContribution = (id, body) =>
+  req(`/savings-contributions/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteSavingsContribution = (id) =>
+  req(`/savings-contributions/${id}`, { method: "DELETE" });
+export const getSavingsSummary = (year) => req(`/savings-contributions/summary?year=${year}`);
+
+// ESPP purchases
+export const getEsppPurchases = () => req("/espp-purchases");
+export const createEsppPurchase = (body) =>
+  req("/espp-purchases", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const updateEsppPurchase = (id, body) =>
+  req(`/espp-purchases/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteEsppPurchase = (id) => req(`/espp-purchases/${id}`, { method: "DELETE" });
+
+// Anomaly detection
+export const getAnomalies = (year, month) =>
+  req(`/transactions/anomalies?year=${year}&month=${month}`);
+
+// Split transaction
+export const splitTransaction = (id, body) =>
+  req(`/transactions/${id}/split`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+// Recurring suggestions
+export const getRecurringSuggestions = () => req("/transactions/recurring-suggestions");
+
+// Budget rollover
+export const rolloverBudget = (body) =>
+  req("/budget-targets/rollover", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+// Multi-category trend
+export const getMultiCategoryTrend = (categories) =>
+  req(`/summary/multi-category-trend?categories=${encodeURIComponent(categories.join(","))}`);
+
+// Budget templates
+export const getBudgetTemplates = () => req("/budget-templates");
+export const saveBudgetTemplate = (body) =>
+  req("/budget-templates/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const applyBudgetTemplate = (body) =>
+  req("/budget-templates/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteBudgetTemplate = (name) =>
+  req(`/budget-templates/${encodeURIComponent(name)}`, { method: "DELETE" });
+
+// Net Worth History & Snapshots
+export const snapshotNetWorth = (notes) =>
+  req(`/net-worth/snapshot${notes ? `?snapshot_notes=${encodeURIComponent(notes)}` : ""}`, { method: "POST" });
+export const getNetWorthHistory = () => req("/net-worth/history");
+export const deleteNetWorthSnapshot = (id) => req(`/net-worth/snapshot/${id}`, { method: "DELETE" });
+
+// Savings Goals
+export const getSavingsGoals = () => req("/savings-goals");
+export const createSavingsGoal = (body) =>
+  req("/savings-goals", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const updateSavingsGoal = (id, body) =>
+  req(`/savings-goals/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteSavingsGoal = (id) => req(`/savings-goals/${id}`, { method: "DELETE" });
+
+// Tax Summary
+export const getTaxSummary = (year) => req(`/tax-summary?year=${year}`);
+
+// Net Worth Forecast
+export const getNetWorthForecast = (months = 12) => req(`/forecast/networth?months=${months}`);
+
+// Recurring Bills
+export const getBills = () => req("/bills");
+export const createBill = (body) =>
+  req("/bills", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const updateBill = (id, body) =>
+  req(`/bills/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteBill = (id) => req(`/bills/${id}`, { method: "DELETE" });
+export const getUpcomingBills = () => req("/bills/upcoming");
+
+// Merchant rules
+export const upsertMerchantRule = (merchant_pattern, category) =>
+  req("/merchant-rules", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ merchant_pattern, category }) });
+
+// PDF parsing
+export const parsePdf = (file) => {
+  const form = new FormData();
+  form.append("file", file);
+  return req("/parse-pdf", { method: "POST", body: form });
+};
+
+// Emergency fund
+export const getEmergencyFund = () => req("/emergency-fund");
+
+// Net worth milestones
+export const getMilestones = () => req("/net-worth/milestones");
+export const createMilestone = (body) =>
+  req("/net-worth/milestones", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteMilestone = (id) => req(`/net-worth/milestones/${id}`, { method: "DELETE" });
+
+// Retirement module
+export const getRetirementSummary = () => req("/retirement/summary");
+
+export const getRetirementProfiles = () => req("/retirement/profiles");
+export const upsertRetirementProfile = (body) =>
+  req("/retirement/profiles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const updateRetirementProfile = (id, body) =>
+  req(`/retirement/profiles/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteRetirementProfile = (id) => req(`/retirement/profiles/${id}`, { method: "DELETE" });
+
+export const getRsuGrants = () => req("/retirement/rsu-grants");
+export const createRsuGrant = (body) =>
+  req("/retirement/rsu-grants", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const updateRsuGrant = (id, body) =>
+  req(`/retirement/rsu-grants/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteRsuGrant = (id) => req(`/retirement/rsu-grants/${id}`, { method: "DELETE" });
+
+export const getRetentionBonuses = () => req("/retirement/retention-bonuses");
+export const createRetentionBonus = (body) =>
+  req("/retirement/retention-bonuses", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const updateRetentionBonus = (id, body) =>
+  req(`/retirement/retention-bonuses/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteRetentionBonus = (id) => req(`/retirement/retention-bonuses/${id}`, { method: "DELETE" });
+
+export const getRetirementGoals = () => req("/retirement/goals");
+export const createRetirementGoal = (body) =>
+  req("/retirement/goals", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const updateRetirementGoal = (id, body) =>
+  req(`/retirement/goals/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteRetirementGoal = (id) => req(`/retirement/goals/${id}`, { method: "DELETE" });
