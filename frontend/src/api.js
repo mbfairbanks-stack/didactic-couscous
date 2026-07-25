@@ -43,11 +43,20 @@ function invalidateCache() {
   _inflight.clear();
 }
 
+/** Surface an error to the global <Toaster/> (mounted in App.jsx). */
+export function toast(message, kind = "error") {
+  window.dispatchEvent(new CustomEvent("app-toast", { detail: { message, kind } }));
+}
+
 async function req(path, options = {}) {
   const method = (options.method || "GET").toUpperCase();
   if (method !== "GET") {
     try {
       return await doFetch(path, options);
+    } catch (e) {
+      // Failed writes must never be silent, even if the caller swallows the error
+      toast(`Save failed: ${e.message}`);
+      throw e;
     } finally {
       invalidateCache();
     }
@@ -306,15 +315,7 @@ export const updateAsset = (id, body) =>
 export const deleteAsset = (id) => req(`/assets/${id}`, { method: "DELETE" });
 export const syncSavingsAssets = () => req("/assets/sync-savings", { method: "POST" });
 
-// Savings contributions (RRSP + ESPP)
-export const getSavingsContributions = (year) =>
-  req(`/savings-contributions${year ? `?year=${year}` : ""}`);
-export const createSavingsContribution = (body) =>
-  req("/savings-contributions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-export const updateSavingsContribution = (id, body) =>
-  req(`/savings-contributions/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-export const deleteSavingsContribution = (id) =>
-  req(`/savings-contributions/${id}`, { method: "DELETE" });
+// Savings summary (RRSP + ESPP — derived from income records)
 export const getSavingsSummary = (year) => req(`/savings-contributions/summary?year=${year}`);
 
 // ESPP purchases
@@ -372,15 +373,6 @@ export const getTaxSummary = (year) => req(`/tax-summary?year=${year}`);
 
 // Net Worth Forecast
 export const getNetWorthForecast = (months = 12) => req(`/forecast/networth?months=${months}`);
-
-// Recurring Bills
-export const getBills = () => req("/bills");
-export const createBill = (body) =>
-  req("/bills", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-export const updateBill = (id, body) =>
-  req(`/bills/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-export const deleteBill = (id) => req(`/bills/${id}`, { method: "DELETE" });
-export const getUpcomingBills = () => req("/bills/upcoming");
 
 // Merchant rules
 export const upsertMerchantRule = (merchant_pattern, category) =>

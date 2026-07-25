@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { usePeriod } from "../hooks/usePeriod";
 import { getTransactions, createTransaction, updateTransaction, deleteTransaction, getCategories, getYears, exportTransactionsCsv, getAnomalies, splitTransaction, getRecurringSuggestions, getDebts } from "../api";
 import { MONTH_LABELS, currentYear, currentMonth, fmtCents as fmt } from "../utils";
 
@@ -21,8 +22,7 @@ const emptyForm = {
 const inputCls = "bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-yellow-400/50";
 
 export default function Transactions() {
-  const [year, setYear] = useState(currentYear);
-  const [month, setMonth] = useState(currentMonth);
+  const { year, setYear, month, setMonth } = usePeriod();
   const [filterCategory, setFilterCategory] = useState("");
   const [filterSource, setFilterSource] = useState("");
   const [search, setSearch] = useState("");

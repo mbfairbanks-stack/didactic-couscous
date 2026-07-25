@@ -12,6 +12,7 @@ from collections import defaultdict
 
 import models
 from database import get_db
+from debt_math import effective_balance
 
 router = APIRouter()
 
@@ -257,9 +258,10 @@ def retirement_summary(db: Session = Depends(get_db)):
     ).scalar() or 0
 
     # Subtract non-mortgage debts from investable pool
-    total_debts = db.execute(
-        select(func.sum(models.Debt.current_balance)).where(models.Debt.debt_type != "mortgage")
-    ).scalar() or 0
+    non_mortgage = db.execute(
+        select(models.Debt).where(models.Debt.debt_type != "mortgage")
+    ).scalars().all()
+    total_debts = sum(effective_balance(d, db) for d in non_mortgage)
 
     total_assets = db.execute(select(func.sum(models.Asset.balance))).scalar() or 0
     investable_assets = max(investable_assets_raw - total_debts, 0)

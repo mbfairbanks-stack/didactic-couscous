@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { usePeriod } from "../hooks/usePeriod";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
@@ -230,8 +231,7 @@ export default function Income() {
   const { settings } = useSettings();
   const p1 = settings.person_1 || "Person 1";
   const p2 = settings.person_2 || "Person 2";
-  const [year, setYear] = useState(currentYear);
-  const [month, setMonth] = useState(currentMonth);
+  const { year, setYear, month, setMonth } = usePeriod();
   const [years, setYears] = useState([currentYear]);
   const [records, setRecords] = useState([]);
   const [paydays, setPaydays] = useState([emptyPayday()]);

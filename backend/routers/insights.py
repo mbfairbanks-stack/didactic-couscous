@@ -12,6 +12,7 @@ from collections import defaultdict
 
 import models
 from database import get_db
+from debt_math import effective_balance
 
 router = APIRouter()
 
@@ -34,34 +35,35 @@ def _build_debt_context(db: Session) -> list[str]:
     total_min_payment = 0
 
     for d in debts:
-        total_balance += d.current_balance
+        bal = effective_balance(d, db)
+        total_balance += bal
         total_min_payment += d.monthly_payment + d.monthly_extra
         debt_type = "Line of Credit" if d.debt_type == "loc" else "Loan"
         rate_str = f" @ {d.interest_rate * 100:.2f}% p.a." if d.interest_rate else " (0% interest)"
 
         if d.debt_type == "loc":
-            available = max(0, (d.credit_limit or 0) - d.current_balance)
-            monthly_interest = d.current_balance * (d.interest_rate / 12) if d.interest_rate else 0
+            available = max(0, (d.credit_limit or 0) - bal)
+            monthly_interest = bal * (d.interest_rate / 12) if d.interest_rate else 0
             lines.append(
                 f"- **{d.name}** ({debt_type}, {d.creditor}){rate_str}: "
-                f"${d.current_balance:,.0f} outstanding / ${d.credit_limit:,.0f} limit "
+                f"${bal:,.0f} outstanding / ${d.credit_limit:,.0f} limit "
                 f"(${available:,.0f} available) — min payment ${d.monthly_payment:,.0f}/mo, "
                 f"monthly interest ~${monthly_interest:,.0f}"
             )
         else:
             months_left = None
-            if d.monthly_payment + d.monthly_extra > 0 and d.current_balance > 0:
+            if d.monthly_payment + d.monthly_extra > 0 and bal > 0:
                 total_pmt = d.monthly_payment + d.monthly_extra
                 if d.interest_rate:
                     r = d.interest_rate / 12
-                    if total_pmt > d.current_balance * r:
-                        months_left = int(math.ceil(math.log(total_pmt / (total_pmt - d.current_balance * r)) / math.log(1 + r)))
+                    if total_pmt > bal * r:
+                        months_left = int(math.ceil(math.log(total_pmt / (total_pmt - bal * r)) / math.log(1 + r)))
                 else:
-                    months_left = int(math.ceil(d.current_balance / total_pmt)) if total_pmt > 0 else None
+                    months_left = int(math.ceil(bal / total_pmt)) if total_pmt > 0 else None
             payoff_str = f", payoff in ~{months_left} months" if months_left else ""
             lines.append(
                 f"- **{d.name}** ({debt_type}, {d.creditor}){rate_str}: "
-                f"${d.current_balance:,.0f} remaining — "
+                f"${bal:,.0f} remaining — "
                 f"${d.monthly_payment + d.monthly_extra:,.0f}/mo total payment{payoff_str}"
             )
 

@@ -1,49 +1,104 @@
-import { NavLink } from "react-router-dom";
-import { useState } from "react";
+import { NavLink, useLocation } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
 import { useSettings } from "../contexts/SettingsContext";
 import { useAuth } from "../contexts/AuthContext";
 
-const mainLinks = [
-  { to: "/dashboard", label: "Dashboard" },
-  { to: "/transactions", label: "Transactions" },
-  { to: "/budget", label: "Budget" },
-  { to: "/debts", label: "Debts" },
-  { to: "/charts", label: "Charts" },
-  { to: "/income", label: "Income" },
-  { to: "/insights", label: "AI Insights" },
-  { to: "/net-worth", label: "Net Worth" },
-  { to: "/retirement", label: "Retirement" },
-  { to: "/settings", label: "Settings" },
+// Grouped navigation: 5 top-level entries instead of 13 flat links.
+const NAV = [
+  { label: "Dashboard", to: "/dashboard" },
+  {
+    label: "Spending",
+    children: [
+      { to: "/transactions", label: "Transactions" },
+      { to: "/budget", label: "Budget" },
+      { to: "/charts", label: "Charts" },
+      { to: "/category-audit", label: "Category Audit" },
+    ],
+  },
+  {
+    label: "Wealth",
+    children: [
+      { to: "/net-worth", label: "Net Worth" },
+      { to: "/debts", label: "Debts" },
+      { to: "/retirement", label: "Retirement" },
+    ],
+  },
+  { label: "Income", to: "/income" },
+  {
+    label: "Tools",
+    children: [
+      { to: "/import", label: "Import" },
+      { to: "/insights", label: "AI Insights" },
+      { to: "/settings", label: "Settings" },
+    ],
+  },
 ];
 
-const toolLinks = [
-  { to: "/import", label: "Import" },
-  { to: "/category-audit", label: "Audit" },
-];
-
-const allLinks = [...mainLinks, ...toolLinks];
-
-const linkCls = ({ isActive }) =>
+const linkCls = (active) =>
   `px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${
-    isActive
+    active
       ? "bg-yellow-400/15 text-yellow-400 ring-1 ring-yellow-400/30"
       : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
   }`;
 
-const toolLinkCls = ({ isActive }) =>
-  `px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${
-    isActive ? "bg-yellow-400/15 text-yellow-400 ring-1 ring-yellow-400/30" : "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800"
-  }`;
+function GroupMenu({ group, pathname, openGroup, setOpenGroup }) {
+  const isActive = group.children.some((c) => pathname.startsWith(c.to));
+  const open = openGroup === group.label;
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpenGroup(open ? null : group.label)}
+        className={`${linkCls(isActive)} flex items-center gap-1`}
+      >
+        {group.label}
+        <svg width="10" height="10" viewBox="0 0 10 10" className={`transition-transform ${open ? "rotate-180" : ""}`}>
+          <path d="M1 3l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 min-w-[11rem] bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl py-1 z-50">
+          {group.children.map((c) => (
+            <NavLink
+              key={c.to}
+              to={c.to}
+              onClick={() => setOpenGroup(null)}
+              className={({ isActive }) =>
+                `block px-3 py-2 text-sm transition-colors ${
+                  isActive ? "text-yellow-400 bg-yellow-400/10" : "text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800"
+                }`
+              }
+            >
+              {c.label}
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Nav() {
   const { settings } = useSettings();
   const { logout, demo } = useAuth();
   const householdName = settings.household_name || "BudgetBot";
   const [menuOpen, setMenuOpen] = useState(false);
+  const [openGroup, setOpenGroup] = useState(null);
+  const { pathname } = useLocation();
+  const navRef = useRef(null);
+
+  // Close dropdowns on navigation and on outside click
+  useEffect(() => { setOpenGroup(null); setMenuOpen(false); }, [pathname]);
+  useEffect(() => {
+    function onClick(e) {
+      if (navRef.current && !navRef.current.contains(e.target)) setOpenGroup(null);
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, []);
 
   return (
     <header className="bg-zinc-950/95 backdrop-blur border-b border-zinc-800/80 sticky top-0 z-40">
-      <div className="max-w-7xl mx-auto px-4 flex items-center gap-3 h-14">
+      <div className="max-w-7xl mx-auto px-4 flex items-center gap-3 h-14" ref={navRef}>
         <NavLink to="/dashboard" className="shrink-0 flex items-center gap-2" onClick={() => setMenuOpen(false)}>
           <span className="text-yellow-400 font-bold text-base tracking-tight">{householdName}</span>
           <span className="text-zinc-600 text-sm font-medium hidden sm:inline">Budget</span>
@@ -53,14 +108,16 @@ export default function Nav() {
         </NavLink>
 
         {/* Desktop nav */}
-        <nav className="hidden md:flex items-center gap-0.5 overflow-x-auto scrollbar-none min-w-0 flex-1 mx-2">
-          {mainLinks.map((l) => (
-            <NavLink key={l.to} to={l.to} className={linkCls}>{l.label}</NavLink>
-          ))}
-          <div className="w-px h-4 bg-zinc-800 mx-1 shrink-0" />
-          {toolLinks.map((l) => (
-            <NavLink key={l.to} to={l.to} className={toolLinkCls}>{l.label}</NavLink>
-          ))}
+        <nav className="hidden md:flex items-center gap-0.5 min-w-0 flex-1 mx-2">
+          {NAV.map((item) =>
+            item.children ? (
+              <GroupMenu key={item.label} group={item} pathname={pathname} openGroup={openGroup} setOpenGroup={setOpenGroup} />
+            ) : (
+              <NavLink key={item.to} to={item.to} className={({ isActive }) => linkCls(isActive)}>
+                {item.label}
+              </NavLink>
+            )
+          )}
         </nav>
 
         <div className="flex-1 md:hidden" />
@@ -77,18 +134,34 @@ export default function Nav() {
         </button>
       </div>
 
-      {/* Mobile drawer */}
+      {/* Mobile drawer — grouped sections */}
       {menuOpen && (
-        <div className="md:hidden border-t border-zinc-800 bg-zinc-950 px-4 py-3 grid grid-cols-2 sm:grid-cols-3 gap-1">
-          {allLinks.map((l) => (
-            <NavLink key={l.to} to={l.to} onClick={() => setMenuOpen(false)}
-              className={({ isActive }) =>
-                `px-3 py-2.5 rounded-md text-sm font-medium transition-colors truncate ${isActive ? "bg-yellow-400 text-black" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"}`
-              }>
-              {l.label}
-            </NavLink>
-          ))}
-          <button onClick={() => { setMenuOpen(false); logout(); }} className="px-3 py-2.5 rounded-md text-sm font-medium text-zinc-500 hover:text-zinc-300 text-left">
+        <div className="md:hidden border-t border-zinc-800 bg-zinc-950 px-4 py-3 space-y-3">
+          {NAV.map((item) =>
+            item.children ? (
+              <div key={item.label}>
+                <p className="text-[11px] font-semibold text-zinc-600 uppercase tracking-widest px-1 mb-1">{item.label}</p>
+                <div className="grid grid-cols-2 gap-1">
+                  {item.children.map((c) => (
+                    <NavLink key={c.to} to={c.to} onClick={() => setMenuOpen(false)}
+                      className={({ isActive }) =>
+                        `px-3 py-2.5 rounded-md text-sm font-medium transition-colors truncate ${isActive ? "bg-yellow-400 text-black" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"}`
+                      }>
+                      {c.label}
+                    </NavLink>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <NavLink key={item.to} to={item.to} onClick={() => setMenuOpen(false)}
+                className={({ isActive }) =>
+                  `block px-3 py-2.5 rounded-md text-sm font-medium transition-colors ${isActive ? "bg-yellow-400 text-black" : "text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800"}`
+                }>
+                {item.label}
+              </NavLink>
+            )
+          )}
+          <button onClick={() => { setMenuOpen(false); logout(); }} className="px-3 py-2.5 rounded-md text-sm font-medium text-zinc-500 hover:text-zinc-300 text-left w-full">
             Sign out
           </button>
         </div>

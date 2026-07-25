@@ -1,16 +1,12 @@
 import { useState, useEffect } from "react";
+import { usePeriod } from "../hooks/usePeriod";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 import { getMonthlySummary, getCategorySummary, getCategoryTrend, getCategories, getYears, getMultiCategoryTrend, getDailySummary } from "../api";
 import { MONTH_LABELS, currentYear, fmt } from "../utils";
-
-const COLORS = [
-  "#fbbf24", "#ef4444", "#22c55e", "#a78bfa", "#06b6d4",
-  "#ec4899", "#10b981", "#f97316", "#6366f1", "#84cc16",
-  "#14b8a6", "#f59e0b",
-];
+import { categoryColor } from "../constants";
 
 function DarkTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
@@ -32,8 +28,6 @@ function MultiCategoryTrend({ categories }) {
   const [selected, setSelected] = useState([]);
   const [trendData, setTrendData] = useState([]);
   const [loading, setLoading] = useState(false);
-
-  const TREND_COLORS = ["#fbbf24", "#22c55e", "#a78bfa", "#06b6d4", "#ec4899", "#f97316"];
 
   const toggleCategory = (cat) => {
     setSelected((prev) =>
@@ -75,7 +69,7 @@ function MultiCategoryTrend({ categories }) {
                 ? "border-transparent text-black"
                 : "border-zinc-700 text-zinc-500 hover:text-zinc-300"
             }`}
-            style={selected.includes(cat) ? { backgroundColor: TREND_COLORS[selected.indexOf(cat) % TREND_COLORS.length] } : {}}
+            style={selected.includes(cat) ? { backgroundColor: categoryColor(cat) } : {}}
           >
             {cat}
           </button>
@@ -94,7 +88,7 @@ function MultiCategoryTrend({ categories }) {
             <Tooltip content={<DarkTooltip />} />
             <Legend wrapperStyle={{ fontSize: 11, color: "#a1a1aa" }} />
             {selected.map((cat, i) => (
-              <Line key={cat} type="monotone" dataKey={cat} stroke={TREND_COLORS[i % TREND_COLORS.length]} strokeWidth={2} dot={{ r: 3 }} />
+              <Line key={cat} type="monotone" dataKey={cat} stroke={categoryColor(cat)} strokeWidth={2} dot={{ r: 3 }} />
             ))}
           </LineChart>
         </ResponsiveContainer>
@@ -104,7 +98,7 @@ function MultiCategoryTrend({ categories }) {
 }
 
 export default function Charts() {
-  const [year, setYear] = useState(currentYear);
+  const { year, setYear } = usePeriod();
   const [years, setYears] = useState([currentYear]);
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState("");
@@ -288,8 +282,8 @@ export default function Charts() {
                     }
                     labelLine={false}
                   >
-                    {pieData.map((_, i) => (
-                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                    {pieData.map((entry, i) => (
+                      <Cell key={i} fill={categoryColor(entry.name)} />
                     ))}
                   </Pie>
                   <Tooltip
@@ -316,7 +310,7 @@ export default function Charts() {
                         <td className="py-1.5 pr-4 flex items-center gap-2">
                           <span
                             className="inline-block w-2 h-2 rounded-full shrink-0"
-                            style={{ backgroundColor: i < COLORS.length ? COLORS[i] : "#52525b" }}
+                            style={{ backgroundColor: categoryColor(c.category) }}
                           />
                           <span className="text-zinc-300">{c.category}</span>
                         </td>

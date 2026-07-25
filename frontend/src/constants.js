@@ -51,6 +51,23 @@ export const getCategoryGroup = (category) => {
   return "Other";
 };
 
+// ── Stable chart colors ──────────────────────────────────────────────────────
+// Semantic colors (green = income/good, red = expense/bad, yellow = accent)
+// are reserved; series palette avoids them so meaning stays unambiguous.
+export const SERIES_PALETTE = [
+  "#a78bfa", "#06b6d4", "#ec4899", "#f97316", "#6366f1",
+  "#84cc16", "#14b8a6", "#f59e0b", "#8b5cf6", "#0ea5e9",
+  "#d946ef", "#a3e635",
+];
+
+/** Deterministic color per category name — same color on every chart. */
+export const categoryColor = (name) => {
+  let h = 0;
+  const s = String(name || "");
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return SERIES_PALETTE[h % SERIES_PALETTE.length];
+};
+
 // Canonical list for dropdowns (preferred names only, no legacy aliases)
 export const ALL_CATEGORIES = [
   // Needs

@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useState, useEffect, lazy, Suspense } from "react";
 import Nav from "./components/Nav";
+import Toaster from "./components/Toaster";
 import Login from "./pages/Login";
 
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -67,6 +68,7 @@ export default function App() {
       <AuthProvider>
         <AuthGuard>
           <SettingsProvider>
+            <Toaster />
             <DemoBanner />
             <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-zinc-500 text-sm">Loading…</div>}>
             <Routes>
