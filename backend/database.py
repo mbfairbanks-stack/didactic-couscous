@@ -46,10 +46,7 @@ def get_engine_for_path(db_path: str):
     """Return a cached engine for db_path, initialising it on first access."""
     if db_path not in _engine_cache:
         eng = _make_engine(db_path)
-        import models as _models
-        _models.Base.metadata.create_all(bind=eng)
-        is_demo_db = db_path.endswith("demo.db")
-        _init_db_extras(eng, seed_demo=is_demo_db)
+        init_engine(eng, seed_demo=db_path.endswith("demo.db"))
         _engine_cache[db_path] = eng
     return _engine_cache[db_path]
 
@@ -81,41 +78,51 @@ def get_db(request: Request):
         db.close()
 
 
-def _init_db_extras(eng, seed_demo: bool = False):
-    """Idempotent schema patches + optional demo seeding for any engine."""
-    import sqlalchemy as sa
+# ---------------------------------------------------------------------------
+# Schema management — Alembic is the authority; seeding is separate.
+# ---------------------------------------------------------------------------
+
+import logging
+
+_logger = logging.getLogger(__name__)
+
+# Last revision before the consolidation migration. Databases without an
+# alembic_version table (fresh ones, and per-user DBs created before Alembic
+# ran on them) get stamped here, then upgraded — the consolidation migration
+# is defensive, so it no-ops on schemas that are already current.
+_PRE_CONSOLIDATION_REV = "fc124668f054"
+
+
+def ensure_schema(eng):
+    """Bring eng's database to the current Alembic head."""
+    from alembic.config import Config
+    from alembic import command
     from sqlalchemy import inspect as sa_inspect
 
+    cfg = Config(os.path.join(os.path.dirname(os.path.abspath(__file__)), "alembic.ini"))
+    cfg.set_main_option("sqlalchemy.url", str(eng.url))
+
+    if "alembic_version" not in sa_inspect(eng).get_table_names():
+        command.stamp(cfg, _PRE_CONSOLIDATION_REV)
+    try:
+        command.upgrade(cfg, "head")
+    except Exception:
+        _logger.exception(
+            "Alembic upgrade failed for %s — schema may be out of date", eng.url
+        )
+
+
+def seed_defaults(eng):
+    """Idempotent seeding of app_settings defaults and the category list."""
+    import sqlalchemy as sa
+
     with eng.connect() as conn:
-        inspector = sa_inspect(eng)
-        tables = inspector.get_table_names()
+        for k, v in [("household_name", "BudgetBot"), ("person_1", "Person 1"), ("person_2", "Person 2")]:
+            conn.execute(
+                sa.text("INSERT OR IGNORE INTO app_settings (key, value) VALUES (:k, :v)"),
+                {"k": k, "v": v},
+            )
 
-        # app_settings
-        if "app_settings" not in tables:
-            conn.execute(sa.text("""
-                CREATE TABLE app_settings (
-                    key TEXT PRIMARY KEY,
-                    value TEXT NOT NULL
-                )
-            """))
-            for k, v in [("household_name", "BudgetBot"), ("person_1", "Person 1"), ("person_2", "Person 2")]:
-                conn.execute(sa.text("INSERT INTO app_settings (key, value) VALUES (:k, :v)"), {"k": k, "v": v})
-
-        # categories
-        if "categories" not in tables:
-            conn.execute(sa.text("""
-                CREATE TABLE categories (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL UNIQUE,
-                    "group" TEXT NOT NULL,
-                    is_legacy INTEGER NOT NULL DEFAULT 0
-                )
-            """))
-        cat_cols = [c["name"] for c in inspector.get_columns("categories")] if "categories" in tables else []
-        if "is_hidden" not in cat_cols:
-            conn.execute(sa.text("ALTER TABLE categories ADD COLUMN is_hidden INTEGER NOT NULL DEFAULT 0"))
-        if "parent_name" not in cat_cols:
-            conn.execute(sa.text("ALTER TABLE categories ADD COLUMN parent_name TEXT"))
         cat_count = conn.execute(sa.text("SELECT COUNT(*) FROM categories")).scalar()
         if cat_count == 0:
             from categories import CATEGORY_GROUPS
@@ -129,80 +136,19 @@ def _init_db_extras(eng, seed_demo: bool = False):
                 "Health & Beauty", "Canva Sub", "Ipsy Sub", "Misc",
             }
             for name, group in CATEGORY_GROUPS.items():
-                is_leg = 0 if name in canonical else 1
-                conn.execute(sa.text(
-                    'INSERT INTO categories (name, "group", is_legacy) VALUES (:n, :g, :l)'
-                ), {"n": name, "g": group, "l": is_leg})
-
-        # transactions extras
-        if "transactions" in tables:
-            t_cols = [c["name"] for c in inspector.get_columns("transactions")]
-            if "is_recurring" not in t_cols:
-                conn.execute(sa.text("ALTER TABLE transactions ADD COLUMN is_recurring INTEGER NOT NULL DEFAULT 0"))
-            if "linked_debt_id" not in t_cols:
-                conn.execute(sa.text("ALTER TABLE transactions ADD COLUMN linked_debt_id INTEGER"))
-            if "debt_direction" not in t_cols:
-                conn.execute(sa.text("ALTER TABLE transactions ADD COLUMN debt_direction TEXT"))
-            conn.execute(sa.text("UPDATE transactions SET is_recurring = 0 WHERE is_recurring IS NULL"))
-            conn.execute(sa.text("UPDATE transactions SET is_fixed = 0 WHERE is_fixed IS NULL"))
-            conn.execute(sa.text("""
-                UPDATE transactions
-                SET year  = CAST(strftime('%Y', date) AS INTEGER),
-                    month = CAST(strftime('%m', date) AS INTEGER)
-                WHERE year  != CAST(strftime('%Y', date) AS INTEGER)
-                   OR month != CAST(strftime('%m', date) AS INTEGER)
-            """))
-
-        # income extras
-        if "income" in tables:
-            i_cols = [c["name"] for c in inspector.get_columns("income")]
-            for col in ("rrsp_employee", "rrsp_employer", "espp_deduction"):
-                if col not in i_cols:
-                    conn.execute(sa.text(f"ALTER TABLE income ADD COLUMN {col} REAL NOT NULL DEFAULT 0"))
-
-        # assets extras
-        if "assets" in tables:
-            a_cols = [c["name"] for c in inspector.get_columns("assets")]
-            if "auto_sync" not in a_cols:
-                conn.execute(sa.text("ALTER TABLE assets ADD COLUMN auto_sync INTEGER NOT NULL DEFAULT 0"))
-            if "liquidity" not in a_cols:
-                conn.execute(sa.text("ALTER TABLE assets ADD COLUMN liquidity TEXT NOT NULL DEFAULT 'liquid'"))
-
-        # insights_log extras
-        if "insights_log" in tables:
-            il_cols = [c["name"] for c in inspector.get_columns("insights_log")]
-            if "start_month" not in il_cols:
-                conn.execute(sa.text("ALTER TABLE insights_log ADD COLUMN start_month INTEGER"))
-            if "end_month" not in il_cols:
-                conn.execute(sa.text("ALTER TABLE insights_log ADD COLUMN end_month INTEGER"))
-
-        # retirement_profiles extras
-        if "retirement_profiles" in tables:
-            rp_cols = [c["name"] for c in inspector.get_columns("retirement_profiles")]
-            if "cpp_start_age" not in rp_cols:
-                conn.execute(sa.text("ALTER TABLE retirement_profiles ADD COLUMN cpp_start_age INTEGER NOT NULL DEFAULT 65"))
-            if "swr" not in rp_cols:
-                conn.execute(sa.text("ALTER TABLE retirement_profiles ADD COLUMN swr REAL NOT NULL DEFAULT 0.035"))
-
-        # espp_purchases extras
-        if "espp_purchases" in tables:
-            ep_cols = [c["name"] for c in inspector.get_columns("espp_purchases")]
-            if "allocation_json" not in ep_cols:
-                conn.execute(sa.text("ALTER TABLE espp_purchases ADD COLUMN allocation_json TEXT"))
-
-        # debts extras
-        if "debts" in tables:
-            d_cols = [c["name"] for c in inspector.get_columns("debts")]
-            for col, default in [("debt_type", "'loan'"), ("credit_limit", "0"), ("interest_rate", "0")]:
-                if col not in d_cols:
-                    conn.execute(sa.text(f"ALTER TABLE debts ADD COLUMN {col} REAL NOT NULL DEFAULT {default}"))
-            if "linked_asset_id" not in d_cols:
-                conn.execute(sa.text("ALTER TABLE debts ADD COLUMN linked_asset_id INTEGER"))
-            if "initial_date" not in d_cols:
-                conn.execute(sa.text("ALTER TABLE debts ADD COLUMN initial_date TEXT"))
-
+                conn.execute(
+                    sa.text('INSERT INTO categories (name, "group", is_legacy) VALUES (:n, :g, :l)'),
+                    {"n": name, "g": group, "l": 0 if name in canonical else 1},
+                )
         conn.commit()
 
+
+def init_engine(eng, seed_demo: bool = False):
+    """Full initialisation for any engine: tables, migrations, seeds."""
+    import models as _models
+    _models.Base.metadata.create_all(bind=eng)
+    ensure_schema(eng)
+    seed_defaults(eng)
     if seed_demo:
         from demo_seed import seed_demo_data
         seed_demo_data(eng)
@@ -210,20 +156,4 @@ def _init_db_extras(eng, seed_demo: bool = False):
 
 def run_migrations():
     """Initialise the default engine (used at startup for legacy/single-user mode)."""
-    from alembic.config import Config
-    from alembic import command
-    from sqlalchemy import inspect as sa_inspect
-
-    alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "alembic.ini"))
-
-    # Fresh DB — stamp Alembic as head instead of running conflicting migrations
-    tables = sa_inspect(engine).get_table_names()
-    if "alembic_version" not in tables:
-        command.stamp(alembic_cfg, "head")
-    else:
-        try:
-            command.upgrade(alembic_cfg, "head")
-        except Exception:
-            pass  # Ignore circular-dependency errors from batch migrations on existing DBs
-
-    _init_db_extras(engine, seed_demo=DEMO_MODE)
+    init_engine(engine, seed_demo=DEMO_MODE)

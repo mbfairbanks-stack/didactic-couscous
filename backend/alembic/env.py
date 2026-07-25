@@ -12,7 +12,13 @@ from database import DATABASE_URL
 import models  # noqa: F401 — registers all models with Base
 
 config = context.config
-config.set_main_option("sqlalchemy.url", DATABASE_URL)
+
+# ensure_schema() passes the target database's URL programmatically (per-user
+# DBs); fall back to the default engine's URL when invoked via the alembic CLI
+# (alembic.ini ships a placeholder "driver://" URL).
+_url = config.get_main_option("sqlalchemy.url")
+if not _url or _url.startswith("driver://"):
+    config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
