@@ -2,13 +2,15 @@
 # Start the budget app (backend + frontend dev server)
 set -e
 
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+
 echo "Starting backend on http://localhost:8000"
-cd "$(dirname "$0")/backend"
+cd "$ROOT/backend"
 uvicorn main:app --reload --port 8000 &
 BACKEND_PID=$!
 
 echo "Starting frontend on http://localhost:5173"
-cd "$(dirname "$0")/frontend"
+cd "$ROOT/frontend"
 npm run dev &
 FRONTEND_PID=$!
 
