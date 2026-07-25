@@ -24,25 +24,61 @@ def _make_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+_schema_ready = False
+
+
 def _get_conn() -> sqlite3.Connection:
+    global _schema_ready
     os.makedirs(os.path.dirname(os.path.abspath(AUTH_DB_PATH)), exist_ok=True)
     conn = sqlite3.connect(AUTH_DB_PATH)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            username      TEXT PRIMARY KEY,
-            password_hash TEXT NOT NULL,
-            token         TEXT UNIQUE NOT NULL,
-            is_demo       INTEGER NOT NULL DEFAULT 0,
-            created_at    TEXT DEFAULT (datetime('now')),
-            token_expires TEXT DEFAULT NULL
-        )
-    """)
-    # Migration: add token_expires column if missing
-    cols = [row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()]
-    if "token_expires" not in cols:
-        conn.execute("ALTER TABLE users ADD COLUMN token_expires TEXT DEFAULT NULL")
-    conn.commit()
+    if not _schema_ready:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                username      TEXT PRIMARY KEY,
+                password_hash TEXT NOT NULL,
+                token         TEXT UNIQUE NOT NULL,
+                is_demo       INTEGER NOT NULL DEFAULT 0,
+                created_at    TEXT DEFAULT (datetime('now')),
+                token_expires TEXT DEFAULT NULL
+            )
+        """)
+        # Migration: add token_expires column if missing
+        cols = [row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()]
+        if "token_expires" not in cols:
+            conn.execute("ALTER TABLE users ADD COLUMN token_expires TEXT DEFAULT NULL")
+        conn.commit()
+        _schema_ready = True
     return conn
+
+
+# Short-lived token cache: avoids an auth.db hit on every request.
+# TTL is kept small so revoked/expired tokens stop working promptly.
+_TOKEN_CACHE_TTL_SECONDS = 60
+_token_cache: dict = {}  # token -> (username, is_demo, cached_at_monotonic)
+
+
+def _token_cache_get(token: str):
+    import time
+    entry = _token_cache.get(token)
+    if not entry:
+        return None
+    username, is_demo, cached_at = entry
+    if time.monotonic() - cached_at > _TOKEN_CACHE_TTL_SECONDS:
+        _token_cache.pop(token, None)
+        return None
+    return username, is_demo
+
+
+def _token_cache_put(token: str, username: str, is_demo: bool):
+    import time
+    if len(_token_cache) > 1000:  # bound memory; entries self-expire anyway
+        _token_cache.clear()
+    _token_cache[token] = (username, is_demo, time.monotonic())
+
+
+def _token_cache_clear():
+    _token_cache.clear()
 
 
 def _token_expiry() -> str:
@@ -79,6 +115,7 @@ def seed_default_users(admin_password: str = "") -> None:
             )
     conn.commit()
     conn.close()
+    _token_cache_clear()
 
 
 def authenticate(username: str, password: str):
@@ -117,6 +154,8 @@ def authenticate(username: str, password: str):
             "UPDATE users SET token=?, token_expires=? WHERE username=?",
             (token, _token_expiry(), username)
         )
+        if existing_token:
+            _token_cache.pop(existing_token, None)
     conn.commit()
     conn.close()
     return token, bool(is_demo)
@@ -147,6 +186,9 @@ def register(username: str, password: str) -> str:
 def get_user_from_token(token: str):
     """Returns (username, is_demo) or None if token is invalid or expired."""
     import datetime
+    cached = _token_cache_get(token)
+    if cached:
+        return cached
     conn = _get_conn()
     row = conn.execute(
         "SELECT username, is_demo, token_expires FROM users WHERE token=?", (token,)
@@ -161,6 +203,7 @@ def get_user_from_token(token: str):
                 return None  # Token expired
         except ValueError:
             pass
+    _token_cache_put(token, username, bool(is_demo))
     return username, is_demo
 
 

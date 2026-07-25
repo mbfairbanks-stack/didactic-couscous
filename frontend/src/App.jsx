@@ -1,20 +1,21 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import Nav from "./components/Nav";
-import Dashboard from "./pages/Dashboard";
-import Transactions from "./pages/Transactions";
-import BudgetPlanner from "./pages/BudgetPlanner";
-import Charts from "./pages/Charts";
-import Import from "./pages/Import";
-import Insights from "./pages/Insights";
-import Income from "./pages/Income";
-import Debts from "./pages/Debts";
-import CategoryAudit from "./pages/CategoryAudit";
-import NetWorth from "./pages/NetWorth";
-import Settings from "./pages/Settings";
-import Retirement from "./pages/Retirement";
-import Onboarding from "./pages/Onboarding";
 import Login from "./pages/Login";
+
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Transactions = lazy(() => import("./pages/Transactions"));
+const BudgetPlanner = lazy(() => import("./pages/BudgetPlanner"));
+const Charts = lazy(() => import("./pages/Charts"));
+const Import = lazy(() => import("./pages/Import"));
+const Insights = lazy(() => import("./pages/Insights"));
+const Income = lazy(() => import("./pages/Income"));
+const Debts = lazy(() => import("./pages/Debts"));
+const CategoryAudit = lazy(() => import("./pages/CategoryAudit"));
+const NetWorth = lazy(() => import("./pages/NetWorth"));
+const Settings = lazy(() => import("./pages/Settings"));
+const Retirement = lazy(() => import("./pages/Retirement"));
+const Onboarding = lazy(() => import("./pages/Onboarding"));
 import { SettingsProvider } from "./contexts/SettingsContext";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { getOnboardingStatus } from "./api";
@@ -67,6 +68,7 @@ export default function App() {
         <AuthGuard>
           <SettingsProvider>
             <DemoBanner />
+            <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-zinc-500 text-sm">Loading…</div>}>
             <Routes>
               <Route path="/onboarding" element={<Onboarding />} />
               <Route path="*" element={
@@ -94,6 +96,7 @@ export default function App() {
                 </OnboardingGuard>
               } />
             </Routes>
+            </Suspense>
           </SettingsProvider>
         </AuthGuard>
       </AuthProvider>

@@ -1,6 +1,6 @@
 import os
 from contextvars import ContextVar
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from starlette.requests import Request
 
@@ -8,7 +8,24 @@ DEMO_MODE = os.getenv("DEMO_MODE", "").lower() in ("1", "true", "yes")
 DB_PATH = os.getenv("DB_PATH", "demo.db" if DEMO_MODE else "budget.db")
 DATABASE_URL = f"sqlite:///{DB_PATH}" if os.path.isabs(DB_PATH) else f"sqlite:///./{DB_PATH}"
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+
+def _set_sqlite_pragmas(dbapi_conn, _record):
+    # WAL lets concurrent reads proceed during a write — a browser tab fires
+    # many parallel requests at the same per-user DB file.
+    cur = dbapi_conn.cursor()
+    cur.execute("PRAGMA journal_mode=WAL")
+    cur.execute("PRAGMA synchronous=NORMAL")
+    cur.execute("PRAGMA foreign_keys=ON")
+    cur.close()
+
+
+def _create_sqlite_engine(url: str):
+    eng = create_engine(url, connect_args={"check_same_thread": False})
+    event.listen(eng, "connect", _set_sqlite_pragmas)
+    return eng
+
+
+engine = _create_sqlite_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Multi-tenant: per-request engine routing
@@ -22,7 +39,7 @@ class Base(DeclarativeBase):
 
 def _make_engine(db_path: str):
     url = f"sqlite:///{db_path}" if os.path.isabs(db_path) else f"sqlite:///./{db_path}"
-    return create_engine(url, connect_args={"check_same_thread": False})
+    return _create_sqlite_engine(url)
 
 
 def get_engine_for_path(db_path: str):
@@ -41,13 +58,23 @@ def set_current_db_path(db_path):
     _current_db_path.set(db_path)
 
 
+_sessionmaker_cache: dict = {}
+
+
+def _get_sessionmaker(eng):
+    sm = _sessionmaker_cache.get(eng)
+    if sm is None:
+        sm = sessionmaker(autocommit=False, autoflush=False, bind=eng)
+        _sessionmaker_cache[eng] = sm
+    return sm
+
+
 def get_db(request: Request):
     # request.state.db_path is set by auth middleware; it survives the thread pool.
     # Fall back to ContextVar, then to the default engine.
     path = getattr(request.state, "db_path", None) or _current_db_path.get()
     eng = get_engine_for_path(path) if path else engine
-    Session = sessionmaker(autocommit=False, autoflush=False, bind=eng)
-    db = Session()
+    db = _get_sessionmaker(eng)()
     try:
         yield db
     finally:
