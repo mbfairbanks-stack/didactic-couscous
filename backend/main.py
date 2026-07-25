@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 import datetime
 import hashlib
+import secrets
 import tempfile, os, io, json, csv, re, math
 from collections import defaultdict
 
@@ -96,7 +97,7 @@ async def auth_middleware(request: Request, call_next):
 
     pw_hash = hashlib.sha256(BUDGET_PASSWORD.encode()).hexdigest()
     token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-    if token != pw_hash:
+    if not secrets.compare_digest(token, pw_hash):
         return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
     return await call_next(request)
 
@@ -148,7 +149,7 @@ async def auth_login(request: Request, body: LoginRequest):
     if not BUDGET_PASSWORD:
         return {"token": ""}
     pw_hash = hashlib.sha256(BUDGET_PASSWORD.encode()).hexdigest()
-    if hashlib.sha256(body.password.encode()).hexdigest() != pw_hash:
+    if not secrets.compare_digest(hashlib.sha256(body.password.encode()).hexdigest(), pw_hash):
         raise HTTPException(status_code=401, detail="Incorrect password")
     return {"token": pw_hash, "demo": DEMO_MODE}
 

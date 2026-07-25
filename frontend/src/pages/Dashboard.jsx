@@ -4,7 +4,7 @@ import {
   AreaChart, Area,
 } from "recharts";
 import StatCard from "../components/StatCard";
-import { getMonthlySummary, getTotals, getCategorySummary, getYears, getProjections, getBudgetTargets, getCategoryDefinitions, getDebts, getTransactions, createTransaction, getCategories, getMissingRecurring, getMultiCategoryTrend, getRetirementSummary } from "../api";
+import { getMonthlySummary, getTotals, getCategorySummary, getYears, getProjections, getBudgetTargets, getCategoryDefinitions, getDebts, getDebtPaymentsSummary, createTransaction, getCategories, getMissingRecurring, getMultiCategoryTrend, getRetirementSummary } from "../api";
 import { NavLink } from "react-router-dom";
 import { project, findRetirementYear } from "../lib/retirementEngine";
 import { getCategoryGroup, updateCategoryGroups } from "../constants";
@@ -205,16 +205,10 @@ function DebtPaymentsWidget({ year, month }) {
     if (!year || !month) return;
     Promise.all([
       getDebts().catch(() => []),
-      getTransactions({ year, month, limit: 2000 }).catch(() => []),
-    ]).then(([ds, txns]) => {
+      getDebtPaymentsSummary(year, month).catch(() => ({ paid: {} })),
+    ]).then(([ds, summary]) => {
       setDebts(ds.filter((d) => d.current_balance > 0 || (d.computed_balance ?? 0) > 0));
-      const map = {};
-      for (const t of txns) {
-        if (t.linked_debt_id && t.debt_direction !== "charge") {
-          map[t.linked_debt_id] = (map[t.linked_debt_id] || 0) + t.amount;
-        }
-      }
-      setPaidMap(map);
+      setPaidMap(summary.paid || {});
     });
   }, [year, month]);
 

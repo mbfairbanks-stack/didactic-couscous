@@ -3,7 +3,7 @@ const TOKEN_KEY = "budget_token";
 
 const getToken = () => localStorage.getItem(TOKEN_KEY) || "";
 
-async function req(path, options = {}) {
+async function doFetch(path, options = {}) {
   const token = getToken();
   const headers = {
     ...(options.headers || {}),
@@ -28,6 +28,45 @@ async function req(path, options = {}) {
   }
   if (res.status === 204) return null;
   return res.json();
+}
+
+// ── GET cache ────────────────────────────────────────────────────────────────
+// Dedupes concurrent identical requests (pages fire the same lookups from
+// several effects) and serves recent results on re-navigation. Any mutation
+// clears the whole cache, so this client's own writes are always visible.
+const CACHE_TTL_MS = 30_000;
+const _cache = new Map(); // path -> { time, data }
+const _inflight = new Map(); // path -> Promise<data>
+
+function invalidateCache() {
+  _cache.clear();
+  _inflight.clear();
+}
+
+async function req(path, options = {}) {
+  const method = (options.method || "GET").toUpperCase();
+  if (method !== "GET") {
+    try {
+      return await doFetch(path, options);
+    } finally {
+      invalidateCache();
+    }
+  }
+
+  const hit = _cache.get(path);
+  if (hit && Date.now() - hit.time < CACHE_TTL_MS) return structuredClone(hit.data);
+
+  if (!_inflight.has(path)) {
+    const p = doFetch(path, options)
+      .then((data) => {
+        if (data !== undefined) _cache.set(path, { time: Date.now(), data });
+        return data;
+      })
+      .finally(() => _inflight.delete(path));
+    _inflight.set(path, p);
+  }
+  // Clone per consumer so callers can sort/mutate results without corrupting the cache
+  return _inflight.get(path).then((data) => (data === undefined ? data : structuredClone(data)));
 }
 
 // Auth
@@ -157,6 +196,8 @@ export const updateDebt = (id, body) =>
 export const deleteDebt = (id) =>
   req(`/debts/${id}`, { method: "DELETE" });
 export const getDebtTransactions = (id) => req(`/debts/${id}/transactions`);
+export const getDebtPaymentsSummary = (year, month) =>
+  req(`/debts/payments-summary?year=${year}&month=${month}`);
 
 // Merchant categories (audit)
 export const getMerchantCategories = () => req("/merchant-categories");

@@ -113,6 +113,32 @@ class DebtOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+@router.get("/debts/payments-summary")
+def debt_payments_summary(year: int, month: int, db: Session = Depends(get_db)):
+    """Per-debt sum of linked payments for a month (charges excluded).
+
+    Replaces the dashboard pulling every transaction of the month client-side.
+    """
+    from sqlalchemy import or_
+    rows = db.execute(
+        select(
+            models.Transaction.linked_debt_id,
+            func.sum(models.Transaction.amount).label("paid"),
+        )
+        .where(
+            models.Transaction.year == year,
+            models.Transaction.month == month,
+            models.Transaction.linked_debt_id != None,  # noqa: E711
+            or_(
+                models.Transaction.debt_direction == None,  # noqa: E711
+                models.Transaction.debt_direction != "charge",
+            ),
+        )
+        .group_by(models.Transaction.linked_debt_id)
+    ).all()
+    return {"paid": {str(r.linked_debt_id): round(r.paid, 2) for r in rows}}
+
+
 @router.get("/debts", response_model=list[DebtOut])
 def list_debts(db: Session = Depends(get_db)):
     debts = db.execute(select(models.Debt).order_by(models.Debt.name)).scalars().all()

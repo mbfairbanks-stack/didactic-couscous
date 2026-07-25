@@ -46,3 +46,18 @@ def test_no_computed_balance_without_initial_date(client):
     debt = make_debt(client, initial_date=None)
     listed = {d["id"]: d for d in client.get("/debts").json()}
     assert listed[debt["id"]]["computed_balance"] is None
+
+
+def test_payments_summary_groups_by_debt_and_excludes_charges(client):
+    d1 = make_debt(client, name="Loan A")
+    d2 = make_debt(client, name="Loan B")
+    make_txn(client, date="2025-03-05", amount=100.0, linked_debt_id=d1["id"], debt_direction="payment")
+    make_txn(client, date="2025-03-15", amount=50.0, linked_debt_id=d1["id"])  # direction None counts as payment
+    make_txn(client, date="2025-03-20", amount=75.0, linked_debt_id=d1["id"], debt_direction="charge")
+    make_txn(client, date="2025-03-25", amount=30.0, linked_debt_id=d2["id"], debt_direction="payment")
+    make_txn(client, date="2025-04-01", amount=999.0, linked_debt_id=d1["id"], debt_direction="payment")
+    make_txn(client, date="2025-03-10", amount=20.0)  # unlinked
+
+    r = client.get("/debts/payments-summary", params={"year": 2025, "month": 3})
+    assert r.status_code == 200
+    assert r.json()["paid"] == {str(d1["id"]): 150.0, str(d2["id"]): 30.0}
