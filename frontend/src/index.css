@@ -6,6 +6,8 @@ body {
   @apply bg-zinc-950 text-zinc-100;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Fixed-width digits so columns of monetary figures align everywhere */
+  font-variant-numeric: tabular-nums;
 }
 
 /* Scrollbars */

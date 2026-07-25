@@ -12,6 +12,7 @@ from collections import defaultdict
 
 import models
 from database import get_db
+from category_utils import ensure_category
 
 router = APIRouter()
 
@@ -182,6 +183,7 @@ def _sync_year_month(data: dict) -> dict:
 @router.post("/transactions", response_model=TransactionOut, status_code=201)
 def create_transaction(body: TransactionCreate, db: Session = Depends(get_db)):
     data = _sync_year_month(body.model_dump())
+    data["category"] = ensure_category(db, data.get("category"))
     txn = models.Transaction(**data)
     db.add(txn)
     db.commit()
@@ -195,6 +197,8 @@ def update_transaction(txn_id: int, body: TransactionUpdate, db: Session = Depen
     if not txn:
         raise HTTPException(404, "Transaction not found")
     data = _sync_year_month(body.model_dump(exclude_none=True))
+    if "category" in data:
+        data["category"] = ensure_category(db, data["category"])
     for field, val in data.items():
         setattr(txn, field, val)
     db.commit()
@@ -255,6 +259,7 @@ class BulkCategoryUpdate(BaseModel):
 @router.post("/transactions/bulk-category")
 def bulk_update_category(body: BulkCategoryUpdate, db: Session = Depends(get_db)):
     """Reassign all transactions for a merchant from one category to another."""
+    ensure_category(db, body.to_category)
     txns = db.execute(
         select(models.Transaction).where(
             models.Transaction.merchant == body.merchant,
@@ -274,6 +279,7 @@ class SetMerchantCategoryRequest(BaseModel):
 @router.post("/transactions/set-merchant-category")
 def set_merchant_category(body: SetMerchantCategoryRequest, db: Session = Depends(get_db)):
     """Reassign ALL transactions for a merchant to a single category."""
+    ensure_category(db, body.category)
     result = db.execute(
         text("UPDATE transactions SET category = :cat WHERE merchant = :merchant"),
         {"cat": body.category, "merchant": body.merchant}
@@ -358,6 +364,14 @@ def split_transaction(txn_id: int, body: SplitRequest, db: Session = Depends(get
 @router.get("/transactions/recurring-suggestions")
 def recurring_suggestions(min_months: int = 3, db: Session = Depends(get_db)):
     """Find merchants appearing in 3+ different months at a consistent amount — likely recurring."""
+    # Merchants already flagged recurring are known — don't re-suggest them
+    already_flagged = {
+        r[0] for r in db.execute(
+            select(models.Transaction.merchant)
+            .where(models.Transaction.is_recurring == True)  # noqa: E712
+            .distinct()
+        ).all()
+    }
     rows = db.execute(
         select(
             models.Transaction.merchant,
@@ -374,6 +388,8 @@ def recurring_suggestions(min_months: int = 3, db: Session = Depends(get_db)):
 
     suggestions = []
     for r in rows:
+        if r.merchant in already_flagged:
+            continue
         month_count = r.month_count
         if month_count < min_months:
             continue

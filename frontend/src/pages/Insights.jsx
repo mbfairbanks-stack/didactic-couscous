@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { usePeriod } from "../hooks/usePeriod";
 import { streamInsights, getYears, saveInsightsLog, getInsightsLog, deleteInsightsLog } from "../api";
 import { MONTH_LABELS, currentYear, currentMonth } from "../utils";
 
@@ -101,8 +102,7 @@ function logEntryBadge(entry) {
 }
 
 export default function Insights() {
-  const [year, setYear] = useState(currentYear);
-  const [month, setMonth] = useState(currentMonth);
+  const { year, setYear, month, setMonth } = usePeriod();
   const [mode, setMode] = useState("annual");
   const [quarter, setQuarter] = useState(Math.ceil(currentMonth / 3));
   const [half, setHalf] = useState(currentMonth <= 6 ? 1 : 2);

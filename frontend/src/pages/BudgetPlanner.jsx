@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { usePeriod } from "../hooks/usePeriod";
 import { getCategorySummary, getBudgetTargets, createBudgetTarget, updateBudgetTarget, deleteBudgetTarget, getYears, autoPopulateBudget, copyBudgetFromMonth, getCategoryDefinitions, rolloverBudget, getBudgetTemplates, saveBudgetTemplate, applyBudgetTemplate, deleteBudgetTemplate } from "../api";
 import { getCategoryGroup } from "../constants";
 import { MONTH_LABELS, currentYear, currentMonth, fmt } from "../utils";
@@ -19,8 +20,7 @@ function ProgressBar({ actual, budget }) {
 }
 
 export default function BudgetPlanner() {
-  const [year, setYear] = useState(currentYear);
-  const [month, setMonth] = useState(currentMonth);
+  const { year, setYear, month, setMonth } = usePeriod();
   const [years, setYears] = useState([currentYear]);
   const [actuals, setActuals] = useState([]);
   const [targets, setTargets] = useState([]);

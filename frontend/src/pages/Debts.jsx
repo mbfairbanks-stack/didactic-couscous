@@ -45,7 +45,7 @@ function parseMonthsRemaining(dueDateStr) {
 }
 
 function computeDebtStats(debt) {
-  const remaining = debt.current_balance - debt.savings;
+  const remaining = (debt.effective_balance ?? debt.current_balance) - debt.savings;
   const monthsLeft = parseMonthsRemaining(debt.due_date);
   const totalMonthly = debt.monthly_payment + debt.monthly_extra;
   const balanceAtDue =
@@ -55,7 +55,7 @@ function computeDebtStats(debt) {
   const onTrack = monthlyNeeded != null ? totalMonthly >= monthlyNeeded : true;
   const pctPaid =
     debt.initial_balance > 0
-      ? Math.min(100, ((debt.initial_balance - debt.current_balance) / debt.initial_balance) * 100)
+      ? Math.min(100, ((debt.initial_balance - (debt.effective_balance ?? debt.current_balance)) / debt.initial_balance) * 100)
       : 0;
   return { remaining, monthsLeft, totalMonthly, balanceAtDue, monthlyNeeded, onTrack, pctPaid };
 }
@@ -72,7 +72,7 @@ function buildPayoffData(debt) {
   const startYear = now.getFullYear();
 
   const data = [];
-  let balance = debt.current_balance;
+  let balance = (debt.effective_balance ?? debt.current_balance);
   const monthlyRate = (debt.interest_rate || 0) / 12;
 
   // Include month 0 (today's balance)
@@ -112,7 +112,7 @@ function calcMonthsToPayoff(balance, monthlyPayment, annualRate = 0) {
 const DEBT_COLORS = ["#fbbf24", "#22c55e", "#a78bfa", "#06b6d4", "#ec4899", "#f97316", "#84cc16", "#14b8a6"];
 
 function buildAllDebtsPayoffData(debts) {
-  const active = debts.filter((d) => d.current_balance > 0 && (d.monthly_payment + d.monthly_extra) > 0);
+  const active = debts.filter((d) => (d.effective_balance ?? d.current_balance) > 0 && (d.monthly_payment + d.monthly_extra) > 0);
   if (!active.length) return { data: [], keys: [] };
 
   const perDebt = active.map((d) => ({ name: d.name, points: buildPayoffData(d) }));
@@ -174,7 +174,7 @@ function ExtraPaymentSimulator({ debt }) {
   const [extra, setExtra] = useState(0);
 
   const baseMonthly = debt.monthly_payment + debt.monthly_extra;
-  const balance = debt.current_balance;
+  const balance = (debt.effective_balance ?? debt.current_balance);
 
   const rate = debt.interest_rate || 0;
   const baseMonths = calcMonthsToPayoff(balance, baseMonthly, rate);
@@ -323,11 +323,11 @@ function simulateStrategy(debts, sortFn) {
 
   // Clone debts with mutable balances and their minimum payments
   const pool = debts
-    .filter((d) => (d.monthly_payment + d.monthly_extra) > 0 || d.current_balance > 0)
+    .filter((d) => (d.monthly_payment + d.monthly_extra) > 0 || (d.effective_balance ?? d.current_balance) > 0)
     .map((d) => ({
       id: d.id,
       name: d.name,
-      balance: Math.max(0, d.current_balance),
+      balance: Math.max(0, (d.effective_balance ?? d.current_balance)),
       minPayment: d.monthly_payment + d.monthly_extra,
     }));
 
@@ -378,7 +378,7 @@ function simulateStrategy(debts, sortFn) {
 }
 
 function StrategyPanel({ debts }) {
-  const activeDebts = debts.filter((d) => d.current_balance > 0);
+  const activeDebts = debts.filter((d) => (d.effective_balance ?? d.current_balance) > 0);
   if (activeDebts.length < 2) return null;
 
   const avalanche = simulateStrategy(
@@ -613,9 +613,9 @@ export default function Debts() {
   });
 
   // Summary totals
-  const totalBalance = debts.reduce((s, d) => s + d.current_balance, 0);
+  const totalBalance = debts.reduce((s, d) => s + (d.effective_balance ?? d.current_balance), 0);
   const totalMonthly = debts.reduce((s, d) => s + d.monthly_payment + d.monthly_extra, 0);
-  const totalRemaining = debts.reduce((s, d) => s + (d.current_balance - d.savings), 0);
+  const totalRemaining = debts.reduce((s, d) => s + ((d.effective_balance ?? d.current_balance) - d.savings), 0);
 
   return (
     <div className="space-y-6">
@@ -633,15 +633,15 @@ export default function Debts() {
       {error && <p className="text-red-400 text-sm">{error}</p>}
 
       {/* LOC utilization alerts */}
-      {debts.filter((d) => d.debt_type === "loc" && d.credit_limit > 0 && d.current_balance / d.credit_limit >= 0.8).map((d) => {
-        const pct = Math.round((d.current_balance / d.credit_limit) * 100);
+      {debts.filter((d) => d.debt_type === "loc" && d.credit_limit > 0 && (d.effective_balance ?? d.current_balance) / d.credit_limit >= 0.8).map((d) => {
+        const pct = Math.round(((d.effective_balance ?? d.current_balance) / d.credit_limit) * 100);
         return (
           <div key={d.id} className="bg-red-900/20 border border-red-700/40 rounded-xl px-4 py-3 flex items-center gap-3">
             <span className="text-red-400 font-bold text-sm">⚠</span>
             <div>
               <span className="text-red-400 font-semibold text-sm">{d.name}</span>
               <span className="text-zinc-400 text-sm ml-2">is {pct}% utilized</span>
-              <span className="text-zinc-500 text-xs ml-2">({fmt(d.current_balance)} of {fmt(d.credit_limit)} limit)</span>
+              <span className="text-zinc-500 text-xs ml-2">({fmt((d.effective_balance ?? d.current_balance))} of {fmt(d.credit_limit)} limit)</span>
             </div>
           </div>
         );
@@ -687,7 +687,7 @@ export default function Debts() {
               <tbody>
                 {debts.map((debt) => {
                   const { remaining, monthsLeft, monthlyNeeded, onTrack } = computeDebtStats(debt);
-                  const displayBalance = debt.computed_balance != null ? debt.computed_balance : debt.current_balance;
+                  const displayBalance = debt.effective_balance ?? (debt.effective_balance ?? debt.current_balance);
                   const total = debt.monthly_payment + debt.monthly_extra;
                   const shortfall = monthlyNeeded != null ? monthlyNeeded - total : null;
                   return (
@@ -735,7 +735,7 @@ export default function Debts() {
                 <tr className="border-t border-zinc-700 bg-zinc-800/40">
                   <td className="px-5 py-3 text-xs text-zinc-500 font-semibold uppercase">Total</td>
                   <td className="px-3 py-3 text-right font-mono font-semibold text-yellow-400">
-                    {fmt(debts.reduce((s, d) => s + (d.computed_balance != null ? d.computed_balance : d.current_balance), 0))}
+                    {fmt(debts.reduce((s, d) => s + (d.effective_balance ?? (d.effective_balance ?? d.current_balance)), 0))}
                   </td>
                   <td className="px-3 py-3 text-right font-mono text-zinc-400">
                     {fmt(debts.reduce((s, d) => s + d.monthly_payment, 0))}
@@ -755,7 +755,7 @@ export default function Debts() {
       )}
 
       {/* Aggregate payoff chart (2+ debts with active payments) */}
-      {debts.filter((d) => d.current_balance > 0 && (d.monthly_payment + d.monthly_extra) > 0).length >= 2 && (
+      {debts.filter((d) => (d.effective_balance ?? d.current_balance) > 0 && (d.monthly_payment + d.monthly_extra) > 0).length >= 2 && (
         <AggregatePayoffChart debts={debts} />
       )}
 
@@ -783,8 +783,8 @@ export default function Debts() {
           <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-3">Mortgage</h2>
           {debts.filter((d) => d.debt_type === "mortgage").map((debt) => {
             const { remaining, monthsLeft, balanceAtDue, monthlyNeeded, onTrack, pctPaid } = computeDebtStats(debt);
-            const displayBalance = debt.computed_balance != null ? debt.computed_balance : debt.current_balance;
-            const balanceLabel = debt.computed_balance != null ? "Current Balance (computed)" : "Current Balance";
+            const displayBalance = debt.effective_balance ?? (debt.effective_balance ?? debt.current_balance);
+            const balanceLabel = debt.is_tracked ? "Current Balance (tracked)" : "Current Balance";
             return (
               <div id={`debt-${debt.id}`} key={debt.id} className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4">
                 <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-700 bg-zinc-800">
@@ -889,8 +889,8 @@ export default function Debts() {
           )}
           {debts.filter((d) => d.debt_type !== "mortgage").map((debt) => {
             const { remaining, monthsLeft, balanceAtDue, monthlyNeeded, onTrack, pctPaid } = computeDebtStats(debt);
-            const displayBalance = debt.computed_balance != null ? debt.computed_balance : debt.current_balance;
-            const balanceLabel = debt.computed_balance != null ? "Current Balance (computed)" : "Current Balance";
+            const displayBalance = debt.effective_balance ?? (debt.effective_balance ?? debt.current_balance);
+            const balanceLabel = debt.is_tracked ? "Current Balance (tracked)" : "Current Balance";
             return (
               <div id={`debt-${debt.id}`} key={debt.id} className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4">
                 <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-700 bg-zinc-800">
@@ -920,15 +920,15 @@ export default function Debts() {
                   {debt.debt_type === "loc" && debt.credit_limit > 0 && (
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       <StatBox label="Credit Limit" value={fmt(debt.credit_limit)} />
-                      <StatBox label="Outstanding" value={fmt(debt.current_balance)} />
+                      <StatBox label="Outstanding" value={fmt((debt.effective_balance ?? debt.current_balance))} />
                       <div className="bg-green-900/30 border border-green-700/30 rounded-lg px-3 py-2">
                         <p className="text-xs text-zinc-500 mb-0.5">Available</p>
-                        <p className="text-sm font-semibold text-green-400">{fmt(Math.max(0, debt.credit_limit - debt.current_balance))}</p>
+                        <p className="text-sm font-semibold text-green-400">{fmt(Math.max(0, debt.credit_limit - (debt.effective_balance ?? debt.current_balance)))}</p>
                       </div>
                       <div className="bg-zinc-800 rounded-lg px-3 py-2">
                         <p className="text-xs text-zinc-500 mb-0.5">Monthly Interest</p>
                         <p className="text-sm font-semibold text-red-400">
-                          {fmt(debt.current_balance * (debt.interest_rate / 12))}
+                          {fmt((debt.effective_balance ?? debt.current_balance) * (debt.interest_rate / 12))}
                           <span className="text-zinc-500 text-xs ml-1">@ {(debt.interest_rate * 100).toFixed(2)}%</span>
                         </p>
                       </div>
@@ -1125,9 +1125,16 @@ export default function Debts() {
                     step="0.01"
                     min="0"
                     placeholder="0"
-                    className={`w-full ${inputCls}`}
+                    disabled={!!form.initial_date}
+                    title={form.initial_date ? "Balance is tracked from linked transactions" : undefined}
+                    className={`w-full ${inputCls} ${form.initial_date ? "opacity-50 cursor-not-allowed" : ""}`}
                     {...field("current_balance")}
                   />
+                  {form.initial_date && (
+                    <p className="text-[11px] text-zinc-500 mt-1">
+                      Tracked — derived from initial balance, interest and linked transactions. Clear "Balance As Of Date" to edit manually.
+                    </p>
+                  )}
                 </div>
               </div>
 

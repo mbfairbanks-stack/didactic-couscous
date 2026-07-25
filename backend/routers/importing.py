@@ -13,6 +13,7 @@ from collections import defaultdict
 import models
 from database import get_db
 from importer import import_xlsx
+from category_utils import ensure_category
 
 router = APIRouter()
 
@@ -299,6 +300,7 @@ def import_csv_rows(rows: List[CsvImportRow], db: Session = Depends(get_db)):
             skipped_duplicates += 1
             continue
         source = getattr(row, 'source', None) or "csv_import"
+        row.category = ensure_category(db, row.category)
         txn = models.Transaction(
             date=d,
             merchant=row.merchant,

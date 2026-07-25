@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { usePeriod } from "../hooks/usePeriod";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   AreaChart, Area,
@@ -207,7 +208,7 @@ function DebtPaymentsWidget({ year, month }) {
       getDebts().catch(() => []),
       getDebtPaymentsSummary(year, month).catch(() => ({ paid: {} })),
     ]).then(([ds, summary]) => {
-      setDebts(ds.filter((d) => d.current_balance > 0 || (d.computed_balance ?? 0) > 0));
+      setDebts(ds.filter((d) => (d.effective_balance ?? d.current_balance) > 0));
       setPaidMap(summary.paid || {});
     });
   }, [year, month]);
@@ -232,7 +233,7 @@ function DebtPaymentsWidget({ year, month }) {
         {debts.map((d) => {
           const planned = d.monthly_payment + d.monthly_extra;
           const paid = paidMap[d.id] || 0;
-          const balance = d.computed_balance ?? d.current_balance;
+          const balance = d.effective_balance ?? d.current_balance;
           const pct = planned > 0 ? Math.min((paid / planned) * 100, 100) : 0;
           const overpaid = paid > planned && planned > 0;
           const linked = d.id in paidMap;
@@ -356,8 +357,7 @@ function RetirementTile() {
 
 // ── Dashboard ────────────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const [year, setYear] = useState(currentYear);
-  const [month, setMonth] = useState(currentMonth);
+  const { year, setYear, month, setMonth } = usePeriod();
   const [years, setYears] = useState([currentYear]);
   const [monthly, setMonthly] = useState([]);
   const [totals, setTotals] = useState({});

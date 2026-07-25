@@ -1,4 +1,4 @@
-"""Assets, savings contributions, ESPP, net-worth snapshots/forecast, goals, bills, milestones, emergency fund."""
+"""Assets, savings summary, ESPP, net-worth snapshots/forecast, goals, milestones, emergency fund."""
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
@@ -12,6 +12,7 @@ from collections import defaultdict
 
 import models
 from database import get_db
+from debt_math import effective_balance
 
 router = APIRouter()
 
@@ -122,27 +123,6 @@ RRSP_MATCH_RATE = 0.50
 ESPP_DISCOUNT_RATE = 0.15
 
 
-def espp_deduction_rate(pay_date: str) -> float:
-    """10% of gross before May 2026, 15% from May 2026 onwards."""
-    return 0.15 if pay_date >= "2026-05" else 0.10
-
-
-class SavingsContributionCreate(BaseModel):
-    pay_date: str
-    year: int
-    month: int
-    gross_income: float
-    rrsp_employee: float = 0.0
-    rrsp_employer: Optional[float] = None  # auto-calculated if None
-    espp_deduction: Optional[float] = None  # auto-calculated if None
-    notes: Optional[str] = None
-
-
-class SavingsContributionOut(SavingsContributionCreate):
-    id: int
-    model_config = {"from_attributes": True}
-
-
 class EsppPurchaseCreate(BaseModel):
     purchase_date: str
     period_start: Optional[str] = None
@@ -159,55 +139,6 @@ class EsppPurchaseCreate(BaseModel):
 class EsppPurchaseOut(EsppPurchaseCreate):
     id: int
     model_config = {"from_attributes": True}
-
-
-@router.get("/savings-contributions", response_model=list[SavingsContributionOut])
-def list_savings_contributions(year: Optional[int] = None, db: Session = Depends(get_db)):
-    q = select(models.SavingsContribution).order_by(models.SavingsContribution.pay_date.desc())
-    if year:
-        q = q.where(models.SavingsContribution.year == year)
-    return db.execute(q).scalars().all()
-
-
-@router.post("/savings-contributions", response_model=SavingsContributionOut, status_code=201)
-def create_savings_contribution(body: SavingsContributionCreate, db: Session = Depends(get_db)):
-    data = body.model_dump()
-    # Auto-calculate employer match and ESPP if not provided
-    if data["rrsp_employer"] is None:
-        data["rrsp_employer"] = round(data["rrsp_employee"] * RRSP_MATCH_RATE, 2)
-    if data["espp_deduction"] is None:
-        data["espp_deduction"] = round(data["gross_income"] * espp_deduction_rate(data["pay_date"]), 2)
-    contrib = models.SavingsContribution(**data)
-    db.add(contrib)
-    db.commit()
-    db.refresh(contrib)
-    return contrib
-
-
-@router.put("/savings-contributions/{contrib_id}", response_model=SavingsContributionOut)
-def update_savings_contribution(contrib_id: int, body: SavingsContributionCreate, db: Session = Depends(get_db)):
-    contrib = db.get(models.SavingsContribution, contrib_id)
-    if not contrib:
-        raise HTTPException(404, "Contribution not found")
-    data = body.model_dump()
-    if data["rrsp_employer"] is None:
-        data["rrsp_employer"] = round(data["rrsp_employee"] * RRSP_MATCH_RATE, 2)
-    if data["espp_deduction"] is None:
-        data["espp_deduction"] = round(data["gross_income"] * espp_deduction_rate(data["pay_date"]), 2)
-    for field, val in data.items():
-        setattr(contrib, field, val)
-    db.commit()
-    db.refresh(contrib)
-    return contrib
-
-
-@router.delete("/savings-contributions/{contrib_id}", status_code=204)
-def delete_savings_contribution(contrib_id: int, db: Session = Depends(get_db)):
-    contrib = db.get(models.SavingsContribution, contrib_id)
-    if not contrib:
-        raise HTTPException(404, "Contribution not found")
-    db.delete(contrib)
-    db.commit()
 
 
 @router.get("/savings-contributions/summary")
@@ -338,8 +269,9 @@ def create_net_worth_snapshot(
     total_assets = sum(a.balance for a in assets)
     liquid_assets = sum(a.balance for a in assets if a.liquidity == "liquid")
     illiquid_assets = sum(a.balance for a in assets if a.liquidity == "illiquid")
-    total_debts = sum(d.current_balance for d in debts)
-    non_mortgage_debts = sum(d.current_balance for d in debts if d.debt_type != "mortgage")
+    debt_balances = {d.id: effective_balance(d, db) for d in debts}
+    total_debts = sum(debt_balances.values())
+    non_mortgage_debts = sum(debt_balances[d.id] for d in debts if d.debt_type != "mortgage")
 
     snap = models.NetWorthSnapshot(
         snapshot_date=datetime.date.today().isoformat(),
@@ -464,7 +396,7 @@ def forecast_networth(months: int = Query(default=12, ge=1, le=60), db: Session 
     # Get current net worth
     assets = db.execute(select(models.Asset)).scalars().all()
     debts = db.execute(select(models.Debt)).scalars().all()
-    current_nw = sum(a.balance for a in assets) - sum(d.current_balance for d in debts)
+    current_nw = sum(a.balance for a in assets) - sum(effective_balance(d, db) for d in debts)
 
     # Compute avg monthly surplus from last 6 months of income vs spending
     today = datetime.date.today()
@@ -507,125 +439,6 @@ def forecast_networth(months: int = Query(default=12, ge=1, le=60), db: Session 
     }
 
 
-# ── Recurring Bills ─────────────────────────────────────────────────────────
-
-class RecurringBillCreate(BaseModel):
-    name: str
-    merchant: str
-    amount: float
-    frequency: str = "monthly"
-    due_day: Optional[int] = None
-    category: Optional[str] = None
-    last_seen: Optional[str] = None
-    is_active: bool = True
-    notes: Optional[str] = None
-
-
-class RecurringBillOut(BaseModel):
-    id: int
-    name: str
-    merchant: str
-    amount: float
-    frequency: str
-    due_day: Optional[int] = None
-    category: Optional[str] = None
-    last_seen: Optional[str] = None
-    is_active: bool
-    notes: Optional[str] = None
-
-    class Config:
-        from_attributes = True
-
-
-@router.get("/bills", response_model=list[RecurringBillOut])
-def list_bills(db: Session = Depends(get_db)):
-    return db.execute(
-        select(models.RecurringBill).order_by(nullslast(models.RecurringBill.due_day), models.RecurringBill.name)
-    ).scalars().all()
-
-
-@router.post("/bills", response_model=RecurringBillOut, status_code=201)
-def create_bill(body: RecurringBillCreate, db: Session = Depends(get_db)):
-    bill = models.RecurringBill(**body.model_dump())
-    db.add(bill)
-    db.commit()
-    db.refresh(bill)
-    return bill
-
-
-@router.put("/bills/{bill_id}", response_model=RecurringBillOut)
-def update_bill(bill_id: int, body: RecurringBillCreate, db: Session = Depends(get_db)):
-    bill = db.get(models.RecurringBill, bill_id)
-    if not bill:
-        raise HTTPException(404, "Bill not found")
-    for k, v in body.model_dump().items():
-        setattr(bill, k, v)
-    db.commit()
-    db.refresh(bill)
-    return bill
-
-
-@router.delete("/bills/{bill_id}", status_code=204)
-def delete_bill(bill_id: int, db: Session = Depends(get_db)):
-    bill = db.get(models.RecurringBill, bill_id)
-    if not bill:
-        raise HTTPException(404, "Bill not found")
-    db.delete(bill)
-    db.commit()
-
-
-@router.get("/bills/upcoming")
-def get_upcoming_bills(db: Session = Depends(get_db)):
-    """Get bills with upcoming due dates this month and next month."""
-    today = datetime.date.today()
-    bills = db.execute(
-        select(models.RecurringBill).where(models.RecurringBill.is_active == True)
-    ).scalars().all()
-
-    upcoming = []
-    for bill in bills:
-        if bill.due_day:
-            # This month's due date
-            try:
-                import calendar
-                last_day = calendar.monthrange(today.year, today.month)[1]
-                due_day = min(bill.due_day, last_day)
-                this_month_due = datetime.date(today.year, today.month, due_day)
-                if this_month_due >= today:
-                    days_until = (this_month_due - today).days
-                    upcoming.append({
-                        "id": bill.id,
-                        "name": bill.name,
-                        "merchant": bill.merchant,
-                        "amount": bill.amount,
-                        "due_date": this_month_due.isoformat(),
-                        "days_until": days_until,
-                        "frequency": bill.frequency,
-                    })
-                else:
-                    # Next month
-                    next_month = today.month + 1 if today.month < 12 else 1
-                    next_year = today.year if today.month < 12 else today.year + 1
-                    last_day_next = calendar.monthrange(next_year, next_month)[1]
-                    due_day_next = min(bill.due_day, last_day_next)
-                    next_due = datetime.date(next_year, next_month, due_day_next)
-                    days_until = (next_due - today).days
-                    upcoming.append({
-                        "id": bill.id,
-                        "name": bill.name,
-                        "merchant": bill.merchant,
-                        "amount": bill.amount,
-                        "due_date": next_due.isoformat(),
-                        "days_until": days_until,
-                        "frequency": bill.frequency,
-                    })
-            except ValueError:
-                pass
-
-    upcoming.sort(key=lambda x: x["days_until"])
-    return upcoming
-
-
 # ── Net Worth Milestones ─────────────────────────────────────────────────────
 
 class MilestoneCreate(BaseModel):
@@ -650,7 +463,7 @@ def list_milestones(db: Session = Depends(get_db)):
     ).scalars().all()
     assets = db.execute(select(models.Asset)).scalars().all()
     debts = db.execute(select(models.Debt)).scalars().all()
-    current_nw = sum(a.balance for a in assets) - sum(d.current_balance for d in debts)
+    current_nw = sum(a.balance for a in assets) - sum(effective_balance(d, db) for d in debts)
     result = []
     for m in milestones:
         pct = round(min((current_nw / m.target_amount) * 100, 100), 1) if m.target_amount > 0 else 0.0

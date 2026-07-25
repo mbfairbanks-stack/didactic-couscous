@@ -1,20 +1,27 @@
-def test_savings_contribution_auto_calculations(client):
-    r = client.post("/savings-contributions", json={
-        "pay_date": "2025-06-15", "year": 2025, "month": 6,
-        "gross_income": 5000.0, "rrsp_employee": 300.0,
-    })
-    assert r.status_code == 201, r.text
-    body = r.json()
-    assert body["rrsp_employer"] == 150.0   # 50% match
-    assert body["espp_deduction"] == 500.0  # 10% before May 2026
+from conftest import make_income
 
 
-def test_espp_rate_changes_may_2026(client):
-    r = client.post("/savings-contributions", json={
-        "pay_date": "2026-06-15", "year": 2026, "month": 6,
-        "gross_income": 5000.0, "rrsp_employee": 0.0,
-    })
-    assert r.json()["espp_deduction"] == 750.0  # 15% from May 2026
+def test_savings_summary_derives_from_income_records(client):
+    """Income records are the single source for payroll savings (RRSP + ESPP)."""
+    make_income(client, month=1, pay_date="2025-01-15", amount=5000.0,
+                rrsp_employee=300.0, rrsp_employer=150.0, espp_deduction=500.0)
+    make_income(client, month=2, pay_date="2025-02-15", amount=5000.0,
+                rrsp_employee=300.0, rrsp_employer=150.0, espp_deduction=500.0)
+
+    s = client.get("/savings-contributions/summary", params={"year": 2025}).json()
+    assert s["rrsp_employee_ytd"] == 600.0
+    assert s["rrsp_employer_ytd"] == 300.0
+    assert s["rrsp_total_ytd"] == 900.0
+    assert s["espp_deducted_ytd"] == 1000.0
+    assert s["contributions"] == 2
+
+
+def test_dead_savings_crud_endpoints_removed(client):
+    assert client.get("/savings-contributions").status_code == 404
+    assert client.get("/bills").status_code == 404
+    # the Income-derived summary and asset sync remain
+    assert client.get("/savings-contributions/summary", params={"year": 2025}).status_code == 200
+    assert client.post("/assets/sync-savings").status_code == 200
 
 
 def test_retirement_summary_required_portfolio_at_65(client):
