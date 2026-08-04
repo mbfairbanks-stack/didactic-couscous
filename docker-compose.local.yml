@@ -1,0 +1,20 @@
+# Home / LAN deployment — no Caddy, no TLS, no demo instance.
+# Usage: docker compose -f docker-compose.local.yml up -d --build
+# Access at http://<this-machine's-LAN-IP>/
+
+services:
+  app:
+    build: .
+    ports:
+      # Change to "8080:80" if something else on this machine already uses port 80
+      - "80:80"
+    volumes:
+      - ./data:/data        # auth.db + all user databases survive rebuilds
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - BUDGET_PASSWORD=${BUDGET_PASSWORD:-}
+      - MULTI_USER=true
+      - DB_PATH=/data/budget.db
+      - AUTH_DB_PATH=/data/auth.db
+      - USER_DB_DIR=/data/users
+    restart: unless-stopped
