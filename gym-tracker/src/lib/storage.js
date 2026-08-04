@@ -1,3 +1,5 @@
+import { loadMeals, saveMeals, loadLogs, saveLogs, loadTargets, saveTargets, mergeById } from './nutrition'
+
 const SESSIONS_KEY = 'gym-tracker:sessions:v1'
 
 export function loadSessions() {
@@ -51,10 +53,26 @@ export function exportData() {
       version: 1,
       exportedAt: new Date().toISOString(),
       sessions: loadSessions(),
+      meals: loadMeals(),
+      nutritionLogs: loadLogs(),
+      nutritionTargets: loadTargets(),
     },
     null,
     2,
   )
+}
+
+// Restores nutrition data from an export payload. `mode` is 'merge' (dedupe
+// by id, keep existing) or 'replace' (overwrite). No-ops on old files that
+// predate nutrition, so importing them never wipes current nutrition data.
+function restoreNutrition(parsed, mode) {
+  if (Array.isArray(parsed?.meals)) {
+    saveMeals(mode === 'replace' ? parsed.meals : mergeById(loadMeals(), parsed.meals))
+  }
+  if (Array.isArray(parsed?.nutritionLogs)) {
+    saveLogs(mode === 'replace' ? parsed.nutritionLogs : mergeById(loadLogs(), parsed.nutritionLogs))
+  }
+  if (parsed?.nutritionTargets) saveTargets(parsed.nutritionTargets)
 }
 
 // Merges imported sessions with existing ones, deduping by id (imported
@@ -77,6 +95,7 @@ export function importData(jsonText) {
 
   const merged = sortSessions(Array.from(byId.values()))
   saveSessions(merged)
+  restoreNutrition(parsed, 'merge')
   return merged
 }
 
@@ -88,5 +107,6 @@ export function replaceAllData(jsonText) {
   }
   const sorted = sortSessions(incoming)
   saveSessions(sorted)
+  restoreNutrition(parsed, 'replace')
   return sorted
 }

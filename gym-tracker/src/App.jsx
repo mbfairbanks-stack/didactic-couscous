@@ -4,6 +4,7 @@ import LogWorkout from './components/LogWorkout'
 import Progress from './components/Progress'
 import DataManager from './components/DataManager'
 import ProgramEditor from './components/ProgramEditor'
+import Nutrition from './components/Nutrition'
 import RestTimer from './components/RestTimer'
 import UpdatePrompt from './components/UpdatePrompt'
 import { loadSessions, upsertSession, deleteSession } from './lib/storage'
@@ -11,6 +12,7 @@ import { loadProgram, saveProgram } from './lib/programStore'
 
 const TABS = [
   { key: 'home', label: 'Home', icon: '🏠' },
+  { key: 'food', label: 'Food', icon: '🍎' },
   { key: 'progress', label: 'Progress', icon: '📈' },
   { key: 'program', label: 'Program', icon: '⚙️' },
   { key: 'data', label: 'Backup', icon: '💾' },
@@ -86,6 +88,8 @@ export default function App() {
             onPickWorkout={openNewSession}
             onOpenSession={openExistingSession}
           />
+        ) : tab === 'food' ? (
+          <Nutrition />
         ) : tab === 'progress' ? (
           <Progress program={program} sessions={sessions} />
         ) : tab === 'program' ? (

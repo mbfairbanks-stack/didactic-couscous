@@ -119,10 +119,10 @@ select {
   flex-direction: column;
   align-items: center;
   gap: 0.15rem;
-  font-size: 0.66rem;
+  font-size: 0.6rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.03em;
   min-height: 56px;
 }
 
@@ -1039,4 +1039,216 @@ select.select-input {
   min-width: 30px;
   min-height: 30px;
   opacity: 0.7;
+}
+
+/* ---------- nutrition ---------- */
+.macro-bar {
+  margin-bottom: 0.85rem;
+}
+
+.macro-bar:last-of-type {
+  margin-bottom: 0.6rem;
+}
+
+.macro-bar-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.35rem;
+}
+
+.macro-label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+}
+
+.macro-nums {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.macro-track {
+  height: 12px;
+  background: var(--bg-input);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.macro-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 7px;
+  transition: width 0.25s ease;
+}
+
+.macro-fill.over {
+  background: var(--warn);
+}
+
+.macro-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.macro-input-row label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  flex: 1;
+}
+
+.macro-input-row.two .text-input {
+  flex: 1;
+}
+
+.save-lib {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  margin: 0.3rem 0 0.8rem;
+}
+
+.save-lib input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+}
+
+.meal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.55rem;
+  margin-bottom: 0.3rem;
+}
+
+.meal-chip {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  padding: 0.7rem 0.75rem;
+  text-align: left;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-height: 62px;
+}
+
+.meal-chip:active {
+  border-color: var(--accent);
+}
+
+.meal-chip:disabled {
+  opacity: 0.5;
+}
+
+.meal-chip-name {
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+
+.meal-chip-sub {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  font-weight: 700;
+}
+
+.log-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--border);
+  width: 100%;
+  text-align: left;
+  background: none;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  color: var(--text);
+}
+
+.log-row:last-child {
+  border-bottom: none;
+}
+
+.log-name {
+  flex: 1;
+  font-weight: 700;
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-macros {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.log-x {
+  background: none;
+  border: none;
+  color: var(--danger);
+  font-size: 0.95rem;
+  min-width: 32px;
+  min-height: 32px;
+  flex-shrink: 0;
+}
+
+.meal-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.meal-row:last-child {
+  border-bottom: none;
+}
+
+.meal-row-name {
+  flex: 1;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.meal-row-macros {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.meal-row-actions {
+  display: flex;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+.meal-row-actions button {
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  border-radius: 8px;
+  min-width: 34px;
+  min-height: 34px;
+  font-size: 0.9rem;
+}
+
+.meal-row-actions .del {
+  color: var(--danger);
 }
