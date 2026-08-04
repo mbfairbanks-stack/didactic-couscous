@@ -40,6 +40,13 @@ stops the remote app so the SQLite files are consistent, copies `data/`
 stopped so the two copies can't diverge. It prints a one-line rollback
 command in case you change your mind.
 
+The budget server also hosts the **meal-planner backend** (its SQLite db
+lives in a Docker named volume, not in this repo). The script archives that
+volume to `meal-planner-data.tar.gz` in the repo root before you delete the
+server, so nothing is lost even if the app is dormant. To resurrect it at
+home later: extract the archive and run `meal-planner/docker-compose.yml`
+with the extracted files restored into the backend's `/app/data` volume.
+
 ## 3. Run it
 
 ```bash

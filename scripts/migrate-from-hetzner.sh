@@ -57,6 +57,18 @@ if [[ ! -f "$REPO_ROOT/.env" ]]; then
 fi
 
 echo
+echo "── Step 5: Archiving meal-planner data (if present) ────────────"
+# The meal-planner backend keeps its SQLite db in a named Docker volume,
+# not in this repo's data/ dir. Archive it so deleting the server loses nothing.
+if ssh "$SERVER" "docker inspect meal-planner-backend-1 >/dev/null 2>&1"; then
+  ssh "$SERVER" "rm -rf /tmp/mp-data && docker cp meal-planner-backend-1:/app/data /tmp/mp-data && tar czf /tmp/meal-planner-data.tar.gz -C /tmp mp-data"
+  scp "$SERVER:/tmp/meal-planner-data.tar.gz" "$REPO_ROOT/meal-planner-data.tar.gz"
+  echo "Saved to $REPO_ROOT/meal-planner-data.tar.gz"
+else
+  echo "No meal-planner container on this server — skipping"
+fi
+
+echo
 echo "── Done ────────────────────────────────────────────────────────"
 echo "Remote app is STOPPED (data can't diverge). To roll back instead:"
 echo "  ssh $SERVER \"cd '$REMOTE_DIR' && docker compose -f docker-compose.prod.yml start app demo\""
