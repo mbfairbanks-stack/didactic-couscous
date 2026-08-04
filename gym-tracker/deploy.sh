@@ -46,6 +46,9 @@ if [ "${1:-}" = "--server-setup" ]; then
   server_setup
 fi
 
+echo "==> Installing deps"
+npm install
+
 echo "==> Building"
 npm run build
 
