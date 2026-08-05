@@ -364,11 +364,25 @@ def _sync_year_month(data: dict) -> dict:
     return data
 
 
+def _auto_link_mortgage(txn: models.Transaction, db: Session):
+    """If category is Mortgage and no debt is linked, auto-link to the sole mortgage debt."""
+    if txn.category != "Mortgage" or txn.linked_debt_id:
+        return
+    mortgage_debts = db.execute(
+        select(models.Debt).where(models.Debt.debt_type == "mortgage")
+    ).scalars().all()
+    if len(mortgage_debts) == 1:
+        txn.linked_debt_id = mortgage_debts[0].id
+        txn.debt_direction = "payment"
+
+
 @app.post("/transactions", response_model=TransactionOut, status_code=201)
 def create_transaction(body: TransactionCreate, db: Session = Depends(get_db)):
     data = _sync_year_month(body.model_dump())
     txn = models.Transaction(**data)
     db.add(txn)
+    db.flush()
+    _auto_link_mortgage(txn, db)
     db.commit()
     db.refresh(txn)
     return txn
@@ -382,6 +396,7 @@ def update_transaction(txn_id: int, body: TransactionUpdate, db: Session = Depen
     data = _sync_year_month(body.model_dump(exclude_none=True))
     for field, val in data.items():
         setattr(txn, field, val)
+    _auto_link_mortgage(txn, db)
     db.commit()
     db.refresh(txn)
     return txn
@@ -790,7 +805,13 @@ def update_category_definition(cat_id: int, body: CategoryUpdate, db: Session = 
     cat = db.get(models.Category, cat_id)
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
-    if body.name is not None:
+    if body.name is not None and body.name != cat.name:
+        old_name = cat.name
+        cat.name = body.name
+        # Cascade rename to all transactions and budget targets using the old name
+        db.execute(text("UPDATE transactions SET category = :new WHERE category = :old"), {"new": body.name, "old": old_name})
+        db.execute(text("UPDATE budget_targets SET category = :new WHERE category = :old"), {"new": body.name, "old": old_name})
+    elif body.name is not None:
         cat.name = body.name
     if body.group is not None:
         cat.group_name = body.group

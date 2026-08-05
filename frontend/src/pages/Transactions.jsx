@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { getTransactions, createTransaction, updateTransaction, deleteTransaction, getCategories, getYears, exportTransactionsCsv, getAnomalies, splitTransaction, getRecurringSuggestions, getDebts } from "../api";
+import { getTransactions, createTransaction, updateTransaction, deleteTransaction, getCategories, getCategoryDefinitions, getYears, exportTransactionsCsv, getAnomalies, splitTransaction, getRecurringSuggestions, getDebts } from "../api";
 import { MONTH_LABELS, currentYear, currentMonth, fmtCents as fmt } from "../utils";
 
 const VIRTUAL_CATEGORIES = ["E-Transfer", "Shared Expense"];
@@ -38,6 +38,7 @@ export default function Transactions() {
   const [showColFilters, setShowColFilters] = useState(false);
   const [years, setYears] = useState([currentYear]);
   const [allCategories, setAllCategories] = useState([]);
+  const [categoryGroupMap, setCategoryGroupMap] = useState({});
   const [transactions, setTransactions] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -77,6 +78,11 @@ export default function Transactions() {
   useEffect(() => {
     getYears().then((y) => setYears(y.length ? y : [currentYear]));
     getCategories().then(setAllCategories);
+    getCategoryDefinitions().then((defs) => {
+      const map = {};
+      defs.forEach((d) => { map[d.name] = d.group; });
+      setCategoryGroupMap(map);
+    }).catch(() => {});
     getRecurringSuggestions()
       .then((rows) => setRecurringSuggestions(rows.filter((r) => r.is_consistent)))
       .catch(() => {});
@@ -159,6 +165,21 @@ export default function Transactions() {
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paginated = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
+  const renderCategoryOptions = (currentValue) => {
+    const needs = allCategories.filter((c) => categoryGroupMap[c] === "Needs");
+    const wants = allCategories.filter((c) => categoryGroupMap[c] === "Wants");
+    const other = allCategories.filter((c) => !["Needs", "Wants"].includes(categoryGroupMap[c]));
+    const extra = currentValue && !allCategories.includes(currentValue) && !VIRTUAL_CATEGORIES.includes(currentValue)
+      ? [currentValue] : [];
+    return <>
+      {extra.map((c) => <option key={`__extra_${c}`} value={c}>{c}</option>)}
+      {needs.length > 0 && <optgroup label="Needs">{needs.map((c) => <option key={c} value={c}>{c}</option>)}</optgroup>}
+      {wants.length > 0 && <optgroup label="Wants">{wants.map((c) => <option key={c} value={c}>{c}</option>)}</optgroup>}
+      {other.length > 0 && <optgroup label="Other">{other.map((c) => <option key={c} value={c}>{c}</option>)}</optgroup>}
+      {VIRTUAL_CATEGORIES.map((cat) => !allCategories.includes(cat) && <option key={cat} value={cat}>{cat}</option>)}
+    </>;
+  };
+
   // ── Inline cell editing ──────────────────────────────────────────────────────
 
   const startCellEdit = (txn, field) => {
@@ -209,10 +230,7 @@ export default function Transactions() {
         <td className={`px-4 py-2 ${cellClass}`}>
           {field === "category" ? (
             <select {...inputCommon}>
-              {allCategories.map((c) => <option key={c} value={c}>{c}</option>)}
-              {!allCategories.includes(cellEdit.value) && cellEdit.value && (
-                <option value={cellEdit.value}>{cellEdit.value}</option>
-              )}
+              {renderCategoryOptions(cellEdit.value)}
             </select>
           ) : (
             <input
@@ -803,7 +821,7 @@ export default function Transactions() {
                     <div>
                       <label className="text-xs text-zinc-500">Category</label>
                       <select className={`w-full mt-0.5 ${inputCls}`} value={state.category} onChange={(e) => setState({ ...state, category: e.target.value })}>
-                        {allCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+                        {renderCategoryOptions(state.category)}
                       </select>
                     </div>
                   </div>
@@ -869,11 +887,7 @@ export default function Transactions() {
                 <select required className={`w-full mt-0.5 ${inputCls}`}
                   value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
                   {!form.category && <option value="">— choose category —</option>}
-                  {form.category && !allCategories.includes(form.category) && !VIRTUAL_CATEGORIES.includes(form.category) && (
-                    <option value={form.category}>{form.category}</option>
-                  )}
-                  {allCategories.map((c) => <option key={c} value={c}>{c}</option>)}
-                  {VIRTUAL_CATEGORIES.map((cat) => !allCategories.includes(cat) && <option key={cat} value={cat}>{cat}</option>)}
+                  {renderCategoryOptions(form.category)}
                 </select>
               </div>
               <div>

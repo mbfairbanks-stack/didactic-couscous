@@ -89,23 +89,36 @@ def _init_db_extras(eng, seed_demo: bool = False):
             conn.execute(sa.text("ALTER TABLE categories ADD COLUMN is_hidden INTEGER NOT NULL DEFAULT 0"))
         if "parent_name" not in cat_cols:
             conn.execute(sa.text("ALTER TABLE categories ADD COLUMN parent_name TEXT"))
-        cat_count = conn.execute(sa.text("SELECT COUNT(*) FROM categories")).scalar()
-        if cat_count == 0:
-            from categories import CATEGORY_GROUPS
-            canonical = {
-                "Mortgage", "Natural Gas", "Hydro", "Groceries", "Pets",
-                "Transportation", "Internet", "Security", "Mobile", "Insurance",
-                "Municipal Taxes", "Debt Payment", "Medical",
-                "Entertainment", "Dining", "Coffee", "Alcohol", "Cannabis",
-                "Clothes", "Gifts", "Charity", "Travel", "Fitness", "Home",
-                "Entertainment Subscriptions", "Subscriptions",
-                "Health & Beauty", "Canva Sub", "Ipsy Sub", "Misc",
-            }
-            for name, group in CATEGORY_GROUPS.items():
+        # Always upsert missing canonical categories (idempotent for existing users)
+        from categories import CATEGORY_GROUPS
+        canonical = {
+            "Mortgage", "Natural Gas", "Hydro", "Groceries", "Pets",
+            "Transportation", "Internet", "Security", "Mobile", "Insurance",
+            "Municipal Taxes", "Debt Payment", "Medical",
+            "Entertainment", "Dining", "Coffee", "Alcohol", "Cannabis",
+            "Clothes", "Gifts", "Charity", "Travel", "Fitness", "Home",
+            "Entertainment Subscriptions", "Subscriptions",
+            "Health & Beauty", "Canva Sub", "Ipsy Sub", "Misc",
+        }
+        existing_cats = {row[0] for row in conn.execute(sa.text("SELECT name FROM categories")).fetchall()}
+        for name, group in CATEGORY_GROUPS.items():
+            if name not in existing_cats:
                 is_leg = 0 if name in canonical else 1
                 conn.execute(sa.text(
                     'INSERT INTO categories (name, "group", is_legacy) VALUES (:n, :g, :l)'
                 ), {"n": name, "g": group, "l": is_leg})
+        # Seed any transaction-only categories not yet in definitions
+        if "transactions" in tables:
+            tx_cats = conn.execute(sa.text(
+                "SELECT DISTINCT category FROM transactions WHERE category IS NOT NULL AND category != ''"
+            )).fetchall()
+            existing_cats = {row[0] for row in conn.execute(sa.text("SELECT name FROM categories")).fetchall()}
+            for (cat_name,) in tx_cats:
+                if cat_name and cat_name not in existing_cats:
+                    grp = CATEGORY_GROUPS.get(cat_name, "Other")
+                    conn.execute(sa.text(
+                        'INSERT INTO categories (name, "group", is_legacy) VALUES (:n, :g, 1)'
+                    ), {"n": cat_name, "g": grp})
 
         # transactions extras
         if "transactions" in tables:
