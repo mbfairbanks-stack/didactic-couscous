@@ -865,12 +865,13 @@ def onboarding_status(db: Session = Depends(get_db)):
 
 @app.get("/categories")
 def list_categories(db: Session = Depends(get_db)):
-    # Categories from the definitions table (user-managed, excludes hidden)
-    defined = db.execute(
-        select(models.Category.name)
-        .where(models.Category.is_hidden == False)  # noqa: E712
+    # Same query as /category-definitions but returns names only, excludes hidden
+    rows = db.execute(
+        select(models.Category)
+        .where(models.Category.is_hidden.isnot(True))
         .order_by(models.Category.name)
     ).scalars().all()
+    defined = [r.name for r in rows]
     defined_set = set(defined)
 
     # Any categories already on transactions that aren't in the definitions table
