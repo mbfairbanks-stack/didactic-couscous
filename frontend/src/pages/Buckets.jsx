@@ -32,25 +32,28 @@ function ProgressBar({ actual, target, bucketKey }) {
   );
 }
 
-function InlineTargetEditor({ bucketKey, year, month, currentTarget, onSaved }) {
+function PctTargetEditor({ bucketKey, year, netIncome, currentPct, onSaved }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const inputRef = useRef(null);
 
+  const toDollar = (pct) =>
+    netIncome > 0 && pct > 0 ? fmt((netIncome * pct) / 100) : null;
+
   const startEdit = () => {
-    setDraft(currentTarget != null ? String(currentTarget) : "");
+    setDraft(currentPct != null ? String(currentPct) : "");
     setEditing(true);
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
   const save = async () => {
     const val = parseFloat(draft);
-    if (isNaN(val) || val < 0) { setEditing(false); return; }
+    if (isNaN(val) || val < 0 || val > 100) { setEditing(false); return; }
     setSaving(true);
     try {
-      await upsertBucketTarget({ bucket: bucketKey, year, month: null, amount: val });
-      onSaved(val);
+      await upsertBucketTarget({ bucket: bucketKey, year, pct: val });
+      onSaved();
     } finally {
       setSaving(false);
       setEditing(false);
@@ -58,36 +61,39 @@ function InlineTargetEditor({ bucketKey, year, month, currentTarget, onSaved }) 
   };
 
   if (editing) {
+    const draftPct = parseFloat(draft);
+    const draftDollar = toDollar(draftPct);
     return (
       <div className="flex items-center gap-1">
-        <span className="text-xs text-zinc-500">Target $</span>
         <input
           ref={inputRef}
-          type="number"
-          min="0"
-          step="100"
+          type="number" min="0" max="100" step="1"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={save}
           onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
-          className="w-24 bg-zinc-800 border border-zinc-600 rounded px-2 py-0.5 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400"
+          className="w-14 bg-zinc-800 border border-zinc-600 rounded px-2 py-0.5 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400"
           disabled={saving}
         />
+        <span className="text-xs text-zinc-500">%</span>
+        {draftDollar && <span className="text-xs text-zinc-600">= {draftDollar}</span>}
       </div>
     );
   }
 
-  if (currentTarget != null) {
+  if (currentPct != null) {
+    const dollar = toDollar(currentPct);
     return (
-      <button onClick={startEdit} className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors" title="Click to edit target">
-        Target {fmt(currentTarget)}
+      <button onClick={startEdit} className="text-xs text-right hover:text-zinc-300 transition-colors" title="Click to edit">
+        <span className="text-zinc-400">{currentPct}%</span>
+        {dollar && <span className="text-zinc-600 ml-1">= {dollar}</span>}
       </button>
     );
   }
 
   return (
     <button onClick={startEdit} className="text-xs text-zinc-600 hover:text-yellow-400 transition-colors">
-      + Set annual target
+      + Set % of income
     </button>
   );
 }
@@ -191,28 +197,23 @@ function PayPeriod({ hl }) {
   );
 }
 
-function BucketCard({ bucketKey, data, year, month, onTargetSaved }) {
+function BucketCard({ bucketKey, data, year, month, netIncome, onTargetSaved }) {
   const [expanded, setExpanded] = useState(false);
-  const [target, setTarget] = useState(data.target);
-  const remaining = target != null ? target - data.actual : null;
+  const remaining = data.target != null ? data.target - data.actual : null;
   const over = remaining != null && remaining < 0;
   const accent = BUCKET_ACCENT[bucketKey];
-
-  const handleTargetSaved = (val) => {
-    setTarget(val);
-    onTargetSaved();
-  };
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 flex flex-col gap-3">
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <h2 className={`text-sm font-semibold uppercase tracking-wide ${accent}`}>{data.label}</h2>
-        <InlineTargetEditor
+        <PctTargetEditor
           bucketKey={bucketKey}
           year={year}
-          currentTarget={target}
-          onSaved={handleTargetSaved}
+          netIncome={netIncome}
+          currentPct={data.pct}
+          onSaved={onTargetSaved}
         />
       </div>
 
@@ -227,7 +228,7 @@ function BucketCard({ bucketKey, data, year, month, onTargetSaved }) {
       </div>
 
       {/* Progress bar */}
-      <ProgressBar actual={data.actual} target={target} bucketKey={bucketKey} />
+      <ProgressBar actual={data.actual} target={data.target} bucketKey={bucketKey} />
 
       {/* Pay period (Hard Limit only) */}
       {bucketKey === "hard_limit" && <PayPeriod hl={data} />}
@@ -305,18 +306,32 @@ export default function Buckets() {
           ))}
         </div>
       ) : data ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {BUCKET_ORDER.map((key) => (
-            <BucketCard
-              key={key}
-              bucketKey={key}
-              data={data[key]}
-              year={year}
-              month={month}
-              onTargetSaved={load}
-            />
-          ))}
-        </div>
+        <>
+          {data.net_income > 0 && (
+            <p className="text-xs text-zinc-500">
+              Net income this month: <span className="text-zinc-300 font-medium">{fmt(data.net_income)}</span>
+              <span className="ml-2 text-zinc-600">— set each bucket as a % below</span>
+            </p>
+          )}
+          {data.net_income === 0 && (
+            <p className="text-xs text-zinc-600">
+              No income recorded for {MONTH_LABELS[month - 1]} {year} — add income entries to enable % targets.
+            </p>
+          )}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {BUCKET_ORDER.map((key) => (
+              <BucketCard
+                key={key}
+                bucketKey={key}
+                data={data[key]}
+                year={year}
+                month={month}
+                netIncome={data.net_income}
+                onTargetSaved={load}
+              />
+            ))}
+          </div>
+        </>
       ) : null}
     </div>
   );

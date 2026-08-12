@@ -809,17 +809,30 @@ def bucket_summary(year: int, month: int, db: Session = Depends(get_db)):
             by_cat[t.category] = by_cat.get(t.category, 0.0) + t.amount
         return dict(sorted(by_cat.items(), key=lambda kv: -kv[1]))
 
-    def _bucket_target(bucket: str) -> Optional[float]:
-        # Month-specific target first, then year-default (month IS NULL)
+    # Net income for the selected month (sum of all Income rows)
+    net_income: float = round(
+        db.execute(
+            select(func.sum(models.Income.amount))
+            .where(models.Income.year == year, models.Income.month == month)
+        ).scalar() or 0.0,
+        2,
+    )
+
+    def _bucket_target_info(bucket: str) -> tuple:
+        """Returns (dollar_target, pct) — pct is None when using a fixed amount."""
         q = (
             select(models.BucketTarget)
             .where(models.BucketTarget.bucket == bucket, models.BucketTarget.year == year)
         )
-        month_row = db.execute(q.where(models.BucketTarget.month == month)).scalar_one_or_none()
-        if month_row:
-            return month_row.amount
-        default_row = db.execute(q.where(models.BucketTarget.month.is_(None))).scalar_one_or_none()
-        return default_row.amount if default_row else None
+        row = db.execute(q.where(models.BucketTarget.month == month)).scalar_one_or_none()
+        if row is None:
+            row = db.execute(q.where(models.BucketTarget.month.is_(None))).scalar_one_or_none()
+        if row is None:
+            return None, None
+        if row.pct is not None:
+            dollar = round(net_income * row.pct / 100, 2) if net_income > 0 else None
+            return dollar, row.pct
+        return row.amount, None
 
     # ── Hard Limit pay-period window ──────────────────────────────────────────
     import calendar as _cal
@@ -857,7 +870,7 @@ def bucket_summary(year: int, month: int, db: Session = Depends(get_db)):
             if t_date >= period_start:
                 period_hl_actual += t.amount
 
-    hl_target = _bucket_target("hard_limit")
+    hl_target, _ = _bucket_target_info("hard_limit")
     hl_actual  = round(sum(t.amount for t in hl_txns), 2)
     period_hl_budget = round(hl_target / 2, 2) if hl_target is not None else None
 
@@ -897,16 +910,18 @@ def bucket_summary(year: int, month: int, db: Session = Depends(get_db)):
     def _bucket_block(key: str):
         txn_list = grouped.get(key, [])
         actual = round(sum(t.amount for t in txn_list), 2)
-        tgt = _bucket_target(key)
+        tgt, tgt_pct = _bucket_target_info(key)
         return {
             "label": BUCKET_LABELS[key],
             "actual": actual,
             "target": tgt,
+            "pct": tgt_pct,
             "remaining": round(tgt - actual, 2) if tgt is not None else None,
             "categories": _cat_breakdown(txn_list),
         }
 
     return {
+        "net_income": net_income,
         "fixed":      _bucket_block("fixed"),
         "meaningful": _bucket_block("meaningful"),
         "short_term": {
@@ -930,7 +945,8 @@ class BucketTargetUpsert(BaseModel):
     bucket: str
     year: int
     month: Optional[int] = None
-    amount: float
+    amount: Optional[float] = None   # fixed dollar (legacy / tests)
+    pct: Optional[float] = None      # % of net income; takes priority when set
 
 
 @app.get("/bucket-targets")
@@ -939,8 +955,11 @@ def list_bucket_targets_endpoint(year: Optional[int] = None, db: Session = Depen
     if year is not None:
         q = q.where(models.BucketTarget.year == year)
     rows = db.execute(q).scalars().all()
-    return [{"id": r.id, "bucket": r.bucket, "year": r.year, "month": r.month, "amount": r.amount}
-            for r in rows]
+    return [
+        {"id": r.id, "bucket": r.bucket, "year": r.year, "month": r.month,
+         "amount": r.amount, "pct": r.pct}
+        for r in rows
+    ]
 
 
 @app.put("/bucket-targets")
@@ -952,11 +971,18 @@ def upsert_bucket_target(body: BucketTargetUpsert, db: Session = Depends(get_db)
     q = q.where(models.BucketTarget.month == body.month) if body.month is not None \
         else q.where(models.BucketTarget.month.is_(None))
     existing = db.execute(q).scalar_one_or_none()
+    if body.pct is not None:
+        new_pct = body.pct
+        new_amount = 0.0
+    else:
+        new_pct = None
+        new_amount = body.amount if body.amount is not None else 0.0
     if existing:
-        existing.amount = body.amount
+        existing.pct = new_pct
+        existing.amount = new_amount
     else:
         db.add(models.BucketTarget(bucket=body.bucket, year=body.year,
-                                   month=body.month, amount=body.amount))
+                                   month=body.month, amount=new_amount, pct=new_pct))
     try:
         db.commit()
     except IntegrityError:

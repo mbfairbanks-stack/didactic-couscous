@@ -220,10 +220,15 @@ def _init_db_extras(eng, seed_demo: bool = False):
                     bucket TEXT NOT NULL,
                     year INTEGER NOT NULL,
                     month INTEGER,
-                    amount REAL NOT NULL,
+                    amount REAL NOT NULL DEFAULT 0,
+                    pct REAL,
                     UNIQUE(bucket, year, month)
                 )
             """))
+        elif "bucket_targets" in tables:
+            bt_cols = [c["name"] for c in inspector.get_columns("bucket_targets")]
+            if "pct" not in bt_cols:
+                conn.execute(sa.text("ALTER TABLE bucket_targets ADD COLUMN pct REAL"))
 
         conn.commit()
 

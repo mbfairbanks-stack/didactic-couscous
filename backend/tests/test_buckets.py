@@ -299,3 +299,60 @@ class TestBucketTargetsCRUD:
         fixed_rows = [r for r in rows if r["bucket"] == "fixed"]
         assert len(fixed_rows) == 1
         assert fixed_rows[0]["amount"] == 3200.00
+
+
+# ---------------------------------------------------------------------------
+# Percentage-based bucket targets
+# ---------------------------------------------------------------------------
+
+class TestPctTargets:
+    def _income(self, db, amount, year=2026, month=8):
+        import datetime
+        inc = models.Income(
+            year=year, month=month, person="P1", income_type="base",
+            amount=amount, pay_date=datetime.date(year, month, 15),
+        )
+        db.add(inc)
+
+    def test_pct_target_computed_from_income(self, client, db):
+        _cat(db, "Groceries", bucket="hard_limit")
+        _txn(db, "Groceries", 800.00)
+        self._income(db, 4000.00)   # $4,000 income → 50% = $2,000 target
+        db.add(models.BucketTarget(bucket="hard_limit", year=2026, month=None, amount=0.0, pct=50.0))
+        db.commit()
+
+        data = _get_buckets(client)
+        assert data["net_income"] == 4000.00
+        assert data["hard_limit"]["pct"] == 50.0
+        assert data["hard_limit"]["target"] == 2000.00
+        assert data["hard_limit"]["remaining"] == 1200.00
+
+    def test_pct_upsert_endpoint(self, client):
+        r = client.put("/bucket-targets", json={"bucket": "fixed", "year": 2026, "pct": 35.0})
+        assert r.status_code == 200
+
+        rows = client.get("/bucket-targets?year=2026").json()
+        fixed = next(r for r in rows if r["bucket"] == "fixed")
+        assert fixed["pct"] == 35.0
+
+    def test_net_income_in_response(self, client, db):
+        import datetime
+        db.add(models.Income(year=2026, month=8, person="P1", income_type="base",
+                             amount=3000.00, pay_date=datetime.date(2026, 8, 1)))
+        db.add(models.Income(year=2026, month=8, person="P1", income_type="base",
+                             amount=1500.00, pay_date=datetime.date(2026, 8, 15)))
+        db.commit()
+
+        data = _get_buckets(client)
+        assert data["net_income"] == 4500.00
+
+    def test_zero_income_gives_none_target(self, client, db):
+        _cat(db, "Groceries", bucket="hard_limit")
+        _txn(db, "Groceries", 200.00)
+        db.add(models.BucketTarget(bucket="hard_limit", year=2026, month=None, amount=0.0, pct=50.0))
+        db.commit()
+
+        data = _get_buckets(client)
+        assert data["net_income"] == 0.0
+        assert data["hard_limit"]["target"] is None
+        assert data["hard_limit"]["remaining"] is None

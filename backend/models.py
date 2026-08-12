@@ -265,7 +265,8 @@ class BucketTarget(Base):
     bucket = Column(String, nullable=False)   # "fixed"|"meaningful"|"short_term"|"hard_limit"
     year = Column(Integer, nullable=False)
     month = Column(Integer, nullable=True)    # NULL = default for all months in that year
-    amount = Column(Float, nullable=False)
+    amount = Column(Float, nullable=False, default=0.0)  # fixed dollar (0 when pct is used)
+    pct = Column(Float, nullable=True)        # % of net income (e.g. 50.0 = 50%)
 
     __table_args__ = (
         UniqueConstraint("bucket", "year", "month", name="uq_bucket_target"),
