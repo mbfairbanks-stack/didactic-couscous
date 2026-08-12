@@ -290,7 +290,7 @@ export default function Buckets() {
             onChange={(e) => setMonth(Number(e.target.value))}
             className="bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400"
           >
-            {MONTH_LABELS.map((label, i) => (
+            {MONTH_LABELS.slice(1).map((label, i) => (
               <option key={i + 1} value={i + 1}>{label}</option>
             ))}
           </select>
@@ -315,7 +315,7 @@ export default function Buckets() {
           )}
           {data.net_income === 0 && (
             <p className="text-xs text-zinc-600">
-              No income recorded for {MONTH_LABELS[month - 1]} {year} — add income entries to enable % targets.
+              No income recorded for {MONTH_LABELS[month]} {year} — add income entries to enable % targets.
             </p>
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
