@@ -7,6 +7,7 @@ const mainLinks = [
   { to: "/dashboard", label: "Dashboard" },
   { to: "/transactions", label: "Transactions" },
   { to: "/budget", label: "Budget" },
+  { to: "/buckets", label: "Buckets" },
   { to: "/debts", label: "Debts" },
   { to: "/charts", label: "Charts" },
   { to: "/income", label: "Income" },

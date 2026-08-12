@@ -13,6 +13,7 @@ import CategoryAudit from "./pages/CategoryAudit";
 import NetWorth from "./pages/NetWorth";
 import Settings from "./pages/Settings";
 import Retirement from "./pages/Retirement";
+import Buckets from "./pages/Buckets";
 import Onboarding from "./pages/Onboarding";
 import Login from "./pages/Login";
 import { SettingsProvider } from "./contexts/SettingsContext";
@@ -79,6 +80,7 @@ export default function App() {
                         <Route path="/dashboard" element={<Dashboard />} />
                         <Route path="/transactions" element={<Transactions />} />
                         <Route path="/budget" element={<BudgetPlanner />} />
+                        <Route path="/buckets" element={<Buckets />} />
                         <Route path="/charts" element={<Charts />} />
                         <Route path="/import" element={<Import />} />
                         <Route path="/insights" element={<Insights />} />

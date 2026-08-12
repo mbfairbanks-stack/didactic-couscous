@@ -16,6 +16,7 @@ const emptyForm = {
   source: "",
   linked_debt_id: "",
   debt_direction: "payment",
+  bucket_override: "",
 };
 
 const inputCls = "bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-yellow-400/50";
@@ -328,6 +329,7 @@ export default function Transactions() {
       month: m,
       linked_debt_id: form.linked_debt_id ? parseInt(form.linked_debt_id) : null,
       debt_direction: form.linked_debt_id ? form.debt_direction : null,
+      bucket_override: form.bucket_override || null,
     };
     try {
       if (editId) {
@@ -357,6 +359,7 @@ export default function Transactions() {
       source: txn.source || "",
       linked_debt_id: txn.linked_debt_id ? String(txn.linked_debt_id) : "",
       debt_direction: txn.debt_direction || "payment",
+      bucket_override: txn.bucket_override || "",
     });
     setEditId(txn.id);
     setShowForm(true);
@@ -895,6 +898,20 @@ export default function Transactions() {
                 <input type="text" className={`w-full mt-0.5 ${inputCls}`}
                   placeholder="e.g. Split with Alex, Enbridge bill"
                   value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">Bucket override (optional)</label>
+                <select
+                  className={`w-full ${inputCls}`}
+                  value={form.bucket_override}
+                  onChange={(e) => setForm({ ...form, bucket_override: e.target.value })}
+                >
+                  <option value="">Auto (use category default)</option>
+                  <option value="fixed">Fixed Expenses</option>
+                  <option value="meaningful">Meaningful Savings</option>
+                  <option value="short_term">Short-Term Savings</option>
+                  <option value="hard_limit">Hard Limit</option>
+                </select>
               </div>
               <div>
                 <label className="block text-xs text-zinc-400 mb-1">Link to Debt (optional)</label>

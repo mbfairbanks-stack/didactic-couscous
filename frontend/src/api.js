@@ -391,3 +391,9 @@ export const createRetirementGoal = (body) =>
 export const updateRetirementGoal = (id, body) =>
   req(`/retirement/goals/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 export const deleteRetirementGoal = (id) => req(`/retirement/goals/${id}`, { method: "DELETE" });
+
+// Bucket layer
+export const getBucketSummary = (year, month) => req(`/summary/buckets?year=${year}&month=${month}`);
+export const getBucketTargets = (year) => req(`/bucket-targets?year=${year}`);
+export const upsertBucketTarget = (body) =>
+  req("/bucket-targets", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
