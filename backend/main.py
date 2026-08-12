@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Query, Re
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func, distinct, text, nullslast
+from sqlalchemy import select, func, distinct, text, nullslast, update as sa_update
 from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
 from typing import Optional, List
@@ -807,10 +807,7 @@ def bucket_summary(year: int, month: int, db: Session = Depends(get_db)):
         by_cat: dict[str, float] = {}
         for t in txn_list:
             by_cat[t.category] = by_cat.get(t.category, 0.0) + t.amount
-        return sorted(
-            [{"category": c, "total": round(v, 2)} for c, v in by_cat.items()],
-            key=lambda x: -x["total"],
-        )
+        return dict(sorted(by_cat.items(), key=lambda kv: -kv[1]))
 
     def _bucket_target(bucket: str) -> Optional[float]:
         # Month-specific target first, then year-default (month IS NULL)
@@ -825,22 +822,27 @@ def bucket_summary(year: int, month: int, db: Session = Depends(get_db)):
         return default_row.amount if default_row else None
 
     # ── Hard Limit pay-period window ──────────────────────────────────────────
+    import calendar as _cal
     today = datetime.date.today()
-    raw_pay_dates = db.execute(
-        select(models.Income.pay_date)
-        .where(models.Income.pay_date.isnot(None))
-        .distinct()
-        .order_by(models.Income.pay_date)
-    ).scalars().all()
+    settings_map = {s.key: s.value for s in db.execute(select(models.AppSettings)).scalars().all()}
+    pay_day_1 = int(settings_map.get("pay_day_1", "15"))
+    pay_day_2 = int(settings_map.get("pay_day_2", "30"))
 
-    all_pay_dates = sorted(
-        d if isinstance(d, datetime.date) else datetime.date.fromisoformat(str(d))
-        for d in raw_pay_dates if d
-    )
+    def _pay_dates_for(y, m):
+        last = _cal.monthrange(y, m)[1]
+        return [datetime.date(y, m, min(d, last)) for d in sorted([pay_day_1, pay_day_2])]
+
+    cadence_dates = []
+    for delta in range(-2, 3):
+        cm, cy = today.month + delta, today.year
+        while cm <= 0: cm += 12; cy -= 1
+        while cm > 12: cm -= 12; cy += 1
+        cadence_dates.extend(_pay_dates_for(cy, cm))
+    cadence_dates.sort()
 
     period_start: Optional[datetime.date] = None
     period_end:   Optional[datetime.date] = None
-    for pd in all_pay_dates:
+    for pd in cadence_dates:
         if pd <= today:
             period_start = pd
         elif period_end is None:
@@ -859,40 +861,20 @@ def bucket_summary(year: int, month: int, db: Session = Depends(get_db)):
     hl_actual  = round(sum(t.amount for t in hl_txns), 2)
     period_hl_budget = round(hl_target / 2, 2) if hl_target is not None else None
 
-    # ── Short-Term sinking fund running balances ──────────────────────────────
-    short_term_cats = [c.name for c in cat_rows if (c.default_bucket or "hard_limit") == "short_term"]
-    # Pets non-recurring transactions also land in short_term
-    if "Pets" not in short_term_cats:
-        short_term_cats.append("Pets")
+    # ── Short-Term sinking fund YTD spend vs pro-rated annual target ─────────
+    # Only categories whose default_bucket is 'short_term' — split spillovers
+    # like Pets non-recurring go to the short_term bucket but are NOT sinking funds.
+    short_term_cats = sorted(c.name for c in cat_rows if c.default_bucket == "short_term")
 
     sinking_funds: dict = {}
-    for cat in sorted(short_term_cats):
-        q_cum = (
+    for cat in short_term_cats:
+        ytd_spent = round(db.execute(
             select(func.sum(models.Transaction.amount))
-            .where(models.Transaction.category == cat)
-            .where(
-                (models.Transaction.year < year) |
-                ((models.Transaction.year == year) & (models.Transaction.month <= month))
-            )
-        )
-        if cat == "Pets":
-            q_cum = q_cum.where(models.Transaction.is_recurring == False)  # noqa: E712
-        cumulative = round(db.execute(q_cum).scalar() or 0.0, 2)
+            .where(models.Transaction.category == cat,
+                   models.Transaction.year == year,
+                   models.Transaction.month <= month)
+        ).scalar() or 0.0, 2)
 
-        # First month this category had transactions (for elapsed-months calc)
-        q_first = select(
-            func.min(models.Transaction.year * 100 + models.Transaction.month)
-        ).where(models.Transaction.category == cat)
-        if cat == "Pets":
-            q_first = q_first.where(models.Transaction.is_recurring == False)  # noqa: E712
-        first_ym = db.execute(q_first).scalar()
-
-        months_elapsed = 0
-        if first_ym:
-            fy, fm = first_ym // 100, first_ym % 100
-            months_elapsed = _months_elapsed(fy, fm, year, month)
-
-        # Monthly target from budget_targets (year default, then any month)
         tgt_row = db.execute(
             select(models.BudgetTarget)
             .where(models.BudgetTarget.category == cat,
@@ -901,15 +883,14 @@ def bucket_summary(year: int, month: int, db: Session = Depends(get_db)):
         ).scalar_one_or_none()
         monthly_target = tgt_row.amount if tgt_row else None
 
-        accumulated = round(monthly_target * months_elapsed, 2) if monthly_target else None
-        balance = round(accumulated - cumulative, 2) if accumulated is not None else None
+        ytd_target    = round(monthly_target * month, 2) if monthly_target else None
+        ytd_remaining = round(ytd_target - ytd_spent, 2) if ytd_target is not None else None
 
         sinking_funds[cat] = {
-            "cumulative_spent": cumulative,
+            "ytd_spent":      ytd_spent,
             "monthly_target": monthly_target,
-            "months_tracked": months_elapsed,
-            "accumulated_target": accumulated,
-            "balance": balance,
+            "ytd_target":     ytd_target,
+            "ytd_remaining":  ytd_remaining,
         }
 
     # ── Assemble ──────────────────────────────────────────────────────────────
@@ -982,6 +963,22 @@ def upsert_bucket_target(body: BucketTargetUpsert, db: Session = Depends(get_db)
         db.rollback()
         raise HTTPException(409, "Duplicate bucket target")
     return {"ok": True}
+
+
+class BulkRecurringBody(BaseModel):
+    category: str
+    is_recurring: bool
+    merchant: Optional[str] = None
+
+@app.put("/transactions/bulk-recurring")
+def bulk_set_recurring(body: BulkRecurringBody, db: Session = Depends(get_db)):
+    """Mark all transactions in a category (optionally filtered by merchant) as recurring/non-recurring."""
+    q = sa_update(models.Transaction).where(models.Transaction.category == body.category)
+    if body.merchant:
+        q = q.where(models.Transaction.merchant == body.merchant)
+    result = db.execute(q.values(is_recurring=body.is_recurring))
+    db.commit()
+    return {"updated": result.rowcount}
 
 
 @app.get("/settings")

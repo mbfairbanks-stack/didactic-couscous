@@ -211,52 +211,69 @@ class TestBucketOverride:
 # ---------------------------------------------------------------------------
 
 class TestSinkingFunds:
-    def test_cumulative_spend_crosses_month_boundary(self, client, db):
+    def test_ytd_spend_within_selected_year(self, client, db):
         _cat(db, "Travel", group="Wants", bucket="short_term")
         _txn(db, "Travel", 400.00, year=2026, month=3, day=10)
         _txn(db, "Travel", 600.00, year=2026, month=6, day=20)
         db.commit()
 
-        data = _get_buckets(client)   # through Aug 2026
+        data = _get_buckets(client)   # Aug 2026
         sf = data["short_term"]["sinking_funds"]["Travel"]
-        assert sf["cumulative_spent"] == 1000.00
+        assert sf["ytd_spent"] == 1000.00
 
-    def test_sinking_fund_balance_with_target(self, client, db):
+    def test_sinking_fund_ytd_with_target(self, client, db):
         _cat(db, "Travel", group="Wants", bucket="short_term")
-        # Set $150/month target for Travel in 2026
+        # $150/month target for Travel in 2026
         db.add(models.BudgetTarget(category="Travel", year=2026, month=None, amount=150.00))
-        # First transaction in Jan 2026 → through Aug = 8 months elapsed
         _txn(db, "Travel", 200.00, year=2026, month=1, day=15)
         _txn(db, "Travel", 400.00, year=2026, month=3, day=10)
         db.commit()
 
-        data = _get_buckets(client)   # through Aug 2026
+        data = _get_buckets(client)   # Aug 2026 → 8 months elapsed
         sf = data["short_term"]["sinking_funds"]["Travel"]
-        assert sf["cumulative_spent"]    == 600.00
-        assert sf["months_tracked"]      == 8     # Jan → Aug inclusive
-        assert sf["accumulated_target"]  == 1200.00
-        assert sf["balance"]             == 600.00   # 1200 - 600 still available
+        assert sf["ytd_spent"]    == 600.00
+        assert sf["ytd_target"]   == 1200.00   # $150 × 8 months
+        assert sf["ytd_remaining"] == 600.00   # 1200 - 600 still available
 
-    def test_sinking_fund_no_target_returns_none_balance(self, client, db):
+    def test_sinking_fund_no_target_returns_none(self, client, db):
         _cat(db, "Gifts", group="Wants", bucket="short_term")
         _txn(db, "Gifts", 75.00, year=2026, month=5, day=1)
         db.commit()
 
         data = _get_buckets(client)
         sf = data["short_term"]["sinking_funds"]["Gifts"]
-        assert sf["cumulative_spent"] == 75.00
-        assert sf["balance"] is None
+        assert sf["ytd_spent"]     == 75.00
+        assert sf["ytd_remaining"] is None
 
-    def test_pets_sinking_fund_excludes_recurring_rows(self, client, db):
-        _cat(db, "Pets", bucket="fixed")   # Pets default is fixed; non-recurring go to short_term
-        _txn(db, "Pets", 120.00, is_recurring=True,  year=2026, month=6)  # food → Fixed, not in sinking
-        _txn(db, "Pets", 300.00, is_recurring=False, year=2026, month=7)  # vet → Short-Term sinking
+    def test_pets_not_in_sinking_funds(self, client, db):
+        _cat(db, "Pets", bucket="fixed")
+        _txn(db, "Pets", 120.00, is_recurring=True,  year=2026, month=6)
+        _txn(db, "Pets", 300.00, is_recurring=False, year=2026, month=7)
         db.commit()
 
         data = _get_buckets(client)
-        sf = data["short_term"]["sinking_funds"].get("Pets", {})
-        # Only the non-recurring $300 counts toward the Pets sinking fund
-        assert sf.get("cumulative_spent") == 300.00
+        # Pets non-recurring lands in short_term bucket but is NOT a sinking fund
+        assert "Pets" not in data["short_term"]["sinking_funds"]
+
+
+# ---------------------------------------------------------------------------
+# Bucket total invariant
+# ---------------------------------------------------------------------------
+
+class TestBucketTotalInvariant:
+    def test_four_bucket_totals_equal_month_transaction_sum(self, client, db):
+        _cat(db, "Groceries",    bucket="hard_limit")
+        _cat(db, "Debt Payment", bucket="fixed")
+        _cat(db, "Travel", group="Wants", bucket="short_term")
+        _txn(db, "Groceries",    200.00)
+        _txn(db, "Debt Payment", 100.00, is_recurring=True)   # → fixed
+        _txn(db, "Debt Payment",  50.00, is_recurring=False)  # → meaningful
+        _txn(db, "Travel",       150.00)
+        db.commit()
+
+        data = _get_buckets(client)
+        bucket_total = sum(data[b]["actual"] for b in ["fixed", "meaningful", "short_term", "hard_limit"])
+        assert round(bucket_total, 2) == 500.00
 
 
 # ---------------------------------------------------------------------------

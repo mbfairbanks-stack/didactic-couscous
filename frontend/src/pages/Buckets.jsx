@@ -107,27 +107,41 @@ function CategoryBreakdown({ categories }) {
   );
 }
 
-function SinkingFunds({ funds }) {
+function SinkingFunds({ funds, month }) {
   const entries = Object.entries(funds || {});
   if (!entries.length) return null;
   return (
     <div className="mt-4 pt-3 border-t border-zinc-800">
-      <p className="text-xs text-zinc-500 uppercase tracking-wide mb-2">Sinking Funds</p>
-      <ul className="space-y-2">
-        {entries.map(([cat, sf]) => (
-          <li key={cat}>
-            <div className="flex justify-between text-xs mb-0.5">
-              <span className="text-zinc-300">{cat}</span>
-              <span className={sf.balance != null ? (sf.balance >= 0 ? "text-emerald-400" : "text-red-400") : "text-zinc-500"}>
-                {sf.balance != null ? `${sf.balance >= 0 ? "+" : ""}${fmt(sf.balance)} balance` : "no target"}
-              </span>
-            </div>
-            <div className="flex justify-between text-xs text-zinc-600">
-              <span>{fmt(sf.cumulative_spent)} spent ({sf.months_tracked} mo)</span>
-              {sf.accumulated_target != null && <span>of {fmt(sf.accumulated_target)} accrued</span>}
-            </div>
-          </li>
-        ))}
+      <p className="text-xs text-zinc-500 uppercase tracking-wide mb-2">Sinking Funds — YTD</p>
+      <ul className="space-y-3">
+        {entries.map(([cat, sf]) => {
+          const over = sf.ytd_remaining != null && sf.ytd_remaining < 0;
+          const pct  = sf.ytd_target ? Math.min((sf.ytd_spent / sf.ytd_target) * 100, 100) : 0;
+          return (
+            <li key={cat}>
+              <div className="flex justify-between text-xs mb-1">
+                <span className="text-zinc-300 font-medium">{cat}</span>
+                <span className={sf.ytd_remaining != null ? (over ? "text-red-400" : "text-emerald-400") : "text-zinc-500"}>
+                  {sf.ytd_remaining != null
+                    ? `${over ? "" : "+"}${fmt(sf.ytd_remaining)} ${over ? "over" : "remaining"}`
+                    : "no target"}
+                </span>
+              </div>
+              {sf.ytd_target != null && (
+                <div className="h-1 bg-zinc-800 rounded-full overflow-hidden mb-1">
+                  <div className={`h-full rounded-full ${over ? "bg-red-500" : "bg-emerald-400"}`}
+                    style={{ width: `${pct}%` }} />
+                </div>
+              )}
+              <div className="flex justify-between text-xs text-zinc-600">
+                <span>{fmt(sf.ytd_spent)} spent</span>
+                {sf.ytd_target != null && (
+                  <span>of {fmt(sf.ytd_target)} ({sf.monthly_target && `$${sf.monthly_target}/mo`})</span>
+                )}
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
@@ -177,7 +191,7 @@ function PayPeriod({ hl }) {
   );
 }
 
-function BucketCard({ bucketKey, data, year, onTargetSaved }) {
+function BucketCard({ bucketKey, data, year, month, onTargetSaved }) {
   const [expanded, setExpanded] = useState(false);
   const [target, setTarget] = useState(data.target);
   const remaining = target != null ? target - data.actual : null;
@@ -218,8 +232,7 @@ function BucketCard({ bucketKey, data, year, onTargetSaved }) {
       {/* Pay period (Hard Limit only) */}
       {bucketKey === "hard_limit" && <PayPeriod hl={data} />}
 
-      {/* Sinking funds (Short-Term only) */}
-      {bucketKey === "short_term" && <SinkingFunds funds={data.sinking_funds} />}
+      {bucketKey === "short_term" && <SinkingFunds funds={data.sinking_funds} month={month} />}
 
       {/* Category breakdown toggle */}
       {Object.keys(data.categories || {}).length > 0 && (
@@ -299,6 +312,7 @@ export default function Buckets() {
               bucketKey={key}
               data={data[key]}
               year={year}
+              month={month}
               onTargetSaved={load}
             />
           ))}

@@ -73,6 +73,9 @@ def _init_db_extras(eng, seed_demo: bool = False):
             """))
             for k, v in [("household_name", "BudgetBot"), ("person_1", "Person 1"), ("person_2", "Person 2")]:
                 conn.execute(sa.text("INSERT INTO app_settings (key, value) VALUES (:k, :v)"), {"k": k, "v": v})
+        # Idempotent: seed pay cadence defaults for existing DBs that predate this setting
+        for k, v in [("pay_day_1", "15"), ("pay_day_2", "30")]:
+            conn.execute(sa.text("INSERT OR IGNORE INTO app_settings (key, value) VALUES (:k, :v)"), {"k": k, "v": v})
 
         # categories
         if "categories" not in tables:
