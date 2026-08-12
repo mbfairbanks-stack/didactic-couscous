@@ -184,6 +184,7 @@ class TransactionCreate(BaseModel):
     source: Optional[str] = None
     linked_debt_id: Optional[int] = None
     debt_direction: Optional[str] = None  # "payment" or "charge"
+    bucket_override: Optional[str] = None  # overrides category default bucket
 
 
 class TransactionUpdate(BaseModel):
@@ -196,6 +197,7 @@ class TransactionUpdate(BaseModel):
     notes: Optional[str] = None
     linked_debt_id: Optional[int] = None
     debt_direction: Optional[str] = None
+    bucket_override: Optional[str] = None
 
 
 class TransactionOut(TransactionCreate):
@@ -747,6 +749,239 @@ def forecast_summary(year: int, month: int, db: Session = Depends(get_db)):
             })
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Bucket rollup  (Worry-Free Money framework — additive layer over categories)
+# ---------------------------------------------------------------------------
+
+BUCKET_LABELS = {
+    "fixed":      "Fixed Expenses",
+    "meaningful": "Debt paydown (this ledger only)",
+    "short_term": "Short-Term Savings",
+    "hard_limit": "Hard Limit",
+}
+
+# Categories where the bucket depends on is_recurring instead of a fixed default
+_SPLIT_BUCKET: dict[str, dict] = {
+    "Debt Payment": {"recurring": "fixed",      "one_off": "meaningful"},
+    "Pets":         {"recurring": "fixed",      "one_off": "short_term"},
+}
+
+
+def _effective_bucket(txn, cat_bucket_map: dict) -> str:
+    """Effective bucket: transaction override → split-category logic → category default → hard_limit."""
+    if txn.bucket_override:
+        return txn.bucket_override
+    split = _SPLIT_BUCKET.get(txn.category)
+    if split:
+        return split["recurring"] if txn.is_recurring else split["one_off"]
+    return cat_bucket_map.get(txn.category) or "hard_limit"
+
+
+def _months_elapsed(first_year: int, first_month: int, through_year: int, through_month: int) -> int:
+    return (through_year - first_year) * 12 + (through_month - first_month) + 1
+
+
+@app.get("/summary/buckets")
+def bucket_summary(year: int, month: int, db: Session = Depends(get_db)):
+    """Spending rolled up into the four Worry-Free Money buckets for the given month."""
+
+    # Category → default_bucket map
+    cat_rows = db.execute(select(models.Category)).scalars().all()
+    cat_bucket_map = {c.name: (c.default_bucket or "hard_limit") for c in cat_rows}
+
+    # All transactions for the month
+    txns = db.execute(
+        select(models.Transaction)
+        .where(models.Transaction.year == year, models.Transaction.month == month)
+    ).scalars().all()
+
+    # Group by effective bucket
+    grouped: dict[str, list] = {k: [] for k in BUCKET_LABELS}
+    for txn in txns:
+        b = _effective_bucket(txn, cat_bucket_map)
+        grouped.setdefault(b, []).append(txn)
+
+    def _cat_breakdown(txn_list):
+        by_cat: dict[str, float] = {}
+        for t in txn_list:
+            by_cat[t.category] = by_cat.get(t.category, 0.0) + t.amount
+        return sorted(
+            [{"category": c, "total": round(v, 2)} for c, v in by_cat.items()],
+            key=lambda x: -x["total"],
+        )
+
+    def _bucket_target(bucket: str) -> Optional[float]:
+        # Month-specific target first, then year-default (month IS NULL)
+        q = (
+            select(models.BucketTarget)
+            .where(models.BucketTarget.bucket == bucket, models.BucketTarget.year == year)
+        )
+        month_row = db.execute(q.where(models.BucketTarget.month == month)).scalar_one_or_none()
+        if month_row:
+            return month_row.amount
+        default_row = db.execute(q.where(models.BucketTarget.month.is_(None))).scalar_one_or_none()
+        return default_row.amount if default_row else None
+
+    # ── Hard Limit pay-period window ──────────────────────────────────────────
+    today = datetime.date.today()
+    raw_pay_dates = db.execute(
+        select(models.Income.pay_date)
+        .where(models.Income.pay_date.isnot(None))
+        .distinct()
+        .order_by(models.Income.pay_date)
+    ).scalars().all()
+
+    all_pay_dates = sorted(
+        d if isinstance(d, datetime.date) else datetime.date.fromisoformat(str(d))
+        for d in raw_pay_dates if d
+    )
+
+    period_start: Optional[datetime.date] = None
+    period_end:   Optional[datetime.date] = None
+    for pd in all_pay_dates:
+        if pd <= today:
+            period_start = pd
+        elif period_end is None:
+            period_end = pd
+            break
+
+    hl_txns = grouped.get("hard_limit", [])
+    period_hl_actual = 0.0
+    if period_start:
+        for t in hl_txns:
+            t_date = t.date if isinstance(t.date, datetime.date) else datetime.date.fromisoformat(str(t.date))
+            if t_date >= period_start:
+                period_hl_actual += t.amount
+
+    hl_target = _bucket_target("hard_limit")
+    hl_actual  = round(sum(t.amount for t in hl_txns), 2)
+    period_hl_budget = round(hl_target / 2, 2) if hl_target is not None else None
+
+    # ── Short-Term sinking fund running balances ──────────────────────────────
+    short_term_cats = [c.name for c in cat_rows if (c.default_bucket or "hard_limit") == "short_term"]
+    # Pets non-recurring transactions also land in short_term
+    if "Pets" not in short_term_cats:
+        short_term_cats.append("Pets")
+
+    sinking_funds: dict = {}
+    for cat in sorted(short_term_cats):
+        q_cum = (
+            select(func.sum(models.Transaction.amount))
+            .where(models.Transaction.category == cat)
+            .where(
+                (models.Transaction.year < year) |
+                ((models.Transaction.year == year) & (models.Transaction.month <= month))
+            )
+        )
+        if cat == "Pets":
+            q_cum = q_cum.where(models.Transaction.is_recurring == False)  # noqa: E712
+        cumulative = round(db.execute(q_cum).scalar() or 0.0, 2)
+
+        # First month this category had transactions (for elapsed-months calc)
+        q_first = select(
+            func.min(models.Transaction.year * 100 + models.Transaction.month)
+        ).where(models.Transaction.category == cat)
+        if cat == "Pets":
+            q_first = q_first.where(models.Transaction.is_recurring == False)  # noqa: E712
+        first_ym = db.execute(q_first).scalar()
+
+        months_elapsed = 0
+        if first_ym:
+            fy, fm = first_ym // 100, first_ym % 100
+            months_elapsed = _months_elapsed(fy, fm, year, month)
+
+        # Monthly target from budget_targets (year default, then any month)
+        tgt_row = db.execute(
+            select(models.BudgetTarget)
+            .where(models.BudgetTarget.category == cat,
+                   models.BudgetTarget.year == year,
+                   models.BudgetTarget.month.is_(None))
+        ).scalar_one_or_none()
+        monthly_target = tgt_row.amount if tgt_row else None
+
+        accumulated = round(monthly_target * months_elapsed, 2) if monthly_target else None
+        balance = round(accumulated - cumulative, 2) if accumulated is not None else None
+
+        sinking_funds[cat] = {
+            "cumulative_spent": cumulative,
+            "monthly_target": monthly_target,
+            "months_tracked": months_elapsed,
+            "accumulated_target": accumulated,
+            "balance": balance,
+        }
+
+    # ── Assemble ──────────────────────────────────────────────────────────────
+    def _bucket_block(key: str):
+        txn_list = grouped.get(key, [])
+        actual = round(sum(t.amount for t in txn_list), 2)
+        tgt = _bucket_target(key)
+        return {
+            "label": BUCKET_LABELS[key],
+            "actual": actual,
+            "target": tgt,
+            "remaining": round(tgt - actual, 2) if tgt is not None else None,
+            "categories": _cat_breakdown(txn_list),
+        }
+
+    return {
+        "fixed":      _bucket_block("fixed"),
+        "meaningful": _bucket_block("meaningful"),
+        "short_term": {
+            **_bucket_block("short_term"),
+            "sinking_funds": sinking_funds,
+        },
+        "hard_limit": {
+            **_bucket_block("hard_limit"),
+            "period_start":     period_start.isoformat() if period_start else None,
+            "period_end":       period_end.isoformat() if period_end else None,
+            "period_actual":    round(period_hl_actual, 2),
+            "period_target":    period_hl_budget,
+            "period_remaining": round(period_hl_budget - period_hl_actual, 2) if period_hl_budget is not None else None,
+        },
+    }
+
+
+# ── Bucket targets CRUD ───────────────────────────────────────────────────────
+
+class BucketTargetUpsert(BaseModel):
+    bucket: str
+    year: int
+    month: Optional[int] = None
+    amount: float
+
+
+@app.get("/bucket-targets")
+def list_bucket_targets_endpoint(year: Optional[int] = None, db: Session = Depends(get_db)):
+    q = select(models.BucketTarget)
+    if year is not None:
+        q = q.where(models.BucketTarget.year == year)
+    rows = db.execute(q).scalars().all()
+    return [{"id": r.id, "bucket": r.bucket, "year": r.year, "month": r.month, "amount": r.amount}
+            for r in rows]
+
+
+@app.put("/bucket-targets")
+def upsert_bucket_target(body: BucketTargetUpsert, db: Session = Depends(get_db)):
+    q = select(models.BucketTarget).where(
+        models.BucketTarget.bucket == body.bucket,
+        models.BucketTarget.year == body.year,
+    )
+    q = q.where(models.BucketTarget.month == body.month) if body.month is not None \
+        else q.where(models.BucketTarget.month.is_(None))
+    existing = db.execute(q).scalar_one_or_none()
+    if existing:
+        existing.amount = body.amount
+    else:
+        db.add(models.BucketTarget(bucket=body.bucket, year=body.year,
+                                   month=body.month, amount=body.amount))
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Duplicate bucket target")
+    return {"ok": True}
 
 
 @app.get("/settings")

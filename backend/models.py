@@ -18,6 +18,7 @@ class Transaction(Base):
     is_recurring = Column(Boolean, default=False)
     linked_debt_id = Column(Integer, nullable=True)   # links to debts.id
     debt_direction = Column(String, nullable=True)    # "payment" or "charge"
+    bucket_override = Column(String, nullable=True)   # overrides category.default_bucket for this txn
 
 
 class Income(Base):
@@ -67,6 +68,7 @@ class Category(Base):
     is_legacy = Column(Boolean, default=False)
     is_hidden = Column(Boolean, default=False)
     parent_name = Column(String, nullable=True)
+    default_bucket = Column(String, nullable=True)         # "fixed"|"meaningful"|"short_term"|"hard_limit"
 
 
 class InsightsLog(Base):
@@ -254,3 +256,17 @@ class RetirementGoal(Base):
     target_amount = Column(Float, nullable=False)
     target_year = Column(Integer, nullable=True)
     notes = Column(String, nullable=True)
+
+
+class BucketTarget(Base):
+    """Monthly spend targets for the four Worry-Free Money buckets."""
+    __tablename__ = "bucket_targets"
+    id = Column(Integer, primary_key=True, index=True)
+    bucket = Column(String, nullable=False)   # "fixed"|"meaningful"|"short_term"|"hard_limit"
+    year = Column(Integer, nullable=False)
+    month = Column(Integer, nullable=True)    # NULL = default for all months in that year
+    amount = Column(Float, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("bucket", "year", "month", name="uq_bucket_target"),
+    )

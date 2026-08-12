@@ -89,6 +89,8 @@ def _init_db_extras(eng, seed_demo: bool = False):
             conn.execute(sa.text("ALTER TABLE categories ADD COLUMN is_hidden INTEGER NOT NULL DEFAULT 0"))
         if "parent_name" not in cat_cols:
             conn.execute(sa.text("ALTER TABLE categories ADD COLUMN parent_name TEXT"))
+        if "default_bucket" not in cat_cols:
+            conn.execute(sa.text("ALTER TABLE categories ADD COLUMN default_bucket TEXT"))
         # Always upsert missing canonical categories (idempotent for existing users)
         from categories import CATEGORY_GROUPS
         canonical = {
@@ -120,6 +122,24 @@ def _init_db_extras(eng, seed_demo: bool = False):
                         'INSERT INTO categories (name, "group", is_legacy) VALUES (:n, :g, 1)'
                     ), {"n": cat_name, "g": grp})
 
+        # Seed default_bucket from the Worry-Free Money mapping (idempotent)
+        _DEFAULT_BUCKET_SEED = {
+            "Mortgage": "fixed", "Debt Payment": "fixed", "Pets": "fixed",
+            "Subscriptions": "fixed", "Municipal Taxes": "fixed", "Insurance": "fixed",
+            "Hydro": "fixed", "Mobile": "fixed", "Natural Gas": "fixed",
+            "Internet": "fixed", "Charity": "fixed", "Security": "fixed",
+            "Cc Fees": "fixed", "Gym": "fixed", "Fitness": "fixed",
+            "Travel": "short_term", "Home": "short_term", "Gifts": "short_term",
+            "Groceries": "hard_limit", "Dining": "hard_limit", "Entertainment": "hard_limit",
+            "Transportation": "hard_limit", "Clothes": "hard_limit", "Alcohol": "hard_limit",
+            "Health & Beauty": "hard_limit", "Cannabis": "hard_limit", "Coffee": "hard_limit",
+            "Technology": "hard_limit", "Nonalc": "hard_limit", "Misc": "hard_limit",
+        }
+        for cat_name, bucket in _DEFAULT_BUCKET_SEED.items():
+            conn.execute(sa.text(
+                "UPDATE categories SET default_bucket = :b WHERE name = :n AND (default_bucket IS NULL OR default_bucket = '')"
+            ), {"b": bucket, "n": cat_name})
+
         # transactions extras
         if "transactions" in tables:
             t_cols = [c["name"] for c in inspector.get_columns("transactions")]
@@ -129,6 +149,8 @@ def _init_db_extras(eng, seed_demo: bool = False):
                 conn.execute(sa.text("ALTER TABLE transactions ADD COLUMN linked_debt_id INTEGER"))
             if "debt_direction" not in t_cols:
                 conn.execute(sa.text("ALTER TABLE transactions ADD COLUMN debt_direction TEXT"))
+            if "bucket_override" not in t_cols:
+                conn.execute(sa.text("ALTER TABLE transactions ADD COLUMN bucket_override TEXT"))
             conn.execute(sa.text("UPDATE transactions SET is_recurring = 0 WHERE is_recurring IS NULL"))
             conn.execute(sa.text("UPDATE transactions SET is_fixed = 0 WHERE is_fixed IS NULL"))
             conn.execute(sa.text("""
@@ -186,6 +208,19 @@ def _init_db_extras(eng, seed_demo: bool = False):
                 conn.execute(sa.text("ALTER TABLE debts ADD COLUMN linked_asset_id INTEGER"))
             if "initial_date" not in d_cols:
                 conn.execute(sa.text("ALTER TABLE debts ADD COLUMN initial_date TEXT"))
+
+        # bucket_targets table
+        if "bucket_targets" not in tables:
+            conn.execute(sa.text("""
+                CREATE TABLE bucket_targets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    bucket TEXT NOT NULL,
+                    year INTEGER NOT NULL,
+                    month INTEGER,
+                    amount REAL NOT NULL,
+                    UNIQUE(bucket, year, month)
+                )
+            """))
 
         conn.commit()
 
