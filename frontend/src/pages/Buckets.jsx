@@ -199,7 +199,10 @@ function PayPeriod({ hl }) {
 
 function BucketCard({ bucketKey, data, year, month, netIncome, onTargetSaved }) {
   const [expanded, setExpanded] = useState(false);
-  const remaining = data.target != null ? data.target - data.actual : null;
+  // Short-term is a sinking fund bucket — monthly target comparison is misleading
+  // (one big trip looks "over budget"). Only YTD sinking funds matter there.
+  const showMonthlyTarget = bucketKey !== "short_term";
+  const remaining = showMonthlyTarget && data.target != null ? data.target - data.actual : null;
   const over = remaining != null && remaining < 0;
   const accent = BUCKET_ACCENT[bucketKey];
 
@@ -227,8 +230,8 @@ function BucketCard({ bucketKey, data, year, month, netIncome, onTargetSaved }) 
         )}
       </div>
 
-      {/* Progress bar */}
-      <ProgressBar actual={data.actual} target={data.target} bucketKey={bucketKey} />
+      {/* Progress bar — hidden for short_term; YTD sinking funds below is the real tracker */}
+      {showMonthlyTarget && <ProgressBar actual={data.actual} target={data.target} bucketKey={bucketKey} />}
 
       {/* Pay period (Hard Limit only) */}
       {bucketKey === "hard_limit" && <PayPeriod hl={data} />}
@@ -307,15 +310,26 @@ export default function Buckets() {
         </div>
       ) : data ? (
         <>
-          {data.net_income > 0 && (
-            <p className="text-xs text-zinc-500">
-              Net income this month: <span className="text-zinc-300 font-medium">{fmt(data.net_income)}</span>
-              <span className="ml-2 text-zinc-600">— set each bucket as a % below</span>
-            </p>
-          )}
-          {data.net_income === 0 && (
+          {data.projected_income > 0 ? (
+            <div className="text-xs text-zinc-500 space-y-0.5">
+              {data.is_projection ? (
+                <p>
+                  Projected income: <span className="text-zinc-300 font-medium">{fmt(data.projected_income)}</span>
+                  <span className="text-zinc-600 ml-2">
+                    ({fmt(data.base_projection)} base avg
+                    {data.commission_received > 0 && ` + ${fmt(data.commission_received)} commission`}
+                    {data.net_income > 0 && ` · ${fmt(data.net_income)} received so far`})
+                  </span>
+                </p>
+              ) : (
+                <p>
+                  Income: <span className="text-zinc-300 font-medium">{fmt(data.net_income)}</span>
+                </p>
+              )}
+            </div>
+          ) : (
             <p className="text-xs text-zinc-600">
-              No income recorded for {MONTH_LABELS[month]} {year} — add income entries to enable % targets.
+              No income data for {MONTH_LABELS[month]} {year} — add income entries to enable % targets.
             </p>
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -326,7 +340,7 @@ export default function Buckets() {
                 data={data[key]}
                 year={year}
                 month={month}
-                netIncome={data.net_income}
+                netIncome={data.projected_income || data.net_income}
                 onTargetSaved={load}
               />
             ))}

@@ -809,7 +809,7 @@ def bucket_summary(year: int, month: int, db: Session = Depends(get_db)):
             by_cat[t.category] = by_cat.get(t.category, 0.0) + t.amount
         return dict(sorted(by_cat.items(), key=lambda kv: -kv[1]))
 
-    # Net income for the selected month (sum of all Income rows)
+    # Net income for the selected month (actual received so far)
     net_income: float = round(
         db.execute(
             select(func.sum(models.Income.amount))
@@ -817,6 +817,53 @@ def bucket_summary(year: int, month: int, db: Session = Depends(get_db)):
         ).scalar() or 0.0,
         2,
     )
+
+    # Projected income: base-pay average (last 3 completed months) + commission received this month.
+    # For past months where all income is already logged, just use net_income.
+    today = datetime.date.today()
+    is_current_month = (year == today.year and month == today.month)
+
+    if is_current_month:
+        # Average base pay from the 3 most recent months that have base income data
+        base_months: list[tuple[int, int]] = []
+        cy, cm = year, month - 1
+        while len(base_months) < 3:
+            if cm <= 0:
+                cm += 12; cy -= 1
+            base_months.append((cy, cm))
+            cm -= 1
+
+        base_totals = []
+        for by, bm in base_months:
+            total = db.execute(
+                select(func.sum(models.Income.amount))
+                .where(models.Income.year == by, models.Income.month == bm,
+                       models.Income.income_type == "base")
+            ).scalar() or 0.0
+            if total > 0:
+                base_totals.append(total)
+
+        base_projection = round(sum(base_totals) / len(base_totals), 2) if base_totals else 0.0
+
+        commission_received: float = round(
+            db.execute(
+                select(func.sum(models.Income.amount))
+                .where(models.Income.year == year, models.Income.month == month,
+                       models.Income.income_type == "commission")
+            ).scalar() or 0.0,
+            2,
+        )
+
+        projected_income = round(base_projection + commission_received, 2)
+        is_projection = projected_income > 0
+    else:
+        projected_income = net_income
+        base_projection = 0.0
+        commission_received = 0.0
+        is_projection = False
+
+    # Income used for percentage-target calculations
+    target_income = projected_income if projected_income > 0 else net_income
 
     def _bucket_target_info(bucket: str) -> tuple:
         """Returns (dollar_target, pct) — pct is None when using a fixed amount."""
@@ -830,13 +877,12 @@ def bucket_summary(year: int, month: int, db: Session = Depends(get_db)):
         if row is None:
             return None, None
         if row.pct is not None:
-            dollar = round(net_income * row.pct / 100, 2) if net_income > 0 else None
+            dollar = round(target_income * row.pct / 100, 2) if target_income > 0 else None
             return dollar, row.pct
         return row.amount, None
 
     # ── Hard Limit pay-period window ──────────────────────────────────────────
     import calendar as _cal
-    today = datetime.date.today()
     settings_map = {s.key: s.value for s in db.execute(select(models.AppSettings)).scalars().all()}
     pay_day_1 = int(settings_map.get("pay_day_1", "15"))
     pay_day_2 = int(settings_map.get("pay_day_2", "30"))
@@ -921,8 +967,12 @@ def bucket_summary(year: int, month: int, db: Session = Depends(get_db)):
         }
 
     return {
-        "net_income": net_income,
-        "fixed":      _bucket_block("fixed"),
+        "net_income":          net_income,
+        "projected_income":    projected_income,
+        "base_projection":     base_projection,
+        "commission_received": commission_received,
+        "is_projection":       is_projection,
+        "fixed":               _bucket_block("fixed"),
         "meaningful": _bucket_block("meaningful"),
         "short_term": {
             **_bucket_block("short_term"),
