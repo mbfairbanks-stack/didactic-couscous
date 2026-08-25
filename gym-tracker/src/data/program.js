@@ -69,6 +69,7 @@ export const DEFAULT_PROGRAM = {
           { id: 'barbell_bench_press', name: 'Barbell bench press', sets: 3, targetLabel: '10', type: 'weight' },
         ],
       },
+      { id: 'db_overhead_press', name: 'Dumbbell overhead press', sets: 3, targetLabel: '6-8', type: 'weight' },
       {
         id: 'c_hinge',
         label: 'Hinge / legs',
