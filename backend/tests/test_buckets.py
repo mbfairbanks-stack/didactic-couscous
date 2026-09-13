@@ -40,16 +40,31 @@ def test_summary_splits_spend_across_buckets(client):
 
 def test_payroll_savings_count_as_meaningful(client):
     """RRSP/ESPP never hit chequing, so they must still show up as savings."""
-    make_income(client, amount=4000.0, rrsp_employee=500.0, espp_deduction=300.0)
+    # $4,000 gross, $800 of it diverted to RRSP/ESPP, $3,200 deposited.
+    make_income(client, amount=4000.0, net_amount=3200.0,
+                rrsp_employee=500.0, espp_deduction=300.0)
     make_txn(client, category="Groceries", amount=600.0)
 
     data = client.get("/buckets/summary?year=2025&month=3").json()
     by_bucket = {b["bucket"]: b for b in data["buckets"]}
 
     assert by_bucket["meaningful"]["actual"] == 800.0
-    # The plan base includes savings diverted before payday.
-    assert data["plan_base"] == 4800.0
-    assert by_bucket["meaningful"]["target_amount"] == 720.0  # 15% of 4800
+    assert data["income"]["gross"] == 4000.0
+    assert data["income"]["net"] == 3200.0
+    # Base is take-home plus the savings taken off the top — counted once.
+    assert data["plan_base"] == 4000.0
+    assert by_bucket["meaningful"]["target_amount"] == 600.0  # 15% of 4000
+
+
+def test_plan_base_does_not_double_count_payroll_savings(client):
+    """Regression: adding RRSP/ESPP to GROSS inflated every target."""
+    make_income(client, amount=5000.0, net_amount=3500.0,
+                rrsp_employee=600.0, espp_deduction=400.0)
+
+    data = client.get("/buckets/summary?year=2025&month=3").json()
+    # 3500 net + 1000 diverted = 4500, never 5000 + 1000.
+    assert data["plan_base"] == 4500.0
+    assert data["income"]["deductions"] == 1500.0
 
 
 def test_savings_category_lands_in_short_term(client):
@@ -209,3 +224,88 @@ def test_blank_category_becomes_uncategorized_in_guilt_free(client):
     by_bucket = {b["bucket"]: b for b in data["buckets"]}
     assert by_bucket["guilt_free"]["actual"] == 60.0
     assert by_bucket["fixed"]["actual"] == 0.0
+
+
+# ── Committed outflows ──────────────────────────────────────────────────────
+
+def make_bill(client, **overrides):
+    body = {"name": "Mortgage", "amount": 2450.0, "frequency": "monthly",
+            "category": "Mortgage"}
+    body.update(overrides)
+    r = client.post("/recurring-bills", json=body)
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_recurring_bill_lands_in_its_categorys_bucket(client):
+    bill = make_bill(client)
+    assert bill["bucket"] == "fixed"
+    assert bill["monthly_equivalent"] == 2450.0
+
+    data = client.get("/buckets/summary?year=2025&month=3").json()
+    by_bucket = {b["bucket"]: b for b in data["buckets"]}
+    assert by_bucket["fixed"]["committed_monthly"] == 2450.0
+    assert data["committed_monthly"] == 2450.0
+
+
+def test_annual_bill_is_spread_over_the_year(client):
+    make_bill(client, name="Home Insurance", amount=1800.0, frequency="annual",
+              category="Insurance")
+    data = client.get("/buckets/commitments").json()
+    assert data["totals"]["fixed"] == 150.0     # 1800 / 12
+
+
+def test_debt_minimum_is_fixed_and_extra_is_meaningful(client):
+    r = client.post("/debts", json={
+        "name": "Line of Credit", "creditor": "TD", "debt_type": "loc",
+        "current_balance": 12000.0, "monthly_payment": 300.0, "monthly_extra": 200.0,
+    })
+    assert r.status_code == 201, r.text
+
+    data = client.get("/buckets/commitments").json()
+    assert data["totals"]["fixed"] == 300.0
+    assert data["totals"]["meaningful"] == 200.0
+    labels = [i["label"] for i in data["items"]["meaningful"]]
+    assert any("extra principal" in l for l in labels)
+
+
+def test_paid_off_debt_stops_being_a_commitment(client):
+    client.post("/debts", json={
+        "name": "Car Loan", "creditor": "RBC", "current_balance": 0.0,
+        "monthly_payment": 450.0,
+    })
+    data = client.get("/buckets/commitments").json()
+    assert data["totals"]["fixed"] == 0.0
+
+
+def test_uncommitted_shows_what_the_target_leaves(client):
+    make_income(client, amount=6000.0, net_amount=6000.0)
+    make_bill(client, amount=2000.0)   # fixed commitment
+
+    data = client.get("/buckets/summary?year=2025&month=3").json()
+    fixed = next(b for b in data["buckets"] if b["bucket"] == "fixed")
+    assert fixed["target_monthly"] == 3300.0            # 55% of 6000
+    assert fixed["committed_monthly"] == 2000.0
+    assert fixed["uncommitted_monthly"] == 1300.0       # room left inside the target
+
+
+def test_recurring_bill_crud_roundtrip(client):
+    bill = make_bill(client, name="Internet", amount=95.0, category="Internet")
+    bid = bill["id"]
+
+    updated = client.put(f"/recurring-bills/{bid}", json={
+        "name": "Internet", "amount": 105.0, "frequency": "monthly", "category": "Internet",
+    }).json()
+    assert updated["amount"] == 105.0
+
+    assert client.put(f"/recurring-bills/{bid}", json={
+        "name": "Internet", "amount": 105.0, "frequency": "fortnightly",
+    }).status_code == 400
+
+    assert client.delete(f"/recurring-bills/{bid}").status_code == 204
+    assert client.get("/recurring-bills").json() == []
+
+
+def test_inactive_bill_is_not_committed(client):
+    make_bill(client, is_active=False)
+    assert client.get("/buckets/commitments").json()["total_monthly"] == 0.0

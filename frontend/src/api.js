@@ -471,3 +471,20 @@ export const saveBucketMapping = (entries) =>
 export const getHouseRules = () => req("/insights/house-rules");
 export const saveHouseRules = (body) =>
   req("/insights/house-rules", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+// ── Pay schedules & income projection ───────────────────────────────────────
+export const getPaySchedules = () => req("/pay-schedules");
+export const savePaySchedule = (body) =>
+  req("/pay-schedules", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deletePaySchedule = (id) => req(`/pay-schedules/${id}`, { method: "DELETE" });
+export const getIncomeProjection = (year, month) =>
+  req(`/income/projection?year=${year}${month ? `&month=${month}` : ""}`);
+
+// ── Recurring bills & commitments ───────────────────────────────────────────
+export const getRecurringBills = () => req("/recurring-bills");
+export const createRecurringBill = (body) =>
+  req("/recurring-bills", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const updateRecurringBill = (id, body) =>
+  req(`/recurring-bills/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteRecurringBill = (id) => req(`/recurring-bills/${id}`, { method: "DELETE" });
+export const getCommitments = () => req("/buckets/commitments");

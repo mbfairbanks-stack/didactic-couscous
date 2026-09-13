@@ -14,10 +14,13 @@ from typing import Optional
 import json
 
 import models
+import pay_projection
 from buckets import (
-    BUCKETS, BUCKET_BLURBS, BUCKET_LABELS, DEFAULT_PLAN, GUILT_FREE, MEANINGFUL,
-    PLAN_SETTINGS_KEY, default_bucket_for, normalize_plan,
+    BUCKETS, BUCKET_BLURBS, BUCKET_LABELS, DEFAULT_PLAN, FIXED, GUILT_FREE,
+    MEANINGFUL, PLAN_SETTINGS_KEY, default_bucket_for, normalize_plan,
 )
+from debt_math import effective_balance
+from category_utils import ensure_category
 from database import get_db
 
 router = APIRouter()
@@ -160,17 +163,87 @@ def _spend_by_category(db: Session, year: int, m0: int, m1: int) -> dict[str, fl
 
 
 def _income_for(db: Session, year: int, m0: int, m1: int) -> dict:
-    rows = db.execute(
-        select(models.Income)
-        .where(models.Income.year == year,
-               models.Income.month >= m0,
-               models.Income.month <= m1)
+    """Projected gross and net for the period.
+
+    income.amount is GROSS. Take-home is income.net_amount when it was entered,
+    otherwise projected from the person's pay schedule. The plan base is built
+    from net — adding RRSP/ESPP back to *gross* would double-count them, since
+    they are deducted before the deposit lands.
+    """
+    return pay_projection.summarize(db, year, m0, m1)
+
+
+# ---------------------------------------------------------------------------
+# Committed outflows — money already spoken for before the month starts
+# ---------------------------------------------------------------------------
+
+_FREQUENCY_TO_MONTHLY = {
+    "weekly": 52 / 12,
+    "biweekly": 26 / 12,
+    "semimonthly": 2.0,
+    "monthly": 1.0,
+    "quarterly": 1 / 3,
+    "annual": 1 / 12,
+    "yearly": 1 / 12,
+}
+
+
+def _committed_outflows(db: Session, mapping: dict[str, str]) -> dict:
+    """Recurring bills and debt payments, as a monthly figure per bucket.
+
+    Debt minimums are a fixed cost — they arrive whether or not you think about
+    them. Extra principal is meaningful savings: it buys down a liability, which
+    grows net worth exactly like an investment contribution does.
+    """
+    totals = {b: 0.0 for b in BUCKETS}
+    items: dict[str, list] = {b: [] for b in BUCKETS}
+
+    bills = db.execute(
+        select(models.RecurringBill).where(models.RecurringBill.is_active == True)  # noqa: E712
     ).scalars().all()
+    for bill in bills:
+        per_month = float(bill.amount or 0) * _FREQUENCY_TO_MONTHLY.get(
+            (bill.frequency or "monthly").lower(), 1.0
+        )
+        bucket = mapping.get(bill.category or "", GUILT_FREE)
+        if bucket not in BUCKETS:
+            bucket = GUILT_FREE
+        totals[bucket] += per_month
+        items[bucket].append({
+            "label": bill.name,
+            "amount": round(per_month, 2),
+            "category": bill.category,
+            "source": "bill",
+            "id": bill.id,
+        })
+
+    for debt in db.execute(select(models.Debt)).scalars().all():
+        if effective_balance(debt, db) <= 0:
+            continue
+        minimum = float(debt.monthly_payment or 0)
+        extra = float(debt.monthly_extra or 0)
+        if minimum > 0:
+            totals[FIXED] += minimum
+            items[FIXED].append({
+                "label": f"{debt.name} — minimum",
+                "amount": round(minimum, 2),
+                "category": "Debt Payment",
+                "source": "debt",
+                "id": debt.id,
+            })
+        if extra > 0:
+            totals[MEANINGFUL] += extra
+            items[MEANINGFUL].append({
+                "label": f"{debt.name} — extra principal",
+                "amount": round(extra, 2),
+                "category": "Extra Debt Principal",
+                "source": "debt_extra",
+                "id": debt.id,
+            })
+
     return {
-        "take_home": round(sum(float(r.amount or 0) for r in rows), 2),
-        "payroll_rrsp_employee": round(sum(float(r.rrsp_employee or 0) for r in rows), 2),
-        "payroll_rrsp_employer": round(sum(float(r.rrsp_employer or 0) for r in rows), 2),
-        "payroll_espp": round(sum(float(r.espp_deduction or 0) for r in rows), 2),
+        "totals": {b: round(totals[b], 2) for b in BUCKETS},
+        "items": {b: sorted(items[b], key=lambda i: -i["amount"]) for b in BUCKETS},
     }
 
 
@@ -179,6 +252,7 @@ def build_bucket_summary(db: Session, year: int, m0: int, m1: int) -> dict:
     mapping = bucket_map(db)
     spend = _spend_by_category(db, year, m0, m1)
     income = _income_for(db, year, m0, m1)
+    committed = _committed_outflows(db, mapping)
     num_months = max(m1 - m0 + 1, 1)
 
     totals = {b: 0.0 for b in BUCKETS}
@@ -204,9 +278,9 @@ def build_bucket_summary(db: Session, year: int, m0: int, m1: int) -> dict:
             "from_payroll": True,
         })
 
-    # The plan base is everything the household had to allocate: money that
-    # landed in the bank plus money diverted to savings before it got there.
-    plan_base = income["take_home"] + payroll_savings
+    # The plan base is what the household had to allocate: what actually landed
+    # in the bank, plus what was diverted to savings before it got there.
+    plan_base = income["net"] + payroll_savings
     plan = _load_plan(db)
     allocated = sum(totals.values())
 
@@ -214,6 +288,7 @@ def build_bucket_summary(db: Session, year: int, m0: int, m1: int) -> dict:
     for b in BUCKETS:
         actual = round(totals[b], 2)
         target_amount = round(plan_base * plan[b] / 100, 2)
+        committed_monthly = committed["totals"][b]
         out_buckets.append({
             "bucket": b,
             "label": BUCKET_LABELS[b],
@@ -225,8 +300,14 @@ def build_bucket_summary(db: Session, year: int, m0: int, m1: int) -> dict:
             "target_monthly": round(target_amount / num_months, 2),
             "actual_pct": round(actual / plan_base * 100, 1) if plan_base else 0.0,
             "variance": round(actual - target_amount, 2),
+            "committed_monthly": committed_monthly,
+            "committed_items": committed["items"][b],
+            # What the target leaves once the unavoidable commitments are met.
+            "uncommitted_monthly": round(target_amount / num_months - committed_monthly, 2),
             "categories": sorted(categories[b], key=lambda c: -c["amount"]),
         })
+
+    committed_total = round(sum(committed["totals"].values()), 2)
 
     return {
         "year": year,
@@ -237,6 +318,7 @@ def build_bucket_summary(db: Session, year: int, m0: int, m1: int) -> dict:
         "income": income,
         "plan_base": round(plan_base, 2),
         "plan_base_monthly": round(plan_base / num_months, 2),
+        "committed_monthly": committed_total,
         "allocated": round(allocated, 2),
         "unallocated": round(plan_base - allocated, 2),
         "buckets": out_buckets,
@@ -299,3 +381,103 @@ def bucket_trend(year: int, months: int = 12, db: Session = Depends(get_db)):
         for m in range(1, 13)
         if income_by_month.get(m) or any(by_month[m][b] for b in BUCKETS)
     ]
+
+
+# ---------------------------------------------------------------------------
+# Recurring bills — the set payments behind the committed figures above
+# ---------------------------------------------------------------------------
+
+BILL_FREQUENCIES = set(_FREQUENCY_TO_MONTHLY)
+
+
+class RecurringBillBody(BaseModel):
+    name: str
+    merchant: Optional[str] = None
+    amount: float
+    frequency: str = "monthly"
+    due_day: Optional[int] = None
+    category: Optional[str] = None
+    is_active: bool = True
+    notes: Optional[str] = None
+
+
+def _bill_out(b: models.RecurringBill, mapping: dict[str, str]) -> dict:
+    per_month = float(b.amount or 0) * _FREQUENCY_TO_MONTHLY.get(
+        (b.frequency or "monthly").lower(), 1.0
+    )
+    return {
+        "id": b.id,
+        "name": b.name,
+        "merchant": b.merchant,
+        "amount": b.amount,
+        "frequency": b.frequency,
+        "monthly_equivalent": round(per_month, 2),
+        "due_day": b.due_day,
+        "category": b.category,
+        "bucket": mapping.get(b.category or "", GUILT_FREE),
+        "is_active": bool(b.is_active),
+        "last_seen": b.last_seen,
+        "notes": b.notes,
+    }
+
+
+@router.get("/recurring-bills")
+def list_recurring_bills(db: Session = Depends(get_db)):
+    mapping = bucket_map(db)
+    rows = db.execute(
+        select(models.RecurringBill).order_by(models.RecurringBill.name)
+    ).scalars().all()
+    return [_bill_out(r, mapping) for r in rows]
+
+
+@router.post("/recurring-bills", status_code=201)
+def create_recurring_bill(body: RecurringBillBody, db: Session = Depends(get_db)):
+    if (body.frequency or "").lower() not in BILL_FREQUENCIES:
+        raise HTTPException(400, f"Unknown frequency '{body.frequency}'")
+    # Register the category so it carries a real bucket. Without this a
+    # mortgage entered here would fall through to guilt-free.
+    category = ensure_category(db, body.category) if body.category else None
+    bill = models.RecurringBill(**{**body.model_dump(),
+                                   "category": category,
+                                   "merchant": body.merchant or body.name})
+    db.add(bill)
+    db.commit()
+    db.refresh(bill)
+    return _bill_out(bill, bucket_map(db))
+
+
+@router.put("/recurring-bills/{bill_id}")
+def update_recurring_bill(bill_id: int, body: RecurringBillBody, db: Session = Depends(get_db)):
+    bill = db.get(models.RecurringBill, bill_id)
+    if not bill:
+        raise HTTPException(404, "Recurring bill not found")
+    if (body.frequency or "").lower() not in BILL_FREQUENCIES:
+        raise HTTPException(400, f"Unknown frequency '{body.frequency}'")
+    for field, val in body.model_dump().items():
+        setattr(bill, field, val)
+    bill.category = ensure_category(db, body.category) if body.category else None
+    bill.merchant = body.merchant or body.name
+    db.commit()
+    db.refresh(bill)
+    return _bill_out(bill, bucket_map(db))
+
+
+@router.delete("/recurring-bills/{bill_id}", status_code=204)
+def delete_recurring_bill(bill_id: int, db: Session = Depends(get_db)):
+    bill = db.get(models.RecurringBill, bill_id)
+    if not bill:
+        raise HTTPException(404, "Recurring bill not found")
+    db.delete(bill)
+    db.commit()
+
+
+@router.get("/buckets/commitments")
+def list_commitments(db: Session = Depends(get_db)):
+    """Everything already spoken for each month, grouped by bucket."""
+    committed = _committed_outflows(db, bucket_map(db))
+    return {
+        "totals": committed["totals"],
+        "items": committed["items"],
+        "total_monthly": round(sum(committed["totals"].values()), 2),
+        "labels": BUCKET_LABELS,
+    }

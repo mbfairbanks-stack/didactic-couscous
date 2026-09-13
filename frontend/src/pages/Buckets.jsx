@@ -11,6 +11,14 @@ import {
 import { BUCKETS, BUCKET_META, BUCKET_SURFACE } from "../constants";
 import { MONTH_LABELS, currentYear, currentMonth, fmt } from "../utils";
 
+// Whole-thousand rounding collapses $1,500 and $1,000 onto the same "$1k"
+// label, so keep a decimal until the numbers are big enough not to need one.
+function axisTick(v) {
+  if (v === 0) return "$0";
+  const k = v / 1000;
+  return `$${Number.isInteger(k) ? k : k.toFixed(1)}k`;
+}
+
 const QUARTERS = { 1: [1, 3], 2: [4, 6], 3: [7, 9], 4: [10, 12] };
 const HALVES = { 1: [1, 6], 2: [7, 12] };
 
@@ -70,6 +78,7 @@ function Verdict({ bucket, variance, target, hasPlan }) {
 function BucketCard({ data, months, hasPlan, children, detail = true }) {
   const meta = BUCKET_META[data.bucket];
   const [open, setOpen] = useState(false);
+  const [showCommitted, setShowCommitted] = useState(false);
   const pct = data.target_monthly > 0
     ? Math.min((data.actual_monthly / data.target_monthly) * 100, 100)
     : 0;
@@ -109,6 +118,43 @@ function BucketCard({ data, months, hasPlan, children, detail = true }) {
           ? `${data.actual_pct.toFixed(0)}% of everything coming in`
           : "Record this month's income to see how this compares to plan"}
       </p>
+
+      {/* Set payments already spoken for, and what the target leaves after them */}
+      {data.committed_monthly > 0 && (
+        <div className="mt-3 pt-3 border-t border-zinc-800">
+          <button
+            onClick={() => setShowCommitted((o) => !o)}
+            className="w-full flex items-center justify-between text-xs group"
+          >
+            <span className="text-zinc-500 group-hover:text-zinc-300">
+              {showCommitted ? "▾" : "▸"} {data.committed_items.length} set payment
+              {data.committed_items.length === 1 ? "" : "s"}
+            </span>
+            <span className="text-zinc-400 tabular-nums">
+              {fmt(data.committed_monthly)}/mo committed
+            </span>
+          </button>
+          {hasPlan && (
+            <p className={`text-xs mt-1 tabular-nums ${
+              data.uncommitted_monthly < 0 ? "text-red-400" : "text-zinc-600"
+            }`}>
+              {data.uncommitted_monthly < 0
+                ? `${fmt(Math.abs(data.uncommitted_monthly))}/mo over target before any other spending`
+                : `${fmt(data.uncommitted_monthly)}/mo of the target left after them`}
+            </p>
+          )}
+          {showCommitted && (
+            <div className="mt-2 space-y-1">
+              {data.committed_items.map((item, i) => (
+                <div key={`${item.source}-${item.id}-${i}`} className="flex justify-between text-xs">
+                  <span className="text-zinc-400 truncate mr-2">{item.label}</span>
+                  <span className="text-zinc-300 tabular-nums">{fmt(item.amount)}/mo</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {children}
 
@@ -392,34 +438,57 @@ export default function Buckets() {
 
       {summary && hasActivity && (
         <>
-          {/* Plan base headline */}
+          {/* Income headline — gross, what comes off, and what is left to plan */}
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
-            <div className="flex items-baseline justify-between flex-wrap gap-2 mb-3">
+            <div className="flex items-start justify-between flex-wrap gap-3 mb-4">
               <div>
-                <p className="text-xs font-semibold text-zinc-500 uppercase tracking-widest">
+                <p className="text-xs font-semibold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
                   Coming in
-                </p>
-                <p className="text-2xl font-bold text-zinc-100 tabular-nums mt-0.5">
-                  {fmt(summary.plan_base_monthly)}<span className="text-sm text-zinc-500 font-normal">/mo</span>
-                </p>
-                <p className="text-xs text-zinc-600 mt-0.5">
-                  {fmt(summary.income.take_home / months)} take-home
-                  {summary.income.payroll_rrsp_employee + summary.income.payroll_espp > 0 && (
-                    <> + {fmt((summary.income.payroll_rrsp_employee + summary.income.payroll_espp) / months)} straight to savings</>
+                  {summary.income.estimated && (
+                    <span className="text-[10px] font-medium bg-zinc-800 text-zinc-400 rounded px-1.5 py-0.5 normal-case tracking-normal">
+                      projected
+                    </span>
                   )}
                 </p>
+                <p className="text-2xl font-bold text-zinc-100 tabular-nums mt-1">
+                  {fmt(summary.plan_base_monthly)}
+                  <span className="text-sm text-zinc-500 font-normal">/mo to allocate</span>
+                </p>
               </div>
-              <button
-                onClick={() => setEditingPlan(true)}
-                className="text-xs text-yellow-400 hover:text-yellow-300 border border-yellow-400/30 rounded px-3 py-1.5"
-              >
-                Edit plan
-              </button>
+              <div className="flex gap-2">
+                <NavLink to="/income#schedule"
+                  className="text-xs text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded px-3 py-1.5">
+                  Pay setup
+                </NavLink>
+                <button onClick={() => setEditingPlan(true)}
+                  className="text-xs text-yellow-400 hover:text-yellow-300 border border-yellow-400/30 rounded px-3 py-1.5">
+                  Edit plan
+                </button>
+              </div>
             </div>
 
-            {/* Plan vs actual, as one bar */}
-            {summary.plan_base > 0 && (
-              <div className="space-y-2">
+            {/* Gross → deductions → net → plan base, so the arithmetic is visible */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+              {[
+                { label: "Gross", value: summary.income.gross / months, tone: "text-zinc-300",
+                  note: "before anything comes off" },
+                { label: "Deductions", value: -summary.income.deductions / months, tone: "text-zinc-500",
+                  note: "tax, CPP/EI, RRSP, ESPP" },
+                { label: "Take-home", value: summary.income.net / months, tone: "text-green-400",
+                  note: "deposited to the bank" },
+                { label: "Plan base", value: summary.plan_base_monthly, tone: "text-yellow-400",
+                  note: "take-home + payroll savings" },
+              ].map((cell) => (
+                <div key={cell.label}>
+                  <p className="text-xs text-zinc-500">{cell.label}</p>
+                  <p className={`text-lg font-bold tabular-nums ${cell.tone}`}>{fmt(cell.value)}</p>
+                  <p className="text-[11px] text-zinc-600 leading-tight">{cell.note}</p>
+                </div>
+              ))}
+            </div>
+
+            {summary.plan_base > 0 ? (
+              <div className="space-y-2 pt-3 border-t border-zinc-800">
                 {[["Plan", BUCKETS.map((b) => byBucket[b]?.target_amount ?? 0)],
                   ["Actual", BUCKETS.map((b) => byBucket[b]?.actual ?? 0)]].map(([rowLabel, values]) => {
                   const shown = values.reduce((s, v) => s + v, 0);
@@ -444,20 +513,36 @@ export default function Buckets() {
                     <span key={b} className="flex items-center gap-1.5 text-xs text-zinc-500">
                       <span className="w-2.5 h-2.5 rounded-sm" style={{ background: BUCKET_META[b].fill }} />
                       {BUCKET_META[b].short}
+                      <span className="text-zinc-600 tabular-nums">
+                        {fmt((byBucket[b]?.target_amount ?? 0) / months)}
+                      </span>
                     </span>
                   ))}
                 </div>
               </div>
+            ) : (
+              <div className="pt-3 border-t border-zinc-800">
+                <p className="text-sm text-zinc-400">
+                  No pay recorded or projected for {label}, so there is nothing to
+                  divide into buckets yet.
+                </p>
+                <NavLink to="/income#schedule"
+                  className="inline-block mt-2 bg-yellow-400 text-zinc-900 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-yellow-300">
+                  Set up your pay →
+                </NavLink>
+              </div>
             )}
 
-            {Math.abs(summary.unallocated) > 1 && (
+            {Math.abs(summary.unallocated) > 1 && summary.plan_base > 0 && (
               <p className="text-xs text-zinc-500 mt-3 pt-3 border-t border-zinc-800">
                 <span className={summary.unallocated > 0 ? "text-zinc-300" : "text-red-400"}>
                   {fmt(Math.abs(summary.unallocated) / months)}/mo {summary.unallocated > 0 ? "unallocated" : "overspent"}
                 </span>
-                {summary.unallocated > 0
-                  ? " — money that landed in none of the four buckets. Most likely it is sitting in chequing, or it was saved without being recorded."
-                  : " — more went out than came in this period."}
+                {summary.unallocated <= 0
+                  ? " — more went out than came in this period."
+                  : summary.income.estimated
+                    ? " — the pay for this period is projected and the spending has not all landed yet, so expect this to shrink as the month fills in."
+                    : " — money that landed in none of the four buckets. Most likely it is sitting in chequing, or it was saved without being recorded."}
               </p>
             )}
           </div>
@@ -548,7 +633,7 @@ export default function Buckets() {
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
                   <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#71717a" }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 11, fill: "#71717a" }} axisLine={false} tickLine={false}
-                    tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                    tickFormatter={axisTick} />
                   <Tooltip content={<TrendTooltip />} cursor={{ fill: "#ffffff08" }} />
                   <Legend wrapperStyle={{ fontSize: 12, color: "#a1a1aa" }} />
                   {BUCKETS.map((b, i) => (

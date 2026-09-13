@@ -50,6 +50,12 @@ def make_txn(client, **overrides):
 
 
 def make_income(client, **overrides):
+    """amount is GROSS; net_amount is what lands in the bank.
+
+    Defaults to no deductions (net == gross) so tests that do not care about
+    the distinction stay readable. Pass net_amount explicitly to model RRSP,
+    ESPP or tax coming off the top.
+    """
     body = {
         "year": 2025,
         "month": 3,
@@ -58,6 +64,7 @@ def make_income(client, **overrides):
         "amount": 1000.0,
         "pay_date": "2025-03-15",
     }
+    body.setdefault("net_amount", overrides.get("amount", body["amount"]))
     body.update(overrides)
     r = client.post("/income", json=body)
     assert r.status_code == 201, r.text
