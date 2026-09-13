@@ -12,6 +12,7 @@ from sqlalchemy import select, func
 from pydantic import BaseModel
 from typing import Optional
 import datetime
+import calendar
 import os, json, math
 from collections import defaultdict
 
@@ -85,6 +86,14 @@ stop. "Not enough history to tell" is a valid and useful answer.
 - Do not project a trend from fewer than three months of data, and say so when \
 the sample is thin.
 - Never present an estimate as a measurement. Mark assumptions as assumptions.
+- Projected income is not earned income. When the plan base is projected, say \
+which figures rest on it, and never report a variance against it as something \
+the household achieved. An unfinished period has running totals, not results — \
+talk about pace, not outcome.
+- Committed vs target is the comparison that holds even before a month happens: \
+set payments are decided, so a bucket whose commitments already exceed its \
+target is over structurally, and that is worth saying regardless of how much \
+of the month has elapsed.
 
 ## Length and tone
 
@@ -165,33 +174,114 @@ def _household_header(db: Session) -> list[str]:
     ]
 
 
-def _plan_section(summary: dict) -> list[str]:
-    """The headline: target vs actual for each of the four buckets."""
+def _period_progress(year: int, m0: int, m1: int) -> tuple[str, bool]:
+    """How much of the period has actually elapsed, and whether it is still open."""
+    today = datetime.date.today()
+    start = datetime.date(year, m0, 1)
+    last_day = calendar.monthrange(year, m1)[1]
+    end = datetime.date(year, m1, last_day)
+
+    if today > end:
+        return "complete — the whole period is in the past", False
+    if today < start:
+        return "entirely in the future — nothing has happened yet", True
+    elapsed = (today - start).days + 1
+    total = (end - start).days + 1
+    pct = round(elapsed / total * 100)
+    return (f"in progress — day {elapsed} of {total} ({pct}% elapsed), "
+            f"so spending totals are partial"), True
+
+
+def _plan_section(summary: dict, year: int, m0: int, m1: int) -> list[str]:
+    """The headline: target vs actual per bucket, plus how solid those figures are."""
     months = summary["months"]
     per = "per month" if months > 1 else "this month"
+    income = summary["income"]
+    progress, open_period = _period_progress(year, m0, m1)
+    projected = bool(income.get("estimated"))
+
     lines = [
         "## The Plan",
         "",
-        f"Monthly plan base (take-home + payroll RRSP/ESPP): "
-        f"{_fmt(summary['plan_base_monthly'])} {per}"
-        + (f" — {_fmt(summary['plan_base'])} over {months} months" if months > 1 else ""),
+        f"Period status: {progress}.",
         "",
-        "| Bucket | Target % | Target $/mo | Actual $/mo | Actual % | Variance $/mo |",
-        "|---|---|---|---|---|---|",
+        "### Where the plan base comes from",
+        "",
+        f"- Gross pay: {_fmt(income['gross'] / months)}/mo",
+        f"- Deductions (tax, CPP/EI, RRSP, ESPP): {_fmt(income['deductions'] / months)}/mo",
+        f"- Take-home deposited: {_fmt(income['net'] / months)}/mo",
+        f"- Savings taken off the top (RRSP + ESPP): "
+        f"{_fmt((income['payroll_rrsp_employee'] + income['payroll_espp']) / months)}/mo",
+        f"- **Plan base: {_fmt(summary['plan_base_monthly'])} {per}** "
+        "(take-home plus the savings diverted before the deposit)",
+    ]
+
+    if income.get("sources"):
+        lines += ["", "Per person, where the income figure came from:"]
+        for person, source in sorted(income["sources"].items()):
+            explain = {
+                "recorded": "entered from actual paycheques",
+                "schedule": "PROJECTED from their pay schedule — no pay entered yet",
+                "mixed": "PART entered, the remaining pays PROJECTED from their schedule",
+                "average": "PROJECTED from their recent months — no schedule set",
+            }.get(source, source)
+            lines.append(f"- {person}: {explain}")
+
+    if projected:
+        lines += [
+            "",
+            "**The income above is a projection, not a record.** Say so plainly when "
+            "you quote any figure that depends on it, and do not present a variance "
+            "against a projected base as a result the household achieved. Compare "
+            "what is committed against the target instead — that comparison is real "
+            "even before the month happens.",
+        ]
+
+    lines += [
+        "",
+        "### Target vs actual vs committed",
+        "",
+        "| Bucket | Target $/mo | Committed $/mo | Actual so far $/mo | Target left after commitments |",
+        "|---|---|---|---|---|",
     ]
     for b in summary["buckets"]:
-        var = b["variance"] / months
-        var_str = f"+{_fmt(var)} over" if var > 0 else f"{_fmt(abs(var))} under"
         lines.append(
-            f"| {b['label']} | {b['target_pct']:.0f}% | {_fmt(b['target_monthly'])} | "
-            f"{_fmt(b['actual_monthly'])} | {b['actual_pct']:.0f}% | {var_str} |"
+            f"| {b['label']} | {_fmt(b['target_monthly'])} | {_fmt(b['committed_monthly'])} | "
+            f"{_fmt(b['actual_monthly'])} | {_fmt(b['uncommitted_monthly'])} |"
         )
+
+    lines += [
+        "",
+        "Committed means set payments already decided before the period started — "
+        "recurring bills, debt minimums (fixed costs) and extra principal "
+        "(meaningful savings). Actual is what transactions and payroll actually "
+        "show. A bucket whose commitments already exceed its target is "
+        "structurally over, regardless of discretionary behaviour, and that is "
+        "worth calling out.",
+    ]
+
+    for b in summary["buckets"]:
+        if b["uncommitted_monthly"] < 0:
+            lines.append(
+                f"- {b['label']}: committed {_fmt(b['committed_monthly'])}/mo against a "
+                f"{_fmt(b['target_monthly'])}/mo target — over before any choices are made."
+            )
+
+    if open_period:
+        lines += [
+            "",
+            "Because the period is not finished, treat every 'actual' as a "
+            "running total. Do not describe a bucket as under plan when the "
+            "month still has days left to run — say what the pace implies instead.",
+        ]
+
     unallocated = summary["unallocated"] / months
     lines += [
         "",
-        f"Unallocated (plan base minus everything above): {_fmt(unallocated)}/mo. "
-        "Positive means money that landed nowhere the plan tracks — most likely "
-        "sitting in chequing, or savings the household made without recording it.",
+        f"Unallocated (plan base minus everything above): {_fmt(unallocated)}/mo."
+        + (" Expect this to shrink as the period fills in." if open_period else
+           " Positive means money that landed nowhere the plan tracks — most likely "
+           "sitting in chequing, or savings the household made without recording it."),
     ]
     if summary["unmapped_categories"]:
         names = ", ".join(c["category"] for c in summary["unmapped_categories"][:8])
@@ -260,12 +350,19 @@ def _fixed_section(db: Session, summary: dict, year: int, m0: int, m1: int) -> l
         b for b in recurring if mapping.get(b.category or "", GUILT_FREE) == FIXED
     ]
     if fixed_recurring:
-        lines += ["", "Known recurring bills in this bucket:"]
-        for b in sorted(fixed_recurring, key=lambda x: -(x.amount or 0)):
-            lines.append(
-                f"- {b.name} ({b.merchant}) — {_fmt(b.amount or 0)} {b.frequency}"
-                + (f", last seen {b.last_seen}" if b.last_seen else "")
-            )
+        # Everything else in this section is $/mo, so normalise annual and
+        # quarterly bills rather than leaving the reader to divide.
+        from routers.buckets import _FREQUENCY_TO_MONTHLY
+
+        lines += ["", "Set payments in this bucket (monthly equivalent):"]
+        def monthly(bill):
+            return float(bill.amount or 0) * _FREQUENCY_TO_MONTHLY.get(
+                (bill.frequency or "monthly").lower(), 1.0)
+
+        for b in sorted(fixed_recurring, key=monthly, reverse=True):
+            billed = ("" if (b.frequency or "monthly").lower() == "monthly"
+                      else f" (billed {_fmt(b.amount or 0)} {b.frequency})")
+            lines.append(f"- {b.name}: {_fmt(monthly(b))}/mo{billed}")
     return lines
 
 
@@ -522,7 +619,7 @@ def build_insights_context(db: Session, year: int, m0: int, m1: int) -> str:
         *_standing_instructions(db),
         f"# {label}",
         "",
-        *_plan_section(summary),
+        *_plan_section(summary, year, m0, m1),
         *_fixed_section(db, summary, year, m0, m1),
         *_short_term_section(db, summary),
         *_meaningful_section(db, summary),

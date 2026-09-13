@@ -309,3 +309,51 @@ def test_recurring_bill_crud_roundtrip(client):
 def test_inactive_bill_is_not_committed(client):
     make_bill(client, is_active=False)
     assert client.get("/buckets/commitments").json()["total_monthly"] == 0.0
+
+
+# ── Projection provenance in the AI context ─────────────────────────────────
+
+def test_context_marks_projected_income_as_projected(client):
+    client.put("/pay-schedules", json={
+        "person": "Person 1", "gross_per_pay": 6000.0, "net_per_pay": 4000.0,
+        "frequency": "monthly",
+    })
+    ctx = client.get("/insights/context?year=2026&month=11").json()["context"]
+    assert "PROJECTED from their pay schedule" in ctx
+    assert "is a projection, not a record" in ctx
+    assert "do not present a variance against a projected base" in ctx
+
+
+def test_context_does_not_cry_projection_for_recorded_income(client):
+    make_income(client, amount=5000.0, net_amount=3800.0)
+    ctx = client.get("/insights/context?year=2025&month=3").json()["context"]
+    assert "entered from actual paycheques" in ctx
+    assert "is a projection, not a record" not in ctx
+
+
+def test_context_shows_committed_against_target(client):
+    make_income(client, amount=6000.0, net_amount=6000.0)
+    make_bill(client, name="Mortgage", amount=2000.0, category="Mortgage")
+
+    ctx = client.get("/insights/context?year=2025&month=3").json()["context"]
+    assert "Target vs actual vs committed" in ctx
+    assert "Committed means set payments already decided" in ctx
+
+
+def test_context_flags_a_bucket_committed_past_its_target(client):
+    make_income(client, amount=4000.0, net_amount=4000.0)
+    # 55% of 4000 is 2200; commit more than that.
+    make_bill(client, name="Mortgage", amount=2600.0, category="Mortgage")
+
+    ctx = client.get("/insights/context?year=2025&month=3").json()["context"]
+    assert "over before any choices are made" in ctx
+
+
+def test_context_reports_period_completeness(client):
+    make_income(client, amount=4000.0, net_amount=4000.0)
+    past = client.get("/insights/context?year=2025&month=3").json()["context"]
+    assert "the whole period is in the past" in past
+
+    future = client.get("/insights/context?year=2030&month=6").json()["context"]
+    assert "entirely in the future" in future
+    assert "running total" in future
