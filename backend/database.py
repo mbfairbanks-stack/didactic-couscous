@@ -123,9 +123,23 @@ def seed_defaults(eng):
                 {"k": k, "v": v},
             )
 
+        from categories import CATEGORY_GROUPS
+        from buckets import SAVINGS_CATEGORIES, default_bucket_for
+
+        # The savings categories back the two savings buckets, so they are
+        # seeded on every start — unlike the spending list below, which is
+        # seeded once so a category the user deleted stays deleted.
+        for name, bucket in SAVINGS_CATEGORIES.items():
+            conn.execute(
+                sa.text(
+                    'INSERT OR IGNORE INTO categories (name, "group", is_legacy, bucket) '
+                    "VALUES (:n, 'Committed', 0, :b)"
+                ),
+                {"n": name, "b": bucket},
+            )
+
         cat_count = conn.execute(sa.text("SELECT COUNT(*) FROM categories")).scalar()
-        if cat_count == 0:
-            from categories import CATEGORY_GROUPS
+        if cat_count <= len(SAVINGS_CATEGORIES):
             canonical = {
                 "Mortgage", "Natural Gas", "Hydro", "Groceries", "Pets",
                 "Transportation", "Internet", "Security", "Mobile", "Insurance",
@@ -137,9 +151,21 @@ def seed_defaults(eng):
             }
             for name, group in CATEGORY_GROUPS.items():
                 conn.execute(
-                    sa.text('INSERT INTO categories (name, "group", is_legacy) VALUES (:n, :g, :l)'),
-                    {"n": name, "g": group, "l": 0 if name in canonical else 1},
+                    sa.text(
+                        'INSERT OR IGNORE INTO categories (name, "group", is_legacy, bucket) '
+                        "VALUES (:n, :g, :l, :b)"
+                    ),
+                    {"n": name, "g": group, "l": 0 if name in canonical else 1,
+                     "b": default_bucket_for(name, group)},
                 )
+
+        # Any category that predates the bucket column still needs one.
+        conn.execute(sa.text(
+            'UPDATE categories SET bucket = CASE "group" '
+            "  WHEN 'Committed' THEN 'fixed' WHEN 'Needs' THEN 'fixed' "
+            "  ELSE 'guilt_free' END "
+            "WHERE bucket IS NULL OR bucket = ''"
+        ))
         conn.commit()
 
 

@@ -257,15 +257,7 @@ export const exportUrl = (year, month) => {
 };
 
 // AI Insights (streaming SSE)
-// month=null means annual mode; startMonth+endMonth means quarterly/semi-annual
-export const streamInsights = async (year, month, onChunk, onDone, onError, startMonth = null, endMonth = null) => {
-  const token = getToken();
-  let qs = `year=${year}`;
-  if (month) qs += `&month=${month}`;
-  if (startMonth && endMonth) qs += `&start_month=${startMonth}&end_month=${endMonth}`;
-  const res = await fetch(`${BASE}/insights?${qs}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
+async function readSse(res, { onChunk, onDone, onError }) {
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     onError(err.detail || "Request failed");
@@ -292,7 +284,46 @@ export const streamInsights = async (year, month, onChunk, onDone, onError, star
     }
   }
   onDone();
+}
+
+const periodQuery = (year, month, startMonth, endMonth) => {
+  let qs = `year=${year}`;
+  if (month) qs += `&month=${month}`;
+  if (startMonth && endMonth) qs += `&start_month=${startMonth}&end_month=${endMonth}`;
+  return qs;
 };
+
+// month=null means annual mode; startMonth+endMonth means quarterly/semi-annual
+export const streamInsights = async (year, month, onChunk, onDone, onError, startMonth = null, endMonth = null) => {
+  const token = getToken();
+  const res = await fetch(`${BASE}/insights?${periodQuery(year, month, startMonth, endMonth)}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  return readSse(res, { onChunk, onDone, onError });
+};
+
+/** Follow-up question against the same period's data. */
+export const streamInsightsAnswer = async (
+  { year, month, startMonth = null, endMonth = null, question, priorReport },
+  onChunk, onDone, onError,
+) => {
+  const token = getToken();
+  const res = await fetch(`${BASE}/insights/ask`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      year, month, start_month: startMonth, end_month: endMonth,
+      question, prior_report: priorReport || null,
+    }),
+  });
+  return readSse(res, { onChunk, onDone, onError });
+};
+
+export const getInsightsContext = (year, month, startMonth = null, endMonth = null) =>
+  req(`/insights/context?${periodQuery(year, month, startMonth, endMonth)}`);
 
 
 // month=0 means annual
@@ -424,3 +455,19 @@ export const createRetirementGoal = (body) =>
 export const updateRetirementGoal = (id, body) =>
   req(`/retirement/goals/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 export const deleteRetirementGoal = (id) => req(`/retirement/goals/${id}`, { method: "DELETE" });
+
+// ── Buckets ─────────────────────────────────────────────────────────────────
+export const getBucketPlan = () => req("/buckets/plan");
+export const saveBucketPlan = (plan) =>
+  req("/buckets/plan", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(plan) });
+export const getBucketSummary = ({ year, month, startMonth, endMonth }) =>
+  req(`/buckets/summary?${periodQuery(year, month, startMonth, endMonth)}`);
+export const getBucketTrend = (year) => req(`/buckets/trend?year=${year}`);
+export const getBucketMapping = () => req("/buckets/mapping");
+export const saveBucketMapping = (entries) =>
+  req("/buckets/mapping", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ entries }) });
+
+// ── AI insights house rules ─────────────────────────────────────────────────
+export const getHouseRules = () => req("/insights/house-rules");
+export const saveHouseRules = (body) =>
+  req("/insights/house-rules", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });

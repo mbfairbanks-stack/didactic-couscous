@@ -67,6 +67,8 @@ class Category(Base):
     is_legacy = Column(Boolean, default=False)
     is_hidden = Column(Boolean, default=False)
     parent_name = Column(String, nullable=True)
+    # One of buckets.BUCKETS. NULL falls back to the group-derived default.
+    bucket = Column(String, nullable=True)
 
 
 class InsightsLog(Base):

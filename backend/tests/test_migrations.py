@@ -5,6 +5,17 @@ import tempfile
 import sqlalchemy as sa
 
 
+def _head_revision() -> str:
+    """The migration head, so a new revision that fails to apply is caught here."""
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    heads = ScriptDirectory.from_config(Config(os.path.join(root, "alembic.ini"))).get_heads()
+    assert len(heads) == 1, f"expected a single migration head, got {heads}"
+    return heads[0]
+
+
 def test_legacy_db_upgraded_on_first_access(client):
     """A pre-Alembic database (old tables, missing modern columns) must come out
     of get_engine_for_path fully migrated, fixed up, and seeded."""
@@ -46,7 +57,13 @@ def test_legacy_db_upgraded_on_first_access(client):
             sa.text("SELECT value FROM app_settings WHERE key='household_name'")
         ).scalar() == "BudgetBot"
         # stamped at current head
-        assert c.execute(sa.text("SELECT version_num FROM alembic_version")).scalar() == "b7d3a9c41e02"
+        assert c.execute(
+            sa.text("SELECT version_num FROM alembic_version")
+        ).scalar() == _head_revision()
+        # every category lands in a bucket
+        assert c.execute(
+            sa.text("SELECT COUNT(*) FROM categories WHERE bucket IS NULL OR bucket = ''")
+        ).scalar() == 0
 
 
 def test_fresh_user_db_initialised(client):
@@ -59,4 +76,9 @@ def test_fresh_user_db_initialised(client):
     assert "transactions" in insp.get_table_names()
     with eng.connect() as c:
         assert c.execute(sa.text("SELECT COUNT(*) FROM categories")).scalar() > 0
-        assert c.execute(sa.text("SELECT version_num FROM alembic_version")).scalar() == "b7d3a9c41e02"
+        assert c.execute(
+            sa.text("SELECT version_num FROM alembic_version")
+        ).scalar() == _head_revision()
+        assert c.execute(
+            sa.text("SELECT COUNT(*) FROM categories WHERE bucket IS NULL OR bucket = ''")
+        ).scalar() == 0

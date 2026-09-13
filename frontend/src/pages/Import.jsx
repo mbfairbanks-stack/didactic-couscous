@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { importFile, exportUrl, getYears, deduplicate, cleanupSummary, parseCsv, importCsvRows, getCategories, upsertMerchantRule, parsePdf } from "../api";
+import { NavLink } from "react-router-dom";
 import { MONTH_LABELS, currentYear } from "../utils";
 
 const CARD_FORMATS = [
@@ -186,6 +187,11 @@ export default function Import() {
   return (
     <div className="space-y-6 max-w-4xl">
       <h1 className="text-2xl font-bold text-zinc-100">Import / Export</h1>
+      <p className="text-sm text-zinc-500 -mt-3">
+        For the routine job of pasting statement rows,{" "}
+        <NavLink to="/add" className="text-yellow-400 hover:text-yellow-300">Add transactions</NavLink>{" "}
+        is faster. This page is for files — spreadsheets, CSVs, PDF statements — plus export and cleanup.
+      </p>
 
       {/* Import section */}
       <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 space-y-4">
@@ -325,7 +331,7 @@ export default function Import() {
         {/* Paste fallback */}
         <details className="group">
           <summary className="text-xs text-zinc-600 cursor-pointer hover:text-zinc-400 select-none">
-            Paste text instead
+            Paste text instead (or use Add transactions)
           </summary>
           <textarea
             className="mt-2 w-full bg-zinc-800 border border-zinc-700 rounded-lg p-3 text-xs font-mono text-zinc-300 focus:outline-none focus:border-yellow-400/50 resize-y"

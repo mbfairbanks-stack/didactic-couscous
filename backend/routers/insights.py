@@ -1,521 +1,609 @@
-"""AI insights (Anthropic) and the insights log."""
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Request
-from fastapi.responses import StreamingResponse, JSONResponse
+"""AI insights (Anthropic) and the insights log.
+
+The context handed to the model is bucket-shaped, not category-shaped: fixed
+costs, short-term savings, meaningful savings, guilt-free spending. Guilt-free
+is deliberately reported as one number — the household has decided it does not
+care what that money goes to, only whether the total lands inside the plan.
+"""
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func, distinct, text, nullslast
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select, func
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional
 import datetime
-import tempfile, os, io, json, csv, re, math
+import os, json, math
 from collections import defaultdict
 
 import models
+from buckets import FIXED, GUILT_FREE, MEANINGFUL, SHORT_TERM
 from database import get_db
 from debt_math import effective_balance
+from routers.buckets import bucket_map, build_bucket_summary
 
 router = APIRouter()
 
-# ---------------------------------------------------------------------------
-# AI Insights
-# ---------------------------------------------------------------------------
+MODEL = "claude-opus-5"
+MAX_TOKENS = 16000
 
 MONTH_NAMES = ["", "January", "February", "March", "April", "May", "June",
                "July", "August", "September", "October", "November", "December"]
 
+HOUSE_RULES_KEY = "insights_house_rules"
+DEBT_STANCE_KEY = "insights_debt_stance"
 
-def _build_debt_context(db: Session) -> list[str]:
-    """Build debt section for AI context, including payoff recommendations request."""
-    debts = db.execute(select(models.Debt)).scalars().all()
-    if not debts:
-        return []
+DEBT_STANCES = {
+    "avalanche": "Pay down the highest interest rate first (avalanche). Do not "
+                 "re-argue this — the household has decided. Apply it and move on.",
+    "snowball": "Pay down the smallest balance first (snowball). Do not re-argue "
+                "this — the household has decided. Apply it and move on.",
+    "minimums": "Pay minimums only and put everything else into savings and "
+                "investments. Do not re-argue this — the household has decided.",
+    "unsure": "The household has not picked a payoff strategy. You may compare "
+              "avalanche against snowball once, with the actual dollar difference.",
+}
 
-    lines = ["", "### Current Debts"]
-    total_balance = 0
-    total_min_payment = 0
+SYSTEM_PROMPT = """You are the household's financial analyst. They run a \
+bucket-based plan, not a line-item budget, and they have made a deliberate \
+choice about what they want to think about.
 
-    for d in debts:
-        bal = effective_balance(d, db)
-        total_balance += bal
-        total_min_payment += d.monthly_payment + d.monthly_extra
-        debt_type = "Line of Credit" if d.debt_type == "loc" else "Loan"
-        rate_str = f" @ {d.interest_rate * 100:.2f}% p.a." if d.interest_rate else " (0% interest)"
+What they want scrutinised:
+- Fixed costs — the recurring bills. Every dollar cut here is permanent, so this \
+is where you look hardest. Name specific bills, specific amounts, and the \
+specific action (cancel, renegotiate, switch, re-shop at renewal).
+- Short-term savings — is each goal actually funded at a rate that reaches it by \
+its date? If not, say the monthly number that would.
+- Meaningful savings — long-term money. Contribution room left, employer match \
+left on the table, whether the rate supports their retirement target.
 
-        if d.debt_type == "loc":
-            available = max(0, (d.credit_limit or 0) - bal)
-            monthly_interest = bal * (d.interest_rate / 12) if d.interest_rate else 0
-            lines.append(
-                f"- **{d.name}** ({debt_type}, {d.creditor}){rate_str}: "
-                f"${bal:,.0f} outstanding / ${d.credit_limit:,.0f} limit "
-                f"(${available:,.0f} available) — min payment ${d.monthly_payment:,.0f}/mo, "
-                f"monthly interest ~${monthly_interest:,.0f}"
-            )
-        else:
-            months_left = None
-            if d.monthly_payment + d.monthly_extra > 0 and bal > 0:
-                total_pmt = d.monthly_payment + d.monthly_extra
-                if d.interest_rate:
-                    r = d.interest_rate / 12
-                    if total_pmt > bal * r:
-                        months_left = int(math.ceil(math.log(total_pmt / (total_pmt - bal * r)) / math.log(1 + r)))
-                else:
-                    months_left = int(math.ceil(bal / total_pmt)) if total_pmt > 0 else None
-            payoff_str = f", payoff in ~{months_left} months" if months_left else ""
-            lines.append(
-                f"- **{d.name}** ({debt_type}, {d.creditor}){rate_str}: "
-                f"${bal:,.0f} remaining — "
-                f"${d.monthly_payment + d.monthly_extra:,.0f}/mo total payment{payoff_str}"
-            )
+## Scope — do not volunteer advice outside it
 
+Answer about fixed costs and the two savings buckets. Nothing else is in scope \
+unless the data forces it.
+
+- Guilt-free spending is one number. If the total is inside the plan, say so in \
+one line and move on. Never itemise it. Never suggest cutting restaurants, \
+coffee, subscriptions, travel, or any other purchase inside it. Never comment on \
+what it was spent on. If it is over plan, say by how much and name the one \
+structural fix — raise the target and fund it from another bucket, or bring the \
+total down by $X/month — and let them choose which purchases.
+- No lifestyle commentary, no moralising, no praise padding, no motivational \
+framing.
+- No generic personal-finance boilerplate. They already know what an emergency \
+fund is, that compound interest exists, and that they should spend less than \
+they earn. Say only what is true of *these* numbers.
+- Do not invent adjacent topics — wills, side income, budgeting apps, mortgage \
+refinancing, insurance products — unless a number in the data makes it \
+unavoidable, and then in one line.
+
+## Numbers — never invent one
+
+- Cite only figures that appear in the data above, or arithmetic you do on them. \
+Show the arithmetic when it is not obvious.
+- If a conclusion needs data that is not there, say exactly what is missing and \
+stop. "Not enough history to tell" is a valid and useful answer.
+- Do not project a trend from fewer than three months of data, and say so when \
+the sample is thin.
+- Never present an estimate as a measurement. Mark assumptions as assumptions.
+
+## Length and tone
+
+- Hard cap: roughly one screen. Under 500 words. If you are choosing what to cut, \
+cut commentary, not numbers.
+- Lead with the answer. No preamble, no throat-clearing, no summary of the data \
+back at them before you analyse it.
+- Every recommendation carries a dollar amount and a timeframe. "Reduce spending" \
+is useless; "cancel the $34/mo security monitoring, saves $408/yr" is useful.
+- No closing pep talk. End on the last real point.
+- Canadian dollars, Canadian tax rules (RRSP, TFSA, ESPP, CPP, OAS).
+- Markdown, ## and ### headings, tight prose."""
+
+
+# ---------------------------------------------------------------------------
+# Context sections
+# ---------------------------------------------------------------------------
+
+def _fmt(n: float) -> str:
+    return f"${n:,.0f}"
+
+
+def _period_label(year: int, m0: int, m1: int) -> str:
+    if m0 == 1 and m1 == 12:
+        return f"Full Year {year}"
+    if m0 == m1:
+        return f"{MONTH_NAMES[m0]} {year}"
+    span = m1 - m0 + 1
+    if span == 3 and m0 in (1, 4, 7, 10):
+        return f"Q{(m0 - 1) // 3 + 1} {year}"
+    if span == 6 and m0 in (1, 7):
+        return f"H{1 if m0 == 1 else 2} {year}"
+    return f"{MONTH_NAMES[m0]}–{MONTH_NAMES[m1]} {year}"
+
+
+def _standing_instructions(db: Session) -> list[str]:
+    """House rules and debt stance the household set in Settings.
+
+    These are the household's own standing instructions. They override the
+    analyst's defaults about *what to look at*; they do not override the
+    output contract or the guardrails on inventing numbers.
+    """
+    rules_row = db.get(models.AppSettings, HOUSE_RULES_KEY)
+    stance_row = db.get(models.AppSettings, DEBT_STANCE_KEY)
+    rules = (rules_row.value if rules_row else "").strip()
+    stance = (stance_row.value if stance_row else "unsure").strip()
+
+    lines = ["## Standing Instructions From The Household", ""]
+    lines.append("Debt payoff stance: " + DEBT_STANCES.get(stance, DEBT_STANCES["unsure"]))
+    if rules:
+        lines += [
+            "",
+            "House rules — facts and constraints they have already decided. Treat "
+            "these as given, do not argue with them, and do not recommend anything "
+            "they rule out:",
+            "",
+            *[f"> {line}" for line in rules.splitlines()],
+        ]
     lines += [
-        f"- **Total debt: ${total_balance:,.0f}** | Total committed payments: ${total_min_payment:,.0f}/mo",
+        "",
+        "These are context, not a task. Follow the report format regardless, and "
+        "they never license citing a number that is not in the data below.",
+        "",
     ]
     return lines
 
 
 def _household_header(db: Session) -> list[str]:
-    """Returns prompt lines declaring the household composition from app settings."""
     p1 = db.get(models.AppSettings, "person_1")
     p2 = db.get(models.AppSettings, "person_2")
     p1_name = p1.value if p1 else "Person 1"
     p2_name = p2.value if p2 else "Person 2"
     return [
-        f"This is a 2-person Canadian household: {p1_name} and {p2_name}.",
-        "Income records may contain multiple entries per person per month (e.g. bi-weekly paycheques) — treat them as paycheques from the same person, not separate people.",
+        f"Two-person Canadian household: {p1_name} and {p2_name}.",
+        "Income rows are individual paycheques — several per person per month is "
+        "normal (bi-weekly pay), not several people.",
         "",
     ]
 
 
-def _aggregate_income(rows) -> list[tuple[str, str, float]]:
-    """Aggregate raw income rows into (person, income_type, total) tuples."""
-    agg: dict[tuple, float] = {}
-    for r in rows:
-        key = (r.person, r.income_type)
-        agg[key] = agg.get(key, 0) + float(r.amount if hasattr(r, 'amount') else r.total)
-    return [(person, itype, total) for (person, itype), total in sorted(agg.items())]
-
-
-def _build_insights_context(year: int, month: Optional[int], db: Session,
-                             start_month: Optional[int] = None, end_month: Optional[int] = None) -> str:
-    """Build the AI prompt context. Dispatches to the appropriate builder."""
-    if start_month and end_month:
-        return _build_multi_month_context(year, start_month, end_month, db)
-    if month:
-        return _build_monthly_context(year, month, db)
-    return _build_annual_context(year, db)
-
-
-def _build_multi_month_context(year: int, start_month: int, end_month: int, db: Session) -> str:
-    """Quarterly or semi-annual analysis context."""
-    num_months = end_month - start_month + 1
-    if num_months == 3:
-        quarter = (start_month - 1) // 3 + 1
-        period_label = f"Q{quarter} {year}"
-        period_type = f"Quarter {quarter}"
-    elif num_months == 6:
-        half = 1 if start_month == 1 else 2
-        period_label = f"H{half} {year}"
-        period_type = f"{'First' if half == 1 else 'Second'} Half"
-    else:
-        period_label = f"{MONTH_NAMES[start_month]}–{MONTH_NAMES[end_month]} {year}"
-        period_type = f"{num_months}-month period"
-
-    cat_rows = db.execute(
-        select(models.Transaction.category, func.sum(models.Transaction.amount).label("total"))
-        .where(models.Transaction.year == year,
-               models.Transaction.month >= start_month,
-               models.Transaction.month <= end_month)
-        .group_by(models.Transaction.category)
-        .order_by(func.sum(models.Transaction.amount).desc())
-    ).all()
-
-    raw_income = db.execute(
-        select(models.Income.person, models.Income.income_type, models.Income.amount)
-        .where(models.Income.year == year,
-               models.Income.month >= start_month,
-               models.Income.month <= end_month)
-    ).all()
-    income_rows = _aggregate_income(raw_income)
-    total_income = sum(t for _, _, t in income_rows)
-
-    monthly_exp = db.execute(
-        select(models.Transaction.month, func.sum(models.Transaction.amount).label("total"))
-        .where(models.Transaction.year == year,
-               models.Transaction.month >= start_month,
-               models.Transaction.month <= end_month)
-        .group_by(models.Transaction.month).order_by(models.Transaction.month)
-    ).all()
-    monthly_inc = db.execute(
-        select(models.Income.month, func.sum(models.Income.amount).label("total"))
-        .where(models.Income.year == year,
-               models.Income.month >= start_month,
-               models.Income.month <= end_month)
-        .group_by(models.Income.month).order_by(models.Income.month)
-    ).all()
-    inc_by_month = {r.month: r.total for r in monthly_inc}
-    exp_by_month = {r.month: r.total for r in monthly_exp}
-
-    target_rows = db.execute(
-        select(models.BudgetTarget.category,
-               func.avg(models.BudgetTarget.amount).label("avg_amount"))
-        .where(models.BudgetTarget.year == year,
-               models.BudgetTarget.month >= start_month,
-               models.BudgetTarget.month <= end_month)
-        .group_by(models.BudgetTarget.category)
-    ).all()
-    targets = {r.category: r.avg_amount * num_months for r in target_rows}
-
-    total_expenses = sum(r.total for r in cat_rows)
-    savings = total_income - total_expenses
-    savings_rate = (savings / total_income * 100) if total_income else 0
-
+def _plan_section(summary: dict) -> list[str]:
+    """The headline: target vs actual for each of the four buckets."""
+    months = summary["months"]
+    per = "per month" if months > 1 else "this month"
     lines = [
-        "You are a personal finance advisor analyzing a Canadian household budget.",
+        "## The Plan",
         "",
-        *_household_header(db),
-        f"## Period: {period_label} ({MONTH_NAMES[start_month]} – {MONTH_NAMES[end_month]} {year})",
+        f"Monthly plan base (take-home + payroll RRSP/ESPP): "
+        f"{_fmt(summary['plan_base_monthly'])} {per}"
+        + (f" — {_fmt(summary['plan_base'])} over {months} months" if months > 1 else ""),
         "",
-        "### Income",
+        "| Bucket | Target % | Target $/mo | Actual $/mo | Actual % | Variance $/mo |",
+        "|---|---|---|---|---|---|",
     ]
-    if income_rows:
-        for person, itype, total in income_rows:
-            lines.append(f"- {person} ({itype}): ${total:,.0f}")
-    else:
-        lines.append("- No income recorded for this period")
-    lines.append(f"- **Total household income: ${total_income:,.0f}**")
-
-    lines += ["", "### Month-by-Month Breakdown",
-              "| Month | Income | Expenses | Net |", "|---|---|---|---|"]
-    for m in range(start_month, end_month + 1):
-        inc = inc_by_month.get(m, 0)
-        exp = exp_by_month.get(m, 0)
-        lines.append(f"| {MONTH_NAMES[m]} | ${inc:,.0f} | ${exp:,.0f} | ${inc - exp:,.0f} |")
-
+    for b in summary["buckets"]:
+        var = b["variance"] / months
+        var_str = f"+{_fmt(var)} over" if var > 0 else f"{_fmt(abs(var))} under"
+        lines.append(
+            f"| {b['label']} | {b['target_pct']:.0f}% | {_fmt(b['target_monthly'])} | "
+            f"{_fmt(b['actual_monthly'])} | {b['actual_pct']:.0f}% | {var_str} |"
+        )
+    unallocated = summary["unallocated"] / months
     lines += [
         "",
-        f"### Spending by Category (total: ${total_expenses:,.0f}, avg ${total_expenses / num_months:,.0f}/mo)",
-        "| Category | Period Total | Monthly Avg | Budget (period) | vs Budget |",
-        "|---|---|---|---|---|",
+        f"Unallocated (plan base minus everything above): {_fmt(unallocated)}/mo. "
+        "Positive means money that landed nowhere the plan tracks — most likely "
+        "sitting in chequing, or savings the household made without recording it.",
     ]
-    for r in cat_rows:
-        avg = r.total / num_months
-        budget = targets.get(r.category)
-        vs_budget = (f"+${r.total - budget:,.0f} over" if budget and r.total > budget
-                     else (f"${budget - r.total:,.0f} under" if budget else "N/A"))
-        lines.append(f"| {r.category} | ${r.total:,.0f} | ${avg:,.0f}/mo | {'$' + f'{budget:,.0f}' if budget else 'N/A'} | {vs_budget} |")
-
-    lines += [
-        "",
-        f"### {period_label} Summary",
-        f"- Period expenses: ${total_expenses:,.0f} (${total_expenses / num_months:,.0f}/month avg)",
-        f"- Period income: ${total_income:,.0f}",
-        f"- Net savings: ${savings:,.0f} ({savings_rate:.1f}% savings rate)",
-        "",
-        "---",
-        "",
-        f"Please provide actionable, specific financial insights for this {period_type}. Include:",
-        "1. **Overall performance** — how did spending and savings compare to expectations?",
-        "2. **Top spending categories** — which dominated and are they sustainable?",
-        "3. **Month-to-month trends** — how did spending evolve within this period? Any notable spikes or improvements?",
-        "4. **Budget adherence** — which categories were significantly over or under budget?",
-        "5. **Trajectory** — are habits improving or worsening compared to what's typical?",
-        f"6. **Recommendations for next {period_type.lower()}** — specific, actionable changes with realistic targets",
-        "7. **One priority action** — the single most impactful change to make",
-        "",
-        "Keep the tone practical and encouraging. Use Canadian dollar amounts. Be specific with numbers.",
-    ]
-
-    debt_lines = _build_debt_context(db)
-    if debt_lines and total_income > 0:
-        monthly_surplus = savings / num_months
-        lines += debt_lines
+    if summary["unmapped_categories"]:
+        names = ", ".join(c["category"] for c in summary["unmapped_categories"][:8])
         lines += [
             "",
-            "---",
-            "",
-            "**Debt Strategy:**",
-            f"Average monthly surplus this period: ${monthly_surplus:,.0f}",
-            "8. **Recommended debt payments** — given this surplus, what's the optimal allocation to each debt?",
+            f"Note: these categories have no bucket assigned and were counted as "
+            f"guilt-free: {names}. Flag this if it materially changes the picture.",
         ]
+    return lines
 
-    return "\n".join(lines)
+
+def _bucket_of(summary: dict, key: str) -> dict:
+    return next(b for b in summary["buckets"] if b["bucket"] == key)
 
 
-def _build_monthly_context(year: int, month: int, db: Session) -> str:
-    """Single-month analysis context."""
-    cat_rows = db.execute(
-        select(models.Transaction.category, func.sum(models.Transaction.amount).label("total"))
-        .where(models.Transaction.year == year, models.Transaction.month == month)
-        .group_by(models.Transaction.category)
-        .order_by(func.sum(models.Transaction.amount).desc())
-    ).all()
+def _fixed_section(db: Session, summary: dict, year: int, m0: int, m1: int) -> list[str]:
+    """Every fixed cost, with a trailing comparison so creep is visible."""
+    fixed = _bucket_of(summary, FIXED)
+    months = summary["months"]
+    mapping = bucket_map(db)
 
-    raw_income = db.execute(
-        select(models.Income.person, models.Income.income_type, models.Income.amount)
-        .where(models.Income.year == year, models.Income.month == month)
-    ).all()
-    income_rows = _aggregate_income(raw_income)
-    total_income = sum(t for _, _, t in income_rows)
-
-    target_rows = db.execute(
-        select(models.BudgetTarget.category, models.BudgetTarget.amount)
-        .where(models.BudgetTarget.year == year, models.BudgetTarget.month == month)
-    ).all()
-    targets = {r.category: r.amount for r in target_rows}
-
-    # Historical averages excluding current month
-    hist_totals = defaultdict(list)
+    # Trailing monthly average per category over the 12 months before m0.
+    hist = defaultdict(list)
     for r in db.execute(
         select(models.Transaction.year, models.Transaction.month, models.Transaction.category,
                func.sum(models.Transaction.amount).label("total"))
-        .where(~((models.Transaction.year == year) & (models.Transaction.month == month)))
+        .where(~((models.Transaction.year == year)
+                 & (models.Transaction.month >= m0)
+                 & (models.Transaction.month <= m1)))
+        .group_by(models.Transaction.year, models.Transaction.month, models.Transaction.category)
+        .order_by(models.Transaction.year.desc(), models.Transaction.month.desc())
+    ).all():
+        if len(hist[r.category]) < 12:
+            hist[r.category].append(float(r.total or 0))
+    prior_avg = {c: sum(v) / len(v) for c, v in hist.items() if v}
+
+    lines = [
+        "",
+        "## Fixed Costs — the bills that repeat",
+        "",
+        f"Total {_fmt(fixed['actual_monthly'])}/mo against a target of "
+        f"{_fmt(fixed['target_monthly'])}/mo "
+        f"({fixed['actual_pct']:.0f}% of plan base, target {fixed['target_pct']:.0f}%).",
+        "",
+        "| Bill | $/mo this period | $/mo trailing 12mo | Change |",
+        "|---|---|---|---|",
+    ]
+    for c in fixed["categories"]:
+        monthly = c["amount"] / months
+        prior = prior_avg.get(c["category"])
+        if prior and prior > 0:
+            delta = monthly - prior
+            pct = delta / prior * 100
+            change = f"{'+' if delta >= 0 else '−'}{_fmt(abs(delta))} ({pct:+.0f}%)"
+        else:
+            change = "no history"
+        lines.append(
+            f"| {c['category']} | {_fmt(monthly)} | "
+            f"{_fmt(prior) if prior else '—'} | {change} |"
+        )
+
+    recurring = db.execute(
+        select(models.RecurringBill).where(models.RecurringBill.is_active == True)  # noqa: E712
+    ).scalars().all()
+    fixed_recurring = [
+        b for b in recurring if mapping.get(b.category or "", GUILT_FREE) == FIXED
+    ]
+    if fixed_recurring:
+        lines += ["", "Known recurring bills in this bucket:"]
+        for b in sorted(fixed_recurring, key=lambda x: -(x.amount or 0)):
+            lines.append(
+                f"- {b.name} ({b.merchant}) — {_fmt(b.amount or 0)} {b.frequency}"
+                + (f", last seen {b.last_seen}" if b.last_seen else "")
+            )
+    return lines
+
+
+def _short_term_section(db: Session, summary: dict) -> list[str]:
+    """Goals and whether their funding rate actually reaches them."""
+    bucket = _bucket_of(summary, SHORT_TERM)
+    months = summary["months"]
+    lines = [
+        "",
+        "## Short-Term Savings",
+        "",
+        f"Funded {_fmt(bucket['actual_monthly'])}/mo against a target of "
+        f"{_fmt(bucket['target_monthly'])}/mo.",
+    ]
+    if bucket["categories"]:
+        lines.append("")
+        for c in bucket["categories"]:
+            lines.append(f"- {c['category']}: {_fmt(c['amount'] / months)}/mo")
+
+    goals = db.execute(select(models.SavingsGoal)).scalars().all()
+    if goals:
+        lines += ["", "| Goal | Target | Saved | Short by | Target date | Needed $/mo |",
+                  "|---|---|---|---|---|---|"]
+        today = datetime.date.today()
+        for g in goals:
+            current = float(g.current_amount or 0)
+            if g.linked_asset_id:
+                asset = db.get(models.Asset, g.linked_asset_id)
+                if asset:
+                    current = float(asset.balance or 0)
+            gap = max(float(g.target_amount or 0) - current, 0)
+            needed = "—"
+            date_label = g.target_date or "no date"
+            if g.target_date:
+                try:
+                    target = datetime.date.fromisoformat(g.target_date)
+                    months_left = max(
+                        (target.year - today.year) * 12 + (target.month - today.month), 0
+                    )
+                    needed = _fmt(gap / months_left) + "/mo" if months_left else "due now"
+                except ValueError:
+                    pass
+            lines.append(
+                f"| {g.name} | {_fmt(g.target_amount or 0)} | {_fmt(current)} | "
+                f"{_fmt(gap)} | {date_label} | {needed} |"
+            )
+    else:
+        lines += ["", "No savings goals are set up. That is itself worth flagging — "
+                  "short-term savings without a named destination tends to get spent."]
+
+    ef = _emergency_fund(db)
+    if ef:
+        lines += ["", f"Emergency fund: {_fmt(ef['liquid_cash'])} liquid cash against "
+                  f"{_fmt(ef['avg_monthly_expenses'])}/mo of expenses — "
+                  f"{ef['months_covered'] if ef['months_covered'] is not None else '—'} months of runway."]
+    return lines
+
+
+def _emergency_fund(db: Session) -> Optional[dict]:
+    """Liquid cash measured against the last three months of spending."""
+    cash = db.execute(
+        select(func.sum(models.Asset.balance))
+        .where(models.Asset.asset_type == "cash", models.Asset.liquidity == "liquid")
+    ).scalar()
+    if cash is None:
+        return None
+    recent = db.execute(
+        select(func.sum(models.Transaction.amount).label("total"))
+        .where(models.Transaction.amount > 0)
+        .group_by(models.Transaction.year, models.Transaction.month)
+        .order_by(models.Transaction.year.desc(), models.Transaction.month.desc())
+        .limit(3)
+    ).scalars().all()
+    monthly = sum(float(v or 0) for v in recent) / len(recent) if recent else 0.0
+    return {
+        "liquid_cash": float(cash),
+        "avg_monthly_expenses": round(monthly, 2),
+        "months_covered": round(float(cash) / monthly, 1) if monthly > 0 else None,
+    }
+
+
+def _meaningful_section(db: Session, summary: dict) -> list[str]:
+    """Long-term money: contribution room, employer match, retirement trajectory."""
+    bucket = _bucket_of(summary, MEANINGFUL)
+    months = summary["months"]
+    income = summary["income"]
+    lines = [
+        "",
+        "## Meaningful Savings",
+        "",
+        f"Contributed {_fmt(bucket['actual_monthly'])}/mo against a target of "
+        f"{_fmt(bucket['target_monthly'])}/mo.",
+        "",
+        f"- Payroll RRSP (employee): {_fmt(income['payroll_rrsp_employee'] / months)}/mo",
+        f"- Employer RRSP match: {_fmt(income['payroll_rrsp_employer'] / months)}/mo "
+        "(free money — flag immediately if the match is not being maxed)",
+        f"- ESPP deductions: {_fmt(income['payroll_espp'] / months)}/mo",
+    ]
+    for c in bucket["categories"]:
+        if not c.get("from_payroll"):
+            lines.append(f"- {c['category']}: {_fmt(c['amount'] / months)}/mo")
+
+    profile = db.execute(
+        select(models.RetirementProfile).order_by(models.RetirementProfile.year.desc())
+    ).scalars().first()
+    if profile:
+        lines += [
+            "",
+            "### Retirement profile",
+            f"- Age {profile.current_age} → target retirement {profile.target_retirement_age}",
+            f"- Target annual income in today's dollars: {_fmt(profile.target_annual_income or 0)}",
+            f"- RRSP room remaining: {_fmt(profile.rrsp_room or 0)} | "
+            f"TFSA room remaining: {_fmt(profile.tfsa_room or 0)}",
+            f"- Marginal tax rate: {(profile.marginal_rate or 0) * 100:.1f}% "
+            "(use this to price the tax benefit of an RRSP contribution)",
+            f"- Assumptions: {(profile.expected_return or 0) * 100:.1f}% return, "
+            f"{(profile.expected_inflation or 0) * 100:.1f}% inflation, "
+            f"{(profile.swr or 0) * 100:.1f}% withdrawal rate",
+        ]
+
+    assets = db.execute(select(models.Asset)).scalars().all()
+    if assets:
+        by_type = defaultdict(float)
+        for a in assets:
+            by_type[a.asset_type or "other"] += float(a.balance or 0)
+        lines += ["", "### Assets",
+                  *[f"- {k}: {_fmt(v)}" for k, v in sorted(by_type.items(), key=lambda kv: -kv[1])]]
+    return lines
+
+
+def _guilt_free_section(db: Session, summary: dict, year: int, m0: int, m1: int) -> list[str]:
+    """One number. Deliberately no category breakdown."""
+    bucket = _bucket_of(summary, GUILT_FREE)
+    months = summary["months"]
+    mapping = bucket_map(db)
+
+    # Trailing monthly guilt-free total, for context on whether this is normal.
+    trailing = defaultdict(float)
+    for r in db.execute(
+        select(models.Transaction.year, models.Transaction.month, models.Transaction.category,
+               func.sum(models.Transaction.amount).label("total"))
+        .where(~((models.Transaction.year == year)
+                 & (models.Transaction.month >= m0)
+                 & (models.Transaction.month <= m1)))
         .group_by(models.Transaction.year, models.Transaction.month, models.Transaction.category)
     ).all():
-        hist_totals[r.category].append(r.total)
-    hist_avg = {cat: sum(v) / len(v) for cat, v in hist_totals.items()}
+        if mapping.get(r.category, GUILT_FREE) == GUILT_FREE:
+            trailing[(r.year, r.month)] += float(r.total or 0)
+    recent = [v for _, v in sorted(trailing.items(), reverse=True)[:12]]
+    trailing_avg = sum(recent) / len(recent) if recent else None
 
-    ytd_exp = db.execute(select(func.sum(models.Transaction.amount))
-        .where(models.Transaction.year == year, models.Transaction.month <= month)).scalar() or 0
-    ytd_inc = db.execute(select(func.sum(models.Income.amount))
-        .where(models.Income.year == year, models.Income.month <= month)).scalar() or 0
-
-    total_expenses = sum(r.total for r in cat_rows)
-    savings = total_income - total_expenses
-    savings_rate = (savings / total_income * 100) if total_income else 0
-    month_label = MONTH_NAMES[month]
-
+    var = bucket["variance"] / months
     lines = [
-        "You are a personal finance advisor analyzing a Canadian household budget.",
         "",
-        *_household_header(db),
-        f"## Period: {month_label} {year}",
+        "## Guilt-Free Spending",
         "",
-        "### Income",
+        f"- This period: {_fmt(bucket['actual_monthly'])}/mo",
+        f"- Plan: {_fmt(bucket['target_monthly'])}/mo ({bucket['target_pct']:.0f}% of plan base)",
+        f"- Trailing 12-month average: {_fmt(trailing_avg)}/mo" if trailing_avg else
+        "- No trailing history yet",
+        f"- Variance: {'+' + _fmt(var) + ' over plan' if var > 0 else _fmt(abs(var)) + ' under plan'}",
+        "",
+        "Do not break this down by category and do not suggest which purchases to "
+        "cut. One or two lines: is the number inside the plan, and if not, what is "
+        "the structural fix.",
     ]
-    if income_rows:
-        for person, itype, total in income_rows:
-            lines.append(f"- {person} ({itype}): ${total:,.0f}")
-    else:
-        lines.append("- No income recorded for this month")
-    lines.append(f"- **Total household income: ${total_income:,.0f}**")
-    lines += [
-        "",
-        f"### Spending by Category (total: ${total_expenses:,.0f})",
-        "| Category | This Month | Budget | Hist. Avg | vs Budget | vs Avg |",
-        "|---|---|---|---|---|---|",
-    ]
-    for r in cat_rows:
-        budget = targets.get(r.category)
-        avg = hist_avg.get(r.category)
-        vs_budget = f"+${r.total - budget:,.0f} over" if budget and r.total > budget else (f"${budget - r.total:,.0f} under" if budget else "N/A")
-        vs_avg = f"+${r.total - avg:,.0f} ({((r.total / avg) - 1) * 100:.0f}%)" if avg else "N/A"
-        lines.append(f"| {r.category} | ${r.total:,.0f} | {'$' + f'{budget:,.0f}' if budget else 'N/A'} | {'$' + f'{avg:,.0f}' if avg else 'N/A'} | {vs_budget} | {vs_avg} |")
-
-    lines += [
-        "",
-        "### Month Summary",
-        f"- Net savings: ${savings:,.0f} ({savings_rate:.1f}% savings rate)",
-        f"- YTD income: ${ytd_inc:,.0f} | YTD expenses: ${ytd_exp:,.0f} | YTD balance: ${ytd_inc - ytd_exp:,.0f}",
-        "",
-        "---",
-        "",
-        "Please provide actionable, specific financial insights for this household. Include:",
-        "1. **Top spending concerns** — categories that are high vs budget or historical average",
-        "2. **Positive patterns** — where they are doing well",
-        "3. **Concrete suggestions** — specific ways to reduce spending with realistic targets",
-        "4. **Savings outlook** — comment on the savings rate and any recommendations",
-        "5. **One priority action** — the single most impactful thing they could do this month",
-        "",
-        "Keep the tone practical and encouraging. Use Canadian dollar amounts. Be specific with numbers.",
-    ]
-
-    debt_lines = _build_debt_context(db)
-    if debt_lines:
-        lines += debt_lines
-        lines += [
-            "",
-            "---",
-            "",
-            "**Debt Payoff Recommendations:**",
-            f"Given the household income of ${total_income:,.0f}/month and expenses of ${total_expenses:,.0f}/month (leaving ${savings:,.0f}/month):",
-            "6. **Recommended monthly payment per debt** — calculate the optimal payment for each debt to pay them off efficiently. Show the math: how much goes to each debt, what order, and the projected payoff date.",
-            "7. **Acceleration opportunity** — if they freed up $200-500/month, how much faster could they be debt-free?",
-            "8. **Interest cost warning** — for any debts with interest rates, show the total interest they'll pay at current payment pace vs an accelerated pace.",
-            "",
-            "Keep the tone practical and encouraging. Use Canadian dollar amounts. Be specific with numbers.",
-        ]
-
-    return "\n".join(lines)
+    return lines
 
 
-def _build_annual_context(year: int, db: Session) -> str:
-    """Full-year analysis context."""
-    # All transactions this year by category
-    cat_rows = db.execute(
-        select(models.Transaction.category, func.sum(models.Transaction.amount).label("total"))
-        .where(models.Transaction.year == year)
-        .group_by(models.Transaction.category)
-        .order_by(func.sum(models.Transaction.amount).desc())
-    ).all()
+def _debt_section(db: Session) -> list[str]:
+    debts = db.execute(select(models.Debt)).scalars().all()
+    if not debts:
+        return []
 
-    # Month-by-month breakdown
-    monthly_exp = db.execute(
-        select(models.Transaction.month, func.sum(models.Transaction.amount).label("total"))
-        .where(models.Transaction.year == year)
-        .group_by(models.Transaction.month)
-        .order_by(models.Transaction.month)
-    ).all()
-    monthly_inc = db.execute(
-        select(models.Income.month, func.sum(models.Income.amount).label("total"))
-        .where(models.Income.year == year)
-        .group_by(models.Income.month)
-        .order_by(models.Income.month)
-    ).all()
-    inc_by_month = {r.month: r.total for r in monthly_inc}
-    exp_by_month = {r.month: r.total for r in monthly_exp}
+    lines = ["", "## Debts", "",
+             "| Debt | Type | Rate | Balance | Payment/mo | Payoff |",
+             "|---|---|---|---|---|---|"]
+    total_balance = 0.0
+    total_payment = 0.0
+    for d in debts:
+        bal = effective_balance(d, db)
+        total_balance += bal
+        pmt = (d.monthly_payment or 0) + (d.monthly_extra or 0)
+        total_payment += pmt
+        rate = f"{d.interest_rate * 100:.2f}%" if d.interest_rate else "0%"
+        dtype = {"loc": "LOC", "mortgage": "Mortgage"}.get(d.debt_type, "Loan")
+        payoff = "—"
+        if pmt > 0 and bal > 0:
+            if d.interest_rate:
+                r = d.interest_rate / 12
+                if pmt > bal * r:
+                    payoff = f"~{int(math.ceil(math.log(pmt / (pmt - bal * r)) / math.log(1 + r)))} mo"
+                else:
+                    payoff = "never at this payment"
+            else:
+                payoff = f"~{int(math.ceil(bal / pmt))} mo"
+        lines.append(
+            f"| {d.name} ({d.creditor}) | {dtype} | {rate} | {_fmt(bal)} | "
+            f"{_fmt(pmt)} | {payoff} |"
+        )
+    lines.append(f"| **Total** | | | **{_fmt(total_balance)}** | "
+                 f"**{_fmt(total_payment)}** | |")
+    return lines
 
-    # Annual totals
-    total_expenses = sum(r.total for r in cat_rows)
-    total_income = db.execute(
-        select(func.sum(models.Income.amount)).where(models.Income.year == year)
-    ).scalar() or 0
 
-    # Prior year for comparison
-    prior_cat = db.execute(
-        select(models.Transaction.category, func.sum(models.Transaction.amount).label("total"))
-        .where(models.Transaction.year == year - 1)
-        .group_by(models.Transaction.category)
-    ).all()
-    prior_totals = {r.category: r.total for r in prior_cat}
-    prior_income = db.execute(
-        select(func.sum(models.Income.amount)).where(models.Income.year == year - 1)
-    ).scalar() or 0
-    prior_expenses = sum(r.total for r in prior_cat)
-
-    # Budget targets for the year (use any month's targets as reference — average them)
-    target_rows = db.execute(
-        select(models.BudgetTarget.category, func.avg(models.BudgetTarget.amount).label("avg_amount"))
-        .where(models.BudgetTarget.year == year)
-        .group_by(models.BudgetTarget.category)
-    ).all()
-    targets = {r.category: r.avg_amount * 12 for r in target_rows}  # annualise monthly budgets
-
-    # Peak spending month per top category
-    peak_rows = db.execute(
-        select(models.Transaction.category, models.Transaction.month,
+def _trend_section(db: Session, year: int) -> list[str]:
+    """Month-by-month bucket totals — makes drift visible."""
+    mapping = bucket_map(db)
+    rows = db.execute(
+        select(models.Transaction.month, models.Transaction.category,
                func.sum(models.Transaction.amount).label("total"))
         .where(models.Transaction.year == year)
-        .group_by(models.Transaction.category, models.Transaction.month)
+        .group_by(models.Transaction.month, models.Transaction.category)
     ).all()
-    cat_monthly = defaultdict(dict)
-    for r in peak_rows:
-        cat_monthly[r.category][r.month] = r.total
+    by_month = defaultdict(lambda: defaultdict(float))
+    for r in rows:
+        by_month[r.month][mapping.get(r.category, GUILT_FREE)] += float(r.total or 0)
 
-    # Savings by month
-    savings_by_month = {m: inc_by_month.get(m, 0) - exp_by_month.get(m, 0) for m in range(1, 13)}
-    best_month = max(savings_by_month, key=savings_by_month.get)
-    worst_month = min(savings_by_month, key=savings_by_month.get)
+    payroll = db.execute(
+        select(models.Income.month,
+               func.sum(models.Income.rrsp_employee).label("rrsp"),
+               func.sum(models.Income.espp_deduction).label("espp"),
+               func.sum(models.Income.amount).label("take_home"))
+        .where(models.Income.year == year)
+        .group_by(models.Income.month)
+    ).all()
+    base_by_month = {}
+    for r in payroll:
+        contributed = float(r.rrsp or 0) + float(r.espp or 0)
+        by_month[r.month][MEANINGFUL] += contributed
+        base_by_month[r.month] = float(r.take_home or 0) + contributed
 
-    total_savings = total_income - total_expenses
-    savings_rate = (total_savings / total_income * 100) if total_income else 0
+    months = sorted(set(by_month) | set(base_by_month))
+    if not months:
+        return []
+    lines = ["", f"## Month-by-Month Buckets ({year})", "",
+             "| Month | Plan base | Fixed | Short-term | Meaningful | Guilt-free |",
+             "|---|---|---|---|---|---|"]
+    for m in months:
+        d = by_month[m]
+        lines.append(
+            f"| {MONTH_NAMES[m][:3]} | {_fmt(base_by_month.get(m, 0))} | "
+            f"{_fmt(d[FIXED])} | {_fmt(d[SHORT_TERM])} | "
+            f"{_fmt(d[MEANINGFUL])} | {_fmt(d[GUILT_FREE])} |"
+        )
+    return lines
 
-    months_with_data = [m for m in range(1, 13) if exp_by_month.get(m, 0) > 0]
-    last_month_label = MONTH_NAMES[max(months_with_data)] if months_with_data else "N/A"
 
+def build_insights_context(db: Session, year: int, m0: int, m1: int) -> str:
+    summary = build_bucket_summary(db, year, m0, m1)
+    label = _period_label(year, m0, m1)
     lines = [
-        "You are a personal finance advisor analyzing a Canadian household budget.",
-        "",
         *_household_header(db),
-        f"## Period: Full Year {year} (through {last_month_label})",
+        *_standing_instructions(db),
+        f"# {label}",
         "",
-        f"### Annual Totals",
-        f"- Total household income: ${total_income:,.0f}",
-        f"- Total expenses: ${total_expenses:,.0f}",
-        f"- Net savings: **${total_savings:,.0f}** ({savings_rate:.1f}% savings rate)",
+        *_plan_section(summary),
+        *_fixed_section(db, summary, year, m0, m1),
+        *_short_term_section(db, summary),
+        *_meaningful_section(db, summary),
+        *_guilt_free_section(db, summary, year, m0, m1),
+        *_debt_section(db),
+        *_trend_section(db, year),
     ]
-
-    if prior_income or prior_expenses:
-        prior_savings = prior_income - prior_expenses
-        inc_chg = ((total_income - prior_income) / prior_income * 100) if prior_income else 0
-        exp_chg = ((total_expenses - prior_expenses) / prior_expenses * 100) if prior_expenses else 0
-        lines += [
-            "",
-            f"### Year-over-Year vs {year - 1}",
-            f"- Income: ${total_income:,.0f} vs ${prior_income:,.0f} ({inc_chg:+.1f}%)",
-            f"- Expenses: ${total_expenses:,.0f} vs ${prior_expenses:,.0f} ({exp_chg:+.1f}%)",
-            f"- Savings: ${total_savings:,.0f} vs ${prior_savings:,.0f}",
-        ]
-
-    lines += [
-        "",
-        "### Month-by-Month Summary",
-        "| Month | Income | Expenses | Savings | Rate |",
-        "|---|---|---|---|---|",
-    ]
-    for m in range(1, 13):
-        inc = inc_by_month.get(m, 0)
-        exp = exp_by_month.get(m, 0)
-        if inc == 0 and exp == 0:
-            continue
-        sav = inc - exp
-        rate = f"{sav / inc * 100:.0f}%" if inc else "—"
-        lines.append(f"| {MONTH_NAMES[m][:3]} | ${inc:,.0f} | ${exp:,.0f} | ${sav:,.0f} | {rate} |")
-
-    lines += [
-        "",
-        f"### Spending by Category (annual total: ${total_expenses:,.0f})",
-        "| Category | Annual Total | Annual Budget | vs {yr_prior} | Peak Month |".format(yr_prior=year - 1),
-        "|---|---|---|---|---|",
-    ]
-    for r in cat_rows:
-        budget = targets.get(r.category)
-        prior = prior_totals.get(r.category)
-        vs_prior = f"+${r.total - prior:,.0f} ({((r.total / prior) - 1) * 100:.0f}%)" if prior else "N/A"
-        peak_m = max(cat_monthly.get(r.category, {1: 0}), key=cat_monthly.get(r.category, {1: 0}).get)
-        peak_label = MONTH_NAMES[peak_m][:3] if cat_monthly.get(r.category) else "—"
-        vs_budget = f"${budget - r.total:,.0f} under" if budget and r.total <= budget else (f"+${r.total - budget:,.0f} over" if budget else "N/A")
-        lines.append(f"| {r.category} | ${r.total:,.0f} | {'$' + f'{budget:,.0f}' if budget else 'N/A'} ({vs_budget}) | {vs_prior} | {peak_label} |")
-
-    lines += [
-        "",
-        f"### Savings Patterns",
-        f"- Best month: {MONTH_NAMES[best_month]} (saved ${savings_by_month[best_month]:,.0f})",
-        f"- Worst month: {MONTH_NAMES[worst_month]} (saved ${savings_by_month[worst_month]:,.0f})",
-        "",
-        "---",
-        "",
-        "Please provide a comprehensive annual financial review for this household. Include:",
-        "1. **Annual performance summary** — overall savings rate, income vs expenses trend vs prior year",
-        "2. **Top spending categories** — which categories drove the most spending and how they compare to prior year",
-        "3. **Budget adherence** — where they stayed within budget and where they overspent",
-        "4. **Seasonal patterns** — months with unusually high/low spending and why that might be",
-        "5. **Savings rate analysis** — is the rate healthy? What would move it meaningfully?",
-        "6. **Top 3 priorities for next year** — specific, actionable goals based on this year's data",
-        "",
-        "Keep the tone practical and encouraging. Use Canadian dollar amounts. Be specific with numbers.",
-    ]
-
-    debt_lines = _build_debt_context(db)
-    if debt_lines:
-        avg_monthly_income = total_income / len([m for m in range(1, 13) if inc_by_month.get(m, 0) > 0]) if total_income else 0
-        avg_monthly_expenses = total_expenses / len([m for m in range(1, 13) if exp_by_month.get(m, 0) > 0]) if total_expenses else 0
-        avg_monthly_savings = avg_monthly_income - avg_monthly_expenses
-        lines += debt_lines
-        lines += [
-            "",
-            "---",
-            "",
-            "**Debt Payoff Recommendations:**",
-            f"Average monthly income: ${avg_monthly_income:,.0f} | Average monthly expenses: ${avg_monthly_expenses:,.0f} | Average monthly surplus: ${avg_monthly_savings:,.0f}",
-            "7. **Recommended monthly payment per debt** — based on their income and spending patterns, calculate the optimal payment for each debt. Show the math: recommended amount per debt, payoff order, and projected payoff dates.",
-            "8. **Optimal payoff strategy** — avalanche (highest interest first) vs snowball (lowest balance first). Given their specific debts, which saves more money?",
-            "9. **Acceleration scenario** — if they put an extra $300/month toward debt, which debt should receive it first and how much sooner would they be debt-free?",
-            "10. **Total interest cost** — how much interest will they pay at current pace? How much would they save with the accelerated plan?",
-            "",
-            "Keep the tone practical and encouraging. Use Canadian dollar amounts. Be specific with numbers.",
-        ]
-
     return "\n".join(lines)
+
+
+REPORT_REQUEST = """---
+
+Write the review for this period. Use exactly these sections, in this order:
+
+## Verdict
+Two or three sentences. Which buckets are where they should be, which are not, \
+and the single most consequential fact in this data.
+
+## Do This Next
+Three actions, ranked by dollars saved or moved per unit of effort. Each one: \
+what to do, the exact dollar impact per month and per year, and how long it \
+takes to set up. Draw them from fixed costs and the savings buckets — that is \
+where the leverage is.
+
+## Fixed Costs
+What moved and why it matters. Call out any bill that grew faster than \
+inflation, any duplicate or dormant subscription, and anything worth re-shopping \
+this year. Name the bill and the amount every time.
+
+## Savings
+Short-term: is each goal on pace for its date? Give the monthly number that \
+would put it on pace. Meaningful: is the rate enough for the retirement target, \
+is the employer match fully captured, and is there RRSP or TFSA room being left \
+unused? Price the RRSP contribution at their marginal rate.
+
+## Guilt-Free
+One or two lines. Inside the plan or not, and by how much. Nothing else.
+
+## Watch For
+One or two early warnings visible in this data that are not yet problems."""
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
+def _resolve_range(year: int, month: Optional[int],
+                   start_month: Optional[int], end_month: Optional[int]) -> tuple[int, int]:
+    if start_month and end_month:
+        return max(1, start_month), min(12, end_month)
+    if month:
+        return month, month
+    return 1, 12
+
+
+def _client():
+    import anthropic as anthropic_sdk
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise HTTPException(400, "ANTHROPIC_API_KEY environment variable is not set")
+    return anthropic_sdk.Anthropic(api_key=api_key)
+
+
+def _sse(client, messages: list[dict]) -> StreamingResponse:
+    async def stream():
+        try:
+            with client.messages.stream(
+                model=MODEL,
+                max_tokens=MAX_TOKENS,
+                system=SYSTEM_PROMPT,
+                thinking={"type": "adaptive"},
+                messages=messages,
+            ) as s:
+                for text in s.text_stream:
+                    yield f"data: {json.dumps({'text': text})}\n\n"
+        except Exception as e:  # surfaced in the UI rather than a blank panel
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
 
 
 @router.get("/insights")
@@ -526,31 +614,96 @@ async def get_insights(
     end_month: Optional[int] = None,
     db: Session = Depends(get_db),
 ):
-    import anthropic as anthropic_sdk
+    client = _client()
+    m0, m1 = _resolve_range(year, month, start_month, end_month)
+    context = build_insights_context(db, year, m0, m1)
+    return _sse(client, [{"role": "user", "content": f"{context}\n\n{REPORT_REQUEST}"}])
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise HTTPException(400, "ANTHROPIC_API_KEY environment variable is not set")
 
-    context = _build_insights_context(year, month, db, start_month, end_month)
+@router.get("/insights/context")
+def get_insights_context(
+    year: int,
+    month: Optional[int] = None,
+    start_month: Optional[int] = None,
+    end_month: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    """The exact data the model sees — useful for debugging a surprising answer."""
+    m0, m1 = _resolve_range(year, month, start_month, end_month)
+    return {"context": build_insights_context(db, year, m0, m1)}
 
-    async def stream_insights():
-        client = anthropic_sdk.Anthropic(api_key=api_key)
-        try:
-            with client.messages.stream(
-                model="claude-opus-4-6",
-                max_tokens=8192,
-                thinking={"type": "enabled", "budget_tokens": 5000},
-                messages=[{"role": "user", "content": context}],
-            ) as stream:
-                for text in stream.text_stream:
-                    yield f"data: {json.dumps({'text': text})}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
-        yield "data: [DONE]\n\n"
 
-    return StreamingResponse(stream_insights(), media_type="text/event-stream")
+class AskRequest(BaseModel):
+    year: int
+    month: Optional[int] = None
+    start_month: Optional[int] = None
+    end_month: Optional[int] = None
+    question: str
+    prior_report: Optional[str] = None
 
+
+@router.post("/insights/ask")
+async def ask_insights(body: AskRequest, db: Session = Depends(get_db)):
+    """Follow-up question against the same period's data."""
+    question = (body.question or "").strip()
+    if not question:
+        raise HTTPException(400, "Question is required")
+    client = _client()
+    m0, m1 = _resolve_range(body.year, body.month, body.start_month, body.end_month)
+    context = build_insights_context(db, body.year, m0, m1)
+
+    follow_up = (f"{question}\n\nAnswer this directly and briefly. Use the numbers "
+                 "above; do not repeat the whole review.")
+    if body.prior_report:
+        messages = [
+            {"role": "user", "content": f"{context}\n\n{REPORT_REQUEST}"},
+            {"role": "assistant", "content": body.prior_report},
+            {"role": "user", "content": follow_up},
+        ]
+    else:
+        messages = [{"role": "user", "content": f"{context}\n\n{follow_up}"}]
+    return _sse(client, messages)
+
+
+# ---------------------------------------------------------------------------
+# House rules
+# ---------------------------------------------------------------------------
+
+class HouseRules(BaseModel):
+    house_rules: str = ""
+    debt_stance: str = "unsure"
+
+
+@router.get("/insights/house-rules")
+def get_house_rules(db: Session = Depends(get_db)):
+    rules = db.get(models.AppSettings, HOUSE_RULES_KEY)
+    stance = db.get(models.AppSettings, DEBT_STANCE_KEY)
+    return {
+        "house_rules": rules.value if rules else "",
+        "debt_stance": stance.value if stance else "unsure",
+        "stances": {k: v for k, v in DEBT_STANCES.items()},
+    }
+
+
+@router.put("/insights/house-rules")
+def put_house_rules(body: HouseRules, db: Session = Depends(get_db)):
+    if body.debt_stance not in DEBT_STANCES:
+        raise HTTPException(400, f"Unknown debt stance '{body.debt_stance}'")
+    # Long enough for real constraints, short enough not to swamp the data.
+    rules = body.house_rules.strip()[:4000]
+    for key, value in ((HOUSE_RULES_KEY, rules), (DEBT_STANCE_KEY, body.debt_stance)):
+        row = db.get(models.AppSettings, key)
+        if row:
+            row.value = value
+        else:
+            db.add(models.AppSettings(key=key, value=value))
+    db.commit()
+    return {"house_rules": rules, "debt_stance": body.debt_stance}
+
+
+# ---------------------------------------------------------------------------
+# Insights log
+# ---------------------------------------------------------------------------
 
 class InsightsLogCreate(BaseModel):
     year: int

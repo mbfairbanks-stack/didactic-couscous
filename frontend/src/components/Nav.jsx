@@ -3,32 +3,27 @@ import { useEffect, useRef, useState } from "react";
 import { useSettings } from "../contexts/SettingsContext";
 import { useAuth } from "../contexts/AuthContext";
 
-// Grouped navigation: 5 top-level entries instead of 13 flat links.
+// Bucket-first navigation. The four things that get used weekly are top level;
+// everything else — including the per-category budget tools, which the plan
+// deliberately no longer leads with — lives under More. Nothing is removed:
+// every route is still reachable and every page still has its data.
 const NAV = [
-  { label: "Dashboard", to: "/dashboard" },
+  { label: "Buckets", to: "/buckets" },
+  { label: "Add", to: "/add", cta: true },
+  { label: "Transactions", to: "/transactions" },
+  { label: "AI Insights", to: "/insights" },
   {
-    label: "Spending",
+    label: "More",
     children: [
-      { to: "/transactions", label: "Transactions" },
-      { to: "/budget", label: "Budget" },
-      { to: "/charts", label: "Charts" },
-      { to: "/category-audit", label: "Category Audit" },
-    ],
-  },
-  {
-    label: "Wealth",
-    children: [
+      { to: "/income", label: "Income" },
       { to: "/net-worth", label: "Net Worth" },
       { to: "/debts", label: "Debts" },
       { to: "/retirement", label: "Retirement" },
-    ],
-  },
-  { label: "Income", to: "/income" },
-  {
-    label: "Tools",
-    children: [
-      { to: "/import", label: "Import" },
-      { to: "/insights", label: "AI Insights" },
+      { to: "/dashboard", label: "Dashboard" },
+      { to: "/charts", label: "Charts" },
+      { to: "/budget", label: "Category Budgets", muted: true },
+      { to: "/category-audit", label: "Category Audit", muted: true },
+      { to: "/import", label: "File Import", muted: true },
       { to: "/settings", label: "Settings" },
     ],
   },
@@ -39,6 +34,12 @@ const linkCls = (active) =>
     active
       ? "bg-yellow-400/15 text-yellow-400 ring-1 ring-yellow-400/30"
       : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
+  }`;
+
+// Pasting transactions is the routine chore, so it gets a button, not a link.
+const ctaCls = (active) =>
+  `px-3 py-1.5 rounded-md text-sm font-semibold whitespace-nowrap transition-colors ${
+    active ? "bg-yellow-400 text-zinc-900" : "bg-yellow-400/90 text-zinc-900 hover:bg-yellow-400"
   }`;
 
 function GroupMenu({ group, pathname, openGroup, setOpenGroup }) {
@@ -64,7 +65,11 @@ function GroupMenu({ group, pathname, openGroup, setOpenGroup }) {
               onClick={() => setOpenGroup(null)}
               className={({ isActive }) =>
                 `block px-3 py-2 text-sm transition-colors ${
-                  isActive ? "text-yellow-400 bg-yellow-400/10" : "text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800"
+                  isActive
+                    ? "text-yellow-400 bg-yellow-400/10"
+                    : c.muted
+                      ? "text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800"
+                      : "text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800"
                 }`
               }
             >
@@ -99,7 +104,7 @@ export default function Nav() {
   return (
     <header className="bg-zinc-950/95 backdrop-blur border-b border-zinc-800/80 sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 flex items-center gap-3 h-14" ref={navRef}>
-        <NavLink to="/dashboard" className="shrink-0 flex items-center gap-2" onClick={() => setMenuOpen(false)}>
+        <NavLink to="/buckets" className="shrink-0 flex items-center gap-2" onClick={() => setMenuOpen(false)}>
           <span className="text-yellow-400 font-bold text-base tracking-tight">{householdName}</span>
           <span className="text-zinc-600 text-sm font-medium hidden sm:inline">Budget</span>
           {demo && (
@@ -113,7 +118,8 @@ export default function Nav() {
             item.children ? (
               <GroupMenu key={item.label} group={item} pathname={pathname} openGroup={openGroup} setOpenGroup={setOpenGroup} />
             ) : (
-              <NavLink key={item.to} to={item.to} className={({ isActive }) => linkCls(isActive)}>
+              <NavLink key={item.to} to={item.to}
+                className={({ isActive }) => (item.cta ? ctaCls(isActive) : linkCls(isActive))}>
                 {item.label}
               </NavLink>
             )
@@ -155,7 +161,11 @@ export default function Nav() {
             ) : (
               <NavLink key={item.to} to={item.to} onClick={() => setMenuOpen(false)}
                 className={({ isActive }) =>
-                  `block px-3 py-2.5 rounded-md text-sm font-medium transition-colors ${isActive ? "bg-yellow-400 text-black" : "text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800"}`
+                  `block px-3 py-2.5 rounded-md text-sm transition-colors ${
+                    isActive || item.cta
+                      ? "bg-yellow-400 text-black font-semibold"
+                      : "text-zinc-300 font-medium hover:text-zinc-100 hover:bg-zinc-800"
+                  }`
                 }>
                 {item.label}
               </NavLink>

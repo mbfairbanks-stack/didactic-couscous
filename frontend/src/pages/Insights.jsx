@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { usePeriod } from "../hooks/usePeriod";
-import { streamInsights, getYears, saveInsightsLog, getInsightsLog, deleteInsightsLog } from "../api";
+import { NavLink } from "react-router-dom";
+import {
+  streamInsights, streamInsightsAnswer, getYears, saveInsightsLog,
+  getInsightsLog, deleteInsightsLog,
+} from "../api";
 import { MONTH_LABELS, currentYear, currentMonth } from "../utils";
 
 function inlineFormat(text) {
@@ -113,6 +117,9 @@ export default function Insights() {
   const [error, setError] = useState("");
   const [log, setLog] = useState([]);
   const [expandedLog, setExpandedLog] = useState(null);
+  const [question, setQuestion] = useState("");
+  const [thread, setThread] = useState([]);   // [{ question, answer }]
+  const [asking, setAsking] = useState(false);
   const bottomRef = useRef(null);
 
   const startMonth = mode === "quarter" ? QUARTER_MONTHS[quarter][0]
@@ -132,14 +139,39 @@ export default function Insights() {
     const saved = localStorage.getItem(key);
     if (saved) { setText(saved); setCached(true); }
     else { setText(""); setCached(false); }
+    // A follow-up thread belongs to one period's report.
+    setThread([]);
+    setQuestion("");
   }, [key]);
 
   useEffect(() => {
     if (loading) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [text, loading]);
 
+  const handleAsk = async (raw) => {
+    const q = (raw ?? question).trim();
+    if (!q || asking) return;
+    setQuestion("");
+    setError("");
+    setAsking(true);
+    setThread((t) => [...t, { question: q, answer: "" }]);
+    const update = (fn) =>
+      setThread((t) => t.map((item, i) => (i === t.length - 1 ? { ...item, answer: fn(item.answer) } : item)));
+    try {
+      await streamInsightsAnswer(
+        { year, month: effectiveMonth, startMonth, endMonth, question: q, priorReport: text || null },
+        (chunk) => update((prev) => prev + chunk),
+        () => setAsking(false),
+        (err) => { setError(err); setAsking(false); },
+      );
+    } catch (e) {
+      setError(e.message);
+      setAsking(false);
+    }
+  };
+
   const handleGenerate = async () => {
-    setText(""); setCached(false); setError(""); setLoading(true);
+    setText(""); setCached(false); setError(""); setLoading(true); setThread([]);
     try {
       let full = "";
       await streamInsights(
@@ -175,7 +207,18 @@ export default function Insights() {
 
   return (
     <div className="space-y-6 max-w-3xl">
-      <h1 className="text-2xl font-bold text-zinc-100">AI Insights</h1>
+      <div className="flex items-end justify-between flex-wrap gap-2">
+        <div>
+          <h1 className="text-2xl font-bold text-zinc-100">AI Insights</h1>
+          <p className="text-sm text-zinc-500 mt-0.5">
+            Reads your buckets and says what to change. Guilt-free spending is left alone.
+          </p>
+        </div>
+        <NavLink to="/settings#insights"
+          className="text-xs text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded px-3 py-1.5">
+          House rules
+        </NavLink>
+      </div>
 
       {/* Controls */}
       <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5 space-y-4">
@@ -312,14 +355,62 @@ export default function Insights() {
         </div>
       )}
 
+      {/* Follow-ups run against the same period's data, so answers stay grounded. */}
+      {text && !loading && (
+        <div className="space-y-3">
+          {thread.map((item, i) => (
+            <div key={i} className="space-y-2">
+              <p className="text-sm text-zinc-200 bg-zinc-800/60 rounded-lg px-4 py-2.5">
+                {item.question}
+              </p>
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl px-6 py-4 space-y-0.5">
+                {item.answer ? renderMarkdown(item.answer) : (
+                  <span className="text-xs text-zinc-600">Thinking…</span>
+                )}
+              </div>
+            </div>
+          ))}
+
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleAsk(); }}
+              placeholder="Ask a follow-up — e.g. what would cutting $200 of fixed costs do?"
+              disabled={asking}
+              className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-yellow-400/60 disabled:opacity-50"
+            />
+            <button
+              onClick={() => handleAsk()}
+              disabled={asking || !question.trim()}
+              className="bg-zinc-800 text-zinc-200 px-5 rounded-lg text-sm font-medium hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {asking ? "…" : "Ask"}
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[
+              "Which fixed cost should I attack first, and what is it worth per year?",
+              "Am I on pace for every savings goal? Give me the monthly number for each.",
+              "Is the employer RRSP match fully captured?",
+            ].map((q) => (
+              <button key={q} onClick={() => handleAsk(q)} disabled={asking}
+                className="text-xs text-zinc-500 hover:text-zinc-300 border border-zinc-800 hover:border-zinc-700 rounded-full px-3 py-1.5 disabled:opacity-40">
+                {q}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {!text && !loading && !error && (
         <div className="bg-zinc-900 border border-dashed border-zinc-700 rounded-xl p-10 text-center">
           <p className="text-zinc-500 font-medium mb-1">Analyze {label}</p>
-          <p className="text-zinc-600 text-sm">
-            {mode === "annual" && "Comprehensive annual review: YoY trends, budget adherence, seasonal patterns, and goals."}
-            {mode === "halfyear" && `Six-month review for ${label}: spending trends, budget adherence, and mid-year adjustments.`}
-            {mode === "quarter" && `Quarterly breakdown for ${label}: category performance, monthly trends, and next-quarter priorities.`}
-            {mode === "monthly" && "Monthly insights: spending vs budget, anomalies, and specific savings recommendations."}
+          <p className="text-zinc-600 text-sm max-w-md mx-auto">
+            Fixed costs that crept, savings goals that are off pace, and the three
+            moves worth making — with dollar amounts. Guilt-free spending gets one
+            line and no lecture.
           </p>
         </div>
       )}

@@ -259,7 +259,7 @@ class BulkCategoryUpdate(BaseModel):
 @router.post("/transactions/bulk-category")
 def bulk_update_category(body: BulkCategoryUpdate, db: Session = Depends(get_db)):
     """Reassign all transactions for a merchant from one category to another."""
-    ensure_category(db, body.to_category)
+    to_category = ensure_category(db, body.to_category)
     txns = db.execute(
         select(models.Transaction).where(
             models.Transaction.merchant == body.merchant,
@@ -267,7 +267,7 @@ def bulk_update_category(body: BulkCategoryUpdate, db: Session = Depends(get_db)
         )
     ).scalars().all()
     for txn in txns:
-        txn.category = body.to_category
+        txn.category = to_category
     db.commit()
     return {"updated": len(txns)}
 
@@ -279,10 +279,10 @@ class SetMerchantCategoryRequest(BaseModel):
 @router.post("/transactions/set-merchant-category")
 def set_merchant_category(body: SetMerchantCategoryRequest, db: Session = Depends(get_db)):
     """Reassign ALL transactions for a merchant to a single category."""
-    ensure_category(db, body.category)
+    category = ensure_category(db, body.category)
     result = db.execute(
         text("UPDATE transactions SET category = :cat WHERE merchant = :merchant"),
-        {"cat": body.category, "merchant": body.merchant}
+        {"cat": category, "merchant": body.merchant}
     )
     db.commit()
     return {"updated": result.rowcount}

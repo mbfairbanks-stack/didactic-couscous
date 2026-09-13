@@ -4,6 +4,8 @@ import Nav from "./components/Nav";
 import Toaster from "./components/Toaster";
 import Login from "./pages/Login";
 
+const Buckets = lazy(() => import("./pages/Buckets"));
+const AddTransactions = lazy(() => import("./pages/AddTransactions"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Transactions = lazy(() => import("./pages/Transactions"));
 const BudgetPlanner = lazy(() => import("./pages/BudgetPlanner"));
@@ -79,7 +81,9 @@ export default function App() {
                     <Nav />
                     <main className="flex-1 p-3 sm:p-6 max-w-7xl mx-auto w-full pt-6">
                       <Routes>
-                        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                        <Route path="/" element={<Navigate to="/buckets" replace />} />
+                        <Route path="/buckets" element={<Buckets />} />
+                        <Route path="/add" element={<AddTransactions />} />
                         <Route path="/dashboard" element={<Dashboard />} />
                         <Route path="/transactions" element={<Transactions />} />
                         <Route path="/budget" element={<BudgetPlanner />} />
