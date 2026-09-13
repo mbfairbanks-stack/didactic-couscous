@@ -15,3 +15,7 @@ frontend/dist/
 
 # Personal budget spreadsheets — never commit
 *.xlsx
+
+# Live databases and backups — never commit personal financial data
+data/
+data-backup-*/
