@@ -3,9 +3,11 @@
 Three sources, in order of trust:
 
 1. **Recorded** — Income rows for the month. Always wins for pays already entered.
-2. **Schedule** — a per-person PaySchedule. Pay dates are enumerated from the
-   anchor date, so a three-pay month projects three pays instead of an averaged
-   2.17. A partly-entered month is topped up with the pays still to come.
+2. **Schedule** — a per-person PaySchedule. With an anchor date the real pay
+   dates are enumerated, so a three-pay month projects three pays instead of an
+   averaged 2.17; without one it falls back to the annualised average rather
+   than inventing a start date. A partly-entered month is topped up with the
+   pays still to come.
 3. **Trailing average** — the last three months with recorded income, used when
    a person has no schedule at all.
 
@@ -43,7 +45,7 @@ class PersonIncome:
     rrsp_employer: float = 0.0
     espp: float = 0.0
     recorded_pays: int = 0
-    expected_pays: int = 0
+    expected_pays: float = 0.0
     source: str = "none"          # recorded | schedule | average | mixed | none
     net_estimated: bool = False   # True when any part of net came from a schedule
 
@@ -74,6 +76,21 @@ class MonthIncome:
                    for p in self.people.values())
 
 
+def expected_pays_in_month(schedule: models.PaySchedule, year: int, month: int) -> float:
+    """How many pays the month gets — fractional when we cannot know.
+
+    With an anchor date the real paydays are enumerable, so a three-pay month
+    projects three pays. Without one, guessing a start date is worse than not
+    guessing: anchoring at the 1st hands three pays to every month of 29+ days,
+    which over-projects biweekly pay by nearly 40%. Fall back to the annualised
+    average instead, which is honest about not knowing.
+    """
+    freq = (schedule.frequency or "biweekly").lower()
+    if freq in ("weekly", "biweekly") and _anchor_date(schedule) is None:
+        return PERIODS_PER_YEAR.get(freq, 26) / 12
+    return float(len(pay_dates_in_month(schedule, year, month)))
+
+
 def pay_dates_in_month(schedule: models.PaySchedule, year: int, month: int) -> list[datetime.date]:
     """Actual paydays that fall inside the month, from the schedule's anchor."""
     freq = (schedule.frequency or "biweekly").lower()
@@ -93,8 +110,9 @@ def pay_dates_in_month(schedule: models.PaySchedule, year: int, month: int) -> l
     step = 7 if freq == "weekly" else 14
     anchor = _anchor_date(schedule)
     if anchor is None:
-        # No anchor: assume the run starts on the 1st, which still yields the
-        # right *count* of pays even if the exact days are off.
+        # Callers reach expected_pays_in_month first, which does not enumerate
+        # unanchored weekly/biweekly runs; this is only for direct callers that
+        # want a plausible set of dates.
         anchor = first
 
     # Walk back to the last payday on or before the 1st, then forward.
@@ -192,7 +210,7 @@ def project_month(db: Session, year: int, month: int) -> MonthIncome:
     ).scalars().all()
 
     for sched in schedules:
-        expected = len(pay_dates_in_month(sched, year, month))
+        expected = expected_pays_in_month(sched, year, month)
         person = result.people.get(sched.person)
         if person is None:
             person = PersonIncome(person=sched.person, source="schedule")

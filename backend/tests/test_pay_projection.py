@@ -135,3 +135,22 @@ def test_schedule_upsert_replaces_rather_than_duplicating(client):
     rows = client.get("/pay-schedules").json()
     assert len(rows) == 1
     assert rows[0]["gross_per_pay"] == 3300.0
+
+
+def test_unanchored_biweekly_uses_the_annualised_average(client):
+    """Anchoring at the 1st would hand 3 pays to any month of 29+ days."""
+    set_schedule(client, anchor_date=None, gross_per_pay=3000.0, net_per_pay=2000.0)
+
+    # 26 pays / 12 months = 2.1667 per month, every month.
+    for month in (2, 9, 12):
+        data = client.get(f"/income/projection?year=2026&month={month}").json()
+        assert round(data["gross"], 2) == 6500.0, month
+        assert round(data["net"], 2) == 4333.33, month
+
+
+def test_anchoring_restores_real_three_pay_months(client):
+    set_schedule(client, anchor_date=None, gross_per_pay=3000.0)
+    assert round(client.get("/income/projection?year=2026&month=5").json()["gross"], 2) == 6500.0
+
+    set_schedule(client, anchor_date="2026-01-09", gross_per_pay=3000.0)
+    assert client.get("/income/projection?year=2026&month=5").json()["gross"] == 9000.0

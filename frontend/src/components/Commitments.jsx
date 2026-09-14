@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback } from "react";
 import { NavLink } from "react-router-dom";
 import {
   getRecurringBills, createRecurringBill, updateRecurringBill,
-  deleteRecurringBill, getCommitments, getCategories, getDebts,
+  deleteRecurringBill, getCommitments, getDebts,
 } from "../api";
+import { useSettings } from "../contexts/SettingsContext";
 import { BUCKETS, BUCKET_META } from "../constants";
 import { fmt } from "../utils";
 
@@ -29,7 +30,7 @@ const blank = { name: "", amount: "", frequency: "monthly", category: "", due_da
 export default function Commitments() {
   const [bills, setBills] = useState([]);
   const [committed, setCommitted] = useState(null);
-  const [categories, setCategories] = useState([]);
+  const { categories } = useSettings();
   const [debts, setDebts] = useState([]);
   const [form, setForm] = useState(blank);
   const [editingId, setEditingId] = useState(null);
@@ -42,10 +43,7 @@ export default function Commitments() {
     getDebts().then(setDebts).catch(() => setDebts([]));
   }, []);
 
-  useEffect(() => {
-    load();
-    getCategories().then(setCategories).catch(() => {});
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
 
   const reset = () => { setForm(blank); setEditingId(null); };
 

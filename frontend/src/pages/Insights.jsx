@@ -2,9 +2,10 @@ import { useState, useEffect, useRef } from "react";
 import { usePeriod } from "../hooks/usePeriod";
 import { NavLink } from "react-router-dom";
 import {
-  streamInsights, streamInsightsAnswer, getYears, saveInsightsLog,
+  streamInsights, streamInsightsAnswer, saveInsightsLog,
   getInsightsLog, deleteInsightsLog,
 } from "../api";
+import { useSettings } from "../contexts/SettingsContext";
 import { MONTH_LABELS, currentYear, currentMonth } from "../utils";
 
 function inlineFormat(text) {
@@ -110,7 +111,8 @@ export default function Insights() {
   const [mode, setMode] = useState("annual");
   const [quarter, setQuarter] = useState(Math.ceil(currentMonth / 3));
   const [half, setHalf] = useState(currentMonth <= 6 ? 1 : 2);
-  const [years, setYears] = useState([currentYear]);
+  const { years: knownYears } = useSettings();
+  const years = knownYears.length ? knownYears : [currentYear];
   const [loading, setLoading] = useState(false);
   const [text, setText] = useState("");
   const [cached, setCached] = useState(false);
@@ -131,7 +133,6 @@ export default function Insights() {
   const label = periodLabel(mode, year, month, quarter, half);
 
   useEffect(() => {
-    getYears().then((y) => setYears(y.length ? y : [currentYear]));
     getInsightsLog().then(setLog).catch(() => {});
   }, []);
 

@@ -4,9 +4,9 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 import { usePeriod } from "../hooks/usePeriod";
+import { useSettings } from "../contexts/SettingsContext";
 import {
-  getBucketSummary, getBucketTrend, getBucketPlan, saveBucketPlan,
-  getSavingsGoals, getYears,
+  getBucketSummary, getBucketTrend, getBucketPlan, saveBucketPlan, getSavingsGoals,
 } from "../api";
 import { BUCKETS, BUCKET_META, BUCKET_SURFACE } from "../constants";
 import { MONTH_LABELS, currentYear, currentMonth, fmt } from "../utils";
@@ -288,7 +288,8 @@ export default function Buckets() {
   const [mode, setMode] = useState("month");
   const [quarter, setQuarter] = useState(Math.ceil(currentMonth / 3));
   const [half, setHalf] = useState(currentMonth <= 6 ? 1 : 2);
-  const [years, setYears] = useState([currentYear]);
+  const { years: knownYears } = useSettings();
+  const years = knownYears.length ? knownYears : [currentYear];
   const [summary, setSummary] = useState(null);
   const [trend, setTrend] = useState([]);
   const [goals, setGoals] = useState([]);
@@ -325,18 +326,14 @@ export default function Buckets() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    getYears().then((y) => {
-      const available = y.length ? y : [currentYear];
-      setYears(available);
-      // The stored period can point at a year with no data (a new calendar
-      // year, or a fresh install). Fall back to the most recent year we have.
-      if (!available.includes(year)) {
-        snapped.current = false;   // a new year needs its own month snap
-        setYear(Math.max(...available));
-      }
-    }).catch(() => {});
+    // The stored period can point at a year with no data (a new calendar year,
+    // or a fresh install). Fall back to the most recent year we have.
+    if (knownYears.length && !knownYears.includes(year)) {
+      snapped.current = false;   // a new year needs its own month snap
+      setYear(Math.max(...knownYears));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [knownYears]);
 
   const months = summary?.months ?? 1;
   const byBucket = Object.fromEntries((summary?.buckets ?? []).map((b) => [b.bucket, b]));

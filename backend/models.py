@@ -1,4 +1,6 @@
-from sqlalchemy import Column, Integer, String, Float, Date, Boolean, UniqueConstraint, DateTime
+from sqlalchemy import (
+    Column, Integer, String, Float, Date, Boolean, UniqueConstraint, DateTime, Index,
+)
 from database import Base
 
 
@@ -18,6 +20,12 @@ class Transaction(Base):
     is_recurring = Column(Boolean, default=False)
     linked_debt_id = Column(Integer, nullable=True)   # links to debts.id
     debt_direction = Column(String, nullable=True)    # "payment" or "charge"
+
+    # Almost every read filters on year AND month; SQLite uses one index per
+    # scan, so the pair needs a composite.
+    __table_args__ = (
+        Index("ix_transactions_year_month", "year", "month"),
+    )
 
 
 class Income(Base):
@@ -39,6 +47,7 @@ class Income(Base):
 
     __table_args__ = (
         UniqueConstraint("year", "month", "person", "income_type", "pay_date", name="uq_income"),
+        Index("ix_income_year_month", "year", "month"),
     )
 
 

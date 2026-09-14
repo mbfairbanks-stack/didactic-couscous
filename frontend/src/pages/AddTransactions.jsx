@@ -1,10 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { NavLink } from "react-router-dom";
-import {
-  parseCsv, importCsvRows, getCategories, getCategoryDefinitions,
-  upsertMerchantRule, toast,
-} from "../api";
-import { BUCKETS, BUCKET_META, getCategoryBucket, updateCategoryGroups } from "../constants";
+import { parseCsv, importCsvRows, upsertMerchantRule, toast } from "../api";
+import { useSettings } from "../contexts/SettingsContext";
+import { BUCKETS, BUCKET_META, getCategoryBucket } from "../constants";
 import { fmt, fmtCents } from "../utils";
 
 const FORMATS = [
@@ -50,16 +48,12 @@ export default function AddTransactions() {
   const [error, setError] = useState("");
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState(null);
-  const [categories, setCategories] = useState([]);
+  const { categories, refresh: refreshConstants } = useSettings();
   const [corrections, setCorrections] = useState({});
   const [rememberRules, setRememberRules] = useState(true);
   const textRef = useRef(null);
 
-  useEffect(() => {
-    getCategories().then(setCategories).catch(() => {});
-    getCategoryDefinitions().then(updateCategoryGroups).catch(() => {});
-    textRef.current?.focus();
-  }, []);
+  useEffect(() => { textRef.current?.focus(); }, []);
 
   const parse = useCallback(async () => {
     if (!text.trim()) { setError("Nothing to parse — paste some rows first."); return; }
@@ -126,6 +120,8 @@ export default function AddTransactions() {
       setCorrections({});
       setRows(null);
       setText("");
+      // An import can mint new categories and the first year of data.
+      refreshConstants();
       textRef.current?.focus();
     } catch (e) {
       setError(e.message);

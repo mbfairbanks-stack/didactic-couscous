@@ -138,20 +138,6 @@ export const deleteIncome = (id) =>
   req(`/income/${id}`, { method: "DELETE" });
 
 // Budget targets
-export const getBudgetTargets = (params = {}) => {
-  const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v != null)).toString();
-  return req(`/budget-targets${qs ? "?" + qs : ""}`);
-};
-export const createBudgetTarget = (body) =>
-  req("/budget-targets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-export const updateBudgetTarget = (id, body) =>
-  req(`/budget-targets/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-export const deleteBudgetTarget = (id) =>
-  req(`/budget-targets/${id}`, { method: "DELETE" });
-export const autoPopulateBudget = (body) =>
-  req("/budget-targets/auto-populate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-export const copyBudgetFromMonth = (body) =>
-  req("/budget-targets/copy-from-month", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 // Analytics
 export const getMonthlySummary = (year) => req(`/summary/monthly?year=${year}`);
@@ -165,10 +151,10 @@ export const getTotals = (year, month, throughMonth) => {
   if (throughMonth) params.set("through_month", throughMonth);
   return req(`/summary/totals?${params}`);
 };
+export const getMultiCategoryTrend = (categories) =>
+  req(`/summary/multi-category-trend?categories=${encodeURIComponent(categories.join(","))}`);
 export const getCategoryTrend = (category) =>
   req(`/summary/category-trend?category=${encodeURIComponent(category)}`);
-export const getProjections = (year, month) =>
-  req(`/summary/projections?year=${year}&month=${month}`);
 export const getDailySummary = (year, month) => {
   const qs = month ? `?year=${year}&month=${month}` : `?year=${year}`;
   return req(`/summary/daily${qs}`);
@@ -194,7 +180,6 @@ export const deleteCategoryDefinition = (id) =>
 // Meta
 export const getCategories = () => req("/categories");
 export const getYears = () => req("/years");
-export const getMissingRecurring = () => req("/transactions/missing-recurring");
 
 // Debts
 export const getDebts = () => req("/debts");
@@ -205,8 +190,6 @@ export const updateDebt = (id, body) =>
 export const deleteDebt = (id) =>
   req(`/debts/${id}`, { method: "DELETE" });
 export const getDebtTransactions = (id) => req(`/debts/${id}/transactions`);
-export const getDebtPaymentsSummary = (year, month) =>
-  req(`/debts/payments-summary?year=${year}&month=${month}`);
 
 // Merchant categories (audit)
 export const getMerchantCategories = () => req("/merchant-categories");
@@ -369,21 +352,10 @@ export const splitTransaction = (id, body) =>
 export const getRecurringSuggestions = () => req("/transactions/recurring-suggestions");
 
 // Budget rollover
-export const rolloverBudget = (body) =>
-  req("/budget-targets/rollover", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 // Multi-category trend
-export const getMultiCategoryTrend = (categories) =>
-  req(`/summary/multi-category-trend?categories=${encodeURIComponent(categories.join(","))}`);
 
 // Budget templates
-export const getBudgetTemplates = () => req("/budget-templates");
-export const saveBudgetTemplate = (body) =>
-  req("/budget-templates/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-export const applyBudgetTemplate = (body) =>
-  req("/budget-templates/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-export const deleteBudgetTemplate = (name) =>
-  req(`/budget-templates/${encodeURIComponent(name)}`, { method: "DELETE" });
 
 // Net Worth History & Snapshots
 export const snapshotNetWorth = (notes) =>

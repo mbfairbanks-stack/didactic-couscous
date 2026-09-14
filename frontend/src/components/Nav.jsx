@@ -3,10 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import { useSettings } from "../contexts/SettingsContext";
 import { useAuth } from "../contexts/AuthContext";
 
-// Bucket-first navigation. The four things that get used weekly are top level;
-// everything else — including the per-category budget tools, which the plan
-// deliberately no longer leads with — lives under More. Nothing is removed:
-// every route is still reachable and every page still has its data.
+// Bucket-first navigation. The four things used weekly are top level; the rest
+// lives under More, with maintenance tools muted.
 const NAV = [
   { label: "Buckets", to: "/buckets" },
   { label: "Add", to: "/add", cta: true },
@@ -19,9 +17,7 @@ const NAV = [
       { to: "/net-worth", label: "Net Worth" },
       { to: "/debts", label: "Debts" },
       { to: "/retirement", label: "Retirement" },
-      { to: "/dashboard", label: "Dashboard" },
       { to: "/charts", label: "Charts" },
-      { to: "/budget", label: "Category Budgets", muted: true },
       { to: "/category-audit", label: "Category Audit", muted: true },
       { to: "/import", label: "File Import", muted: true },
       { to: "/settings", label: "Settings" },
