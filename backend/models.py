@@ -1,4 +1,6 @@
-from sqlalchemy import Column, Integer, String, Float, Date, Boolean, UniqueConstraint, DateTime
+from sqlalchemy import (
+    Column, Integer, String, Float, Date, Boolean, UniqueConstraint, DateTime, Index,
+)
 from database import Base
 
 
@@ -19,6 +21,12 @@ class Transaction(Base):
     linked_debt_id = Column(Integer, nullable=True)   # links to debts.id
     debt_direction = Column(String, nullable=True)    # "payment" or "charge"
 
+    # Almost every read filters on year AND month; SQLite uses one index per
+    # scan, so the pair needs a composite.
+    __table_args__ = (
+        Index("ix_transactions_year_month", "year", "month"),
+    )
+
 
 class Income(Base):
     __tablename__ = "income"
@@ -28,7 +36,10 @@ class Income(Base):
     month = Column(Integer, nullable=False, index=True)
     person = Column(String, nullable=False)
     income_type = Column(String, nullable=False)  # "base" or "commission"
-    amount = Column(Float, nullable=False)
+    amount = Column(Float, nullable=False)        # GROSS pay for this entry
+    # Take-home actually deposited, from the pay stub. NULL means it was never
+    # recorded — the projection falls back to the pay schedule for that pay.
+    net_amount = Column(Float, nullable=True)
     pay_date = Column(Date, nullable=True)
     rrsp_employee = Column(Float, default=0.0)   # employee RRSP contribution this paycheck
     rrsp_employer = Column(Float, default=0.0)   # employer 50% match
@@ -36,6 +47,7 @@ class Income(Base):
 
     __table_args__ = (
         UniqueConstraint("year", "month", "person", "income_type", "pay_date", name="uq_income"),
+        Index("ix_income_year_month", "year", "month"),
     )
 
 
@@ -67,6 +79,8 @@ class Category(Base):
     is_legacy = Column(Boolean, default=False)
     is_hidden = Column(Boolean, default=False)
     parent_name = Column(String, nullable=True)
+    # One of buckets.BUCKETS. NULL falls back to the group-derived default.
+    bucket = Column(String, nullable=True)
 
 
 class InsightsLog(Base):
@@ -253,4 +267,26 @@ class RetirementGoal(Base):
     label = Column(String, nullable=False)
     target_amount = Column(Float, nullable=False)
     target_year = Column(Integer, nullable=True)
+    notes = Column(String, nullable=True)
+
+
+class PaySchedule(Base):
+    """Recurring pay for one person, used to project months not yet recorded.
+
+    Amounts are per paycheque, not per month — the number of pays in a given
+    month is derived from the frequency and anchor date, so three-pay months
+    project correctly instead of being smoothed away.
+    """
+    __tablename__ = "pay_schedules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    person = Column(String, nullable=False, unique=True)
+    gross_per_pay = Column(Float, default=0.0)
+    net_per_pay = Column(Float, default=0.0)      # take-home deposited per pay
+    frequency = Column(String, default="biweekly")  # weekly|biweekly|semimonthly|monthly
+    anchor_date = Column(String, nullable=True)     # "2026-01-09" — any known payday
+    rrsp_employee_per_pay = Column(Float, default=0.0)
+    rrsp_employer_per_pay = Column(Float, default=0.0)
+    espp_per_pay = Column(Float, default=0.0)
+    is_active = Column(Boolean, default=True)
     notes = Column(String, nullable=True)

@@ -30,15 +30,80 @@ export const WANTS = new Set([
   "Canva Sub", "Ipsy Sub",
 ]);
 
+// ── Buckets ─────────────────────────────────────────────────────────────────
+// The app's primary lens. Keep in sync with backend/buckets.py.
+export const BUCKETS = ["fixed", "short_term", "meaningful", "guilt_free"];
+
+// Chart fills, in fixed order — validated for colorblind separation and
+// contrast against the zinc-900 chart surface. Do not re-order or substitute
+// without re-running the palette validator. The lighter `tone`/`bar` classes
+// below are UI text and progress bars, not chart marks.
+export const BUCKET_SURFACE = "#18181b";
+
+export const BUCKET_META = {
+  fixed: {
+    fill: "#0284c7",
+    label: "Fixed Costs",
+    short: "Fixed",
+    blurb: "Bills that arrive whether you think about them or not.",
+    tone: "text-sky-400",
+    bar: "bg-sky-400",
+    ring: "ring-sky-400/30",
+    // Fixed costs above plan is bad; below plan is good.
+    overIsBad: true,
+  },
+  short_term: {
+    fill: "#059669",
+    label: "Short-Term Savings",
+    short: "Short-term",
+    blurb: "Money for things you can see coming in the next few years.",
+    tone: "text-emerald-400",
+    bar: "bg-emerald-400",
+    ring: "ring-emerald-400/30",
+    overIsBad: false,
+  },
+  meaningful: {
+    fill: "#8b5cf6",
+    label: "Meaningful Savings",
+    short: "Meaningful",
+    blurb: "Long-term money you do not plan to touch.",
+    tone: "text-violet-400",
+    bar: "bg-violet-400",
+    ring: "ring-violet-400/30",
+    overIsBad: false,
+  },
+  guilt_free: {
+    fill: "#d97706",
+    label: "Guilt-Free Spending",
+    short: "Guilt-free",
+    blurb: "Everything else. One number — spend it on whatever you like.",
+    tone: "text-yellow-400",
+    bar: "bg-yellow-400",
+    ring: "ring-yellow-400/30",
+    overIsBad: true,
+  },
+};
+
 let _committed = new Set();
 let _needs = NEEDS;
 let _wants = WANTS;
+
+let _buckets = new Map();
 
 /** Called by SettingsContext once category definitions load from the API. */
 export const updateCategoryGroups = (categories) => {
   _committed = new Set(categories.filter((c) => c.group === "Committed").map((c) => c.name));
   _needs = new Set(categories.filter((c) => c.group === "Needs").map((c) => c.name));
   _wants = new Set(categories.filter((c) => c.group === "Wants").map((c) => c.name));
+  _buckets = new Map(categories.filter((c) => c.bucket).map((c) => [c.name, c.bucket]));
+};
+
+/** Bucket for a category, falling back to the group when the API has not loaded. */
+export const getCategoryBucket = (category) => {
+  const explicit = _buckets.get(category);
+  if (explicit) return explicit;
+  const group = getCategoryGroup(category);
+  return group === "Wants" || group === "Other" ? "guilt_free" : "fixed";
 };
 
 export const getCategoryGroup = (category) => {

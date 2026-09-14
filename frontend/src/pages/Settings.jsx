@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { updateSettings, getCategoryDefinitions, createCategoryDefinition, updateCategoryDefinition, deleteCategoryDefinition, mergeCategories } from "../api";
 import { useSettings } from "../contexts/SettingsContext";
+import { BucketMapping, HouseRules } from "../components/BucketSettings";
 
 const inputCls = "bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400/50";
 const GROUPS = ["Committed", "Needs", "Wants", "Other"];
@@ -165,6 +166,12 @@ export default function Settings() {
           {saved && <span className="text-green-400 text-sm">Saved!</span>}
         </div>
       </form>
+
+      {/* Buckets — the mapping every other page reads from */}
+      <BucketMapping onSaved={refresh} />
+
+      {/* AI house rules */}
+      <HouseRules />
 
       {/* Categories */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">

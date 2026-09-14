@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { usePeriod } from "../hooks/usePeriod";
+import { useSettings } from "../contexts/SettingsContext";
 import { getTransactions, createTransaction, updateTransaction, deleteTransaction, getCategories, getYears, exportTransactionsCsv, getAnomalies, splitTransaction, getRecurringSuggestions, getDebts } from "../api";
 import { MONTH_LABELS, currentYear, currentMonth, fmtCents as fmt } from "../utils";
 
@@ -36,8 +37,8 @@ export default function Transactions() {
   const [colFilter, setColFilter] = useState({ date: "", merchant: "", category: "", source: "" });
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [showColFilters, setShowColFilters] = useState(false);
-  const [years, setYears] = useState([currentYear]);
-  const [allCategories, setAllCategories] = useState([]);
+  const { years: knownYears, categories: allCategories, refresh: refreshConstants } = useSettings();
+  const years = knownYears.length ? knownYears : [currentYear];
   const [transactions, setTransactions] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -75,8 +76,7 @@ export default function Transactions() {
   const searchRef = useRef(null);
 
   useEffect(() => {
-    getYears().then((y) => setYears(y.length ? y : [currentYear]));
-    getCategories().then(setAllCategories);
+
     getRecurringSuggestions()
       .then((rows) => setRecurringSuggestions(rows.filter((r) => r.is_consistent)))
       .catch(() => {});

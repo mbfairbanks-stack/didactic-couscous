@@ -6,6 +6,8 @@ import {
 import { getIncome, createIncome, updateIncome, deleteIncome, getYears, getTotals } from "../api";
 import { MONTH_LABELS, currentYear, currentMonth, fmt } from "../utils";
 import { useSettings } from "../contexts/SettingsContext";
+import PaySetup from "../components/PaySetup";
+import Commitments from "../components/Commitments";
 
 const inputCls = "bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400/50 w-full";
 const selectCls = "bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:outline-none";
@@ -58,7 +60,7 @@ const emptyPayday = () => ({
   _key: Math.random(),
   label: "",
   date: "",
-  p1_base: "", p1_commission: "",
+  p1_base: "", p1_commission: "", p1_net: "", p2_net: "",
   p1_rrsp_employee: "", p1_rrsp_employer: "", p1_espp: "",
   p2_base: "",
   p2_rrsp_employee: "", p2_rrsp_employer: "",
@@ -80,6 +82,8 @@ function recordsToPayday(dateKey, entries, p1Name, p2Name, entryYear, entryMonth
     label: "",
     date: dateKey,
     p1_base: p1b ? String(p1b.amount) : "",
+    p1_net: p1b?.net_amount != null ? String(p1b.net_amount) : "",
+    p2_net: p2b?.net_amount != null ? String(p2b.net_amount) : "",
     p1_commission: p1c ? String(p1c.amount) : "",
     p1_rrsp_employee: p1b ? String(p1b.rrsp_employee || "") : "",
     p1_rrsp_employer: p1b ? String(p1b.rrsp_employer || "") : "",
@@ -195,6 +199,15 @@ function PaydaySlot({ state, onChange, onRemove, p1, p2, canRemove, isEdit = fal
               onChange={(e) => onChange({ ...state, p1_espp: e.target.value })} />
           </div>
         </div>
+        <div>
+          <label className="text-xs text-green-500 block mb-1">Take-home deposited ($)</label>
+          <input type="number" step="0.01" min="0" placeholder="what hit the bank"
+            className={smallInput} value={state.p1_net}
+            onChange={(e) => onChange({ ...state, p1_net: e.target.value })} />
+          <p className="text-[11px] text-zinc-600 mt-0.5">
+            The net figure from the stub. This is what the bucket plan divides up.
+          </p>
+        </div>
       </div>
 
       {/* Person 2 */}
@@ -221,6 +234,15 @@ function PaydaySlot({ state, onChange, onRemove, p1, p2, canRemove, isEdit = fal
                 onChange={(e) => onChange({ ...state, p2_rrsp_employer: e.target.value })} />
             </div>
           </div>
+        </div>
+        <div>
+          <label className="text-xs text-green-500 block mb-1">Take-home deposited ($)</label>
+          <input type="number" step="0.01" min="0" placeholder="what hit the bank"
+            className={smallInput} value={state.p2_net}
+            onChange={(e) => onChange({ ...state, p2_net: e.target.value })} />
+          <p className="text-[11px] text-zinc-600 mt-0.5">
+            The net figure from the stub. This is what the bucket plan divides up.
+          </p>
         </div>
       </div>
     </div>
@@ -300,6 +322,7 @@ export default function Income() {
       {
         person: p1, income_type: "base",
         amount: parseFloat(payday.p1_base) || 0,
+        net_amount: payday.p1_net === "" ? null : parseFloat(payday.p1_net),
         rrsp_employee: parseFloat(payday.p1_rrsp_employee) || 0,
         rrsp_employer: parseFloat(payday.p1_rrsp_employer) || 0,
         espp_deduction: parseFloat(payday.p1_espp) || 0,
@@ -307,11 +330,13 @@ export default function Income() {
       {
         person: p1, income_type: "commission",
         amount: parseFloat(payday.p1_commission) || 0,
+        net_amount: null,   // take-home is recorded once, on the base entry
         rrsp_employee: 0, rrsp_employer: 0, espp_deduction: 0,
       },
       {
         person: p2, income_type: "base",
         amount: parseFloat(payday.p2_base) || 0,
+        net_amount: payday.p2_net === "" ? null : parseFloat(payday.p2_net),
         rrsp_employee: parseFloat(payday.p2_rrsp_employee) || 0,
         rrsp_employer: parseFloat(payday.p2_rrsp_employer) || 0,
         espp_deduction: 0,
@@ -322,7 +347,8 @@ export default function Income() {
       const existing = existingRecords.find(
         (r) => resolvePerson(r.person) === entry.person && r.income_type === entry.income_type
       );
-      const hasValue = entry.amount > 0 || entry.rrsp_employee > 0 || entry.espp_deduction > 0;
+      const hasValue = entry.amount > 0 || entry.rrsp_employee > 0
+        || entry.espp_deduction > 0 || (entry.net_amount ?? 0) > 0;
       if (existing) {
         if (hasValue) {
           await updateIncome(existing.id, { year: targetYear, month: targetMonth, pay_date: payday.date, ...entry });
@@ -445,6 +471,9 @@ export default function Income() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-zinc-100">Income</h1>
+
+      <PaySetup />
+      <Commitments />
 
       {/* Month/year selector */}
       <div className="flex gap-3 flex-wrap items-center">

@@ -138,20 +138,6 @@ export const deleteIncome = (id) =>
   req(`/income/${id}`, { method: "DELETE" });
 
 // Budget targets
-export const getBudgetTargets = (params = {}) => {
-  const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v != null)).toString();
-  return req(`/budget-targets${qs ? "?" + qs : ""}`);
-};
-export const createBudgetTarget = (body) =>
-  req("/budget-targets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-export const updateBudgetTarget = (id, body) =>
-  req(`/budget-targets/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-export const deleteBudgetTarget = (id) =>
-  req(`/budget-targets/${id}`, { method: "DELETE" });
-export const autoPopulateBudget = (body) =>
-  req("/budget-targets/auto-populate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-export const copyBudgetFromMonth = (body) =>
-  req("/budget-targets/copy-from-month", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 // Analytics
 export const getMonthlySummary = (year) => req(`/summary/monthly?year=${year}`);
@@ -165,10 +151,10 @@ export const getTotals = (year, month, throughMonth) => {
   if (throughMonth) params.set("through_month", throughMonth);
   return req(`/summary/totals?${params}`);
 };
+export const getMultiCategoryTrend = (categories) =>
+  req(`/summary/multi-category-trend?categories=${encodeURIComponent(categories.join(","))}`);
 export const getCategoryTrend = (category) =>
   req(`/summary/category-trend?category=${encodeURIComponent(category)}`);
-export const getProjections = (year, month) =>
-  req(`/summary/projections?year=${year}&month=${month}`);
 export const getDailySummary = (year, month) => {
   const qs = month ? `?year=${year}&month=${month}` : `?year=${year}`;
   return req(`/summary/daily${qs}`);
@@ -194,7 +180,6 @@ export const deleteCategoryDefinition = (id) =>
 // Meta
 export const getCategories = () => req("/categories");
 export const getYears = () => req("/years");
-export const getMissingRecurring = () => req("/transactions/missing-recurring");
 
 // Debts
 export const getDebts = () => req("/debts");
@@ -205,8 +190,6 @@ export const updateDebt = (id, body) =>
 export const deleteDebt = (id) =>
   req(`/debts/${id}`, { method: "DELETE" });
 export const getDebtTransactions = (id) => req(`/debts/${id}/transactions`);
-export const getDebtPaymentsSummary = (year, month) =>
-  req(`/debts/payments-summary?year=${year}&month=${month}`);
 
 // Merchant categories (audit)
 export const getMerchantCategories = () => req("/merchant-categories");
@@ -257,15 +240,7 @@ export const exportUrl = (year, month) => {
 };
 
 // AI Insights (streaming SSE)
-// month=null means annual mode; startMonth+endMonth means quarterly/semi-annual
-export const streamInsights = async (year, month, onChunk, onDone, onError, startMonth = null, endMonth = null) => {
-  const token = getToken();
-  let qs = `year=${year}`;
-  if (month) qs += `&month=${month}`;
-  if (startMonth && endMonth) qs += `&start_month=${startMonth}&end_month=${endMonth}`;
-  const res = await fetch(`${BASE}/insights?${qs}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
+async function readSse(res, { onChunk, onDone, onError }) {
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     onError(err.detail || "Request failed");
@@ -292,7 +267,46 @@ export const streamInsights = async (year, month, onChunk, onDone, onError, star
     }
   }
   onDone();
+}
+
+const periodQuery = (year, month, startMonth, endMonth) => {
+  let qs = `year=${year}`;
+  if (month) qs += `&month=${month}`;
+  if (startMonth && endMonth) qs += `&start_month=${startMonth}&end_month=${endMonth}`;
+  return qs;
 };
+
+// month=null means annual mode; startMonth+endMonth means quarterly/semi-annual
+export const streamInsights = async (year, month, onChunk, onDone, onError, startMonth = null, endMonth = null) => {
+  const token = getToken();
+  const res = await fetch(`${BASE}/insights?${periodQuery(year, month, startMonth, endMonth)}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  return readSse(res, { onChunk, onDone, onError });
+};
+
+/** Follow-up question against the same period's data. */
+export const streamInsightsAnswer = async (
+  { year, month, startMonth = null, endMonth = null, question, priorReport },
+  onChunk, onDone, onError,
+) => {
+  const token = getToken();
+  const res = await fetch(`${BASE}/insights/ask`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      year, month, start_month: startMonth, end_month: endMonth,
+      question, prior_report: priorReport || null,
+    }),
+  });
+  return readSse(res, { onChunk, onDone, onError });
+};
+
+export const getInsightsContext = (year, month, startMonth = null, endMonth = null) =>
+  req(`/insights/context?${periodQuery(year, month, startMonth, endMonth)}`);
 
 
 // month=0 means annual
@@ -338,21 +352,10 @@ export const splitTransaction = (id, body) =>
 export const getRecurringSuggestions = () => req("/transactions/recurring-suggestions");
 
 // Budget rollover
-export const rolloverBudget = (body) =>
-  req("/budget-targets/rollover", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 // Multi-category trend
-export const getMultiCategoryTrend = (categories) =>
-  req(`/summary/multi-category-trend?categories=${encodeURIComponent(categories.join(","))}`);
 
 // Budget templates
-export const getBudgetTemplates = () => req("/budget-templates");
-export const saveBudgetTemplate = (body) =>
-  req("/budget-templates/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-export const applyBudgetTemplate = (body) =>
-  req("/budget-templates/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-export const deleteBudgetTemplate = (name) =>
-  req(`/budget-templates/${encodeURIComponent(name)}`, { method: "DELETE" });
 
 // Net Worth History & Snapshots
 export const snapshotNetWorth = (notes) =>
@@ -424,3 +427,36 @@ export const createRetirementGoal = (body) =>
 export const updateRetirementGoal = (id, body) =>
   req(`/retirement/goals/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 export const deleteRetirementGoal = (id) => req(`/retirement/goals/${id}`, { method: "DELETE" });
+
+// ── Buckets ─────────────────────────────────────────────────────────────────
+export const getBucketPlan = () => req("/buckets/plan");
+export const saveBucketPlan = (plan) =>
+  req("/buckets/plan", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(plan) });
+export const getBucketSummary = ({ year, month, startMonth, endMonth }) =>
+  req(`/buckets/summary?${periodQuery(year, month, startMonth, endMonth)}`);
+export const getBucketTrend = (year) => req(`/buckets/trend?year=${year}`);
+export const getBucketMapping = () => req("/buckets/mapping");
+export const saveBucketMapping = (entries) =>
+  req("/buckets/mapping", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ entries }) });
+
+// ── AI insights house rules ─────────────────────────────────────────────────
+export const getHouseRules = () => req("/insights/house-rules");
+export const saveHouseRules = (body) =>
+  req("/insights/house-rules", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+// ── Pay schedules & income projection ───────────────────────────────────────
+export const getPaySchedules = () => req("/pay-schedules");
+export const savePaySchedule = (body) =>
+  req("/pay-schedules", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deletePaySchedule = (id) => req(`/pay-schedules/${id}`, { method: "DELETE" });
+export const getIncomeProjection = (year, month) =>
+  req(`/income/projection?year=${year}${month ? `&month=${month}` : ""}`);
+
+// ── Recurring bills & commitments ───────────────────────────────────────────
+export const getRecurringBills = () => req("/recurring-bills");
+export const createRecurringBill = (body) =>
+  req("/recurring-bills", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const updateRecurringBill = (id, body) =>
+  req(`/recurring-bills/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const deleteRecurringBill = (id) => req(`/recurring-bills/${id}`, { method: "DELETE" });
+export const getCommitments = () => req("/buckets/commitments");

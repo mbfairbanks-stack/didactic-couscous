@@ -11,9 +11,22 @@ import tempfile, os, io, json, csv, re, math
 from collections import defaultdict
 
 import models
+from buckets import BUCKETS, default_bucket_for
 from database import get_db
 
 router = APIRouter()
+
+
+def _category_out(r: models.Category) -> dict:
+    return {
+        "id": r.id,
+        "name": r.name,
+        "group": r.group_name,
+        "bucket": r.bucket or default_bucket_for(r.name, r.group_name),
+        "is_legacy": bool(r.is_legacy),
+        "is_hidden": bool(r.is_hidden),
+        "parent_name": r.parent_name,
+    }
 
 @router.get("/settings")
 def get_settings(db: Session = Depends(get_db)):
@@ -36,19 +49,20 @@ def update_settings(body: dict, db: Session = Depends(get_db)):
 @router.get("/category-definitions")
 def list_category_definitions(db: Session = Depends(get_db)):
     rows = db.execute(select(models.Category).order_by(models.Category.group_name, models.Category.name)).scalars().all()
-    return [{"id": r.id, "name": r.name, "group": r.group_name, "is_legacy": bool(r.is_legacy),
-             "is_hidden": bool(r.is_hidden), "parent_name": r.parent_name} for r in rows]
+    return [_category_out(r) for r in rows]
 
 
 class CategoryCreate(BaseModel):
     name: str
     group: str
+    bucket: Optional[str] = None
     parent_name: Optional[str] = None
 
 
 class CategoryUpdate(BaseModel):
     name: Optional[str] = None
     group: Optional[str] = None
+    bucket: Optional[str] = None
     is_hidden: Optional[bool] = None
     parent_name: Optional[str] = None
 
@@ -58,12 +72,19 @@ def create_category_definition(body: CategoryCreate, db: Session = Depends(get_d
     existing = db.execute(select(models.Category).where(models.Category.name == body.name)).scalar_one_or_none()
     if existing:
         raise HTTPException(status_code=409, detail=f"Category '{body.name}' already exists")
-    cat = models.Category(name=body.name, group_name=body.group, is_legacy=False, parent_name=body.parent_name)
+    if body.bucket is not None and body.bucket not in BUCKETS:
+        raise HTTPException(status_code=400, detail=f"Unknown bucket '{body.bucket}'")
+    cat = models.Category(
+        name=body.name,
+        group_name=body.group,
+        is_legacy=False,
+        parent_name=body.parent_name,
+        bucket=body.bucket or default_bucket_for(body.name, body.group),
+    )
     db.add(cat)
     db.commit()
     db.refresh(cat)
-    return {"id": cat.id, "name": cat.name, "group": cat.group_name, "is_legacy": False,
-            "is_hidden": False, "parent_name": cat.parent_name}
+    return _category_out(cat)
 
 
 @router.put("/category-definitions/{cat_id}")
@@ -75,6 +96,10 @@ def update_category_definition(cat_id: int, body: CategoryUpdate, db: Session = 
         cat.name = body.name
     if body.group is not None:
         cat.group_name = body.group
+    if body.bucket is not None:
+        if body.bucket not in BUCKETS:
+            raise HTTPException(status_code=400, detail=f"Unknown bucket '{body.bucket}'")
+        cat.bucket = body.bucket
     if body.is_hidden is not None:
         cat.is_hidden = body.is_hidden
     if body.parent_name is not None:
@@ -82,8 +107,7 @@ def update_category_definition(cat_id: int, body: CategoryUpdate, db: Session = 
     elif "parent_name" in body.model_fields_set:
         cat.parent_name = None  # explicitly clearing it
     db.commit()
-    return {"id": cat.id, "name": cat.name, "group": cat.group_name, "is_legacy": bool(cat.is_legacy),
-            "is_hidden": bool(cat.is_hidden), "parent_name": cat.parent_name}
+    return _category_out(cat)
 
 
 @router.delete("/category-definitions/{cat_id}", status_code=204)

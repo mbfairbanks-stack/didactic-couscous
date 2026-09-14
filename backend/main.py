@@ -175,6 +175,7 @@ from routers import (
     transactions,
     income,
     budget,
+    buckets,
     summaries,
     meta,
     debts,
@@ -184,6 +185,6 @@ from routers import (
     retirement,
 )
 
-for _r in (transactions, income, budget, summaries, meta, debts,
+for _r in (transactions, income, budget, buckets, summaries, meta, debts,
            networth, importing, insights, retirement):
     app.include_router(_r.router)
