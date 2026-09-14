@@ -357,3 +357,72 @@ def test_context_reports_period_completeness(client):
     future = client.get("/insights/context?year=2030&month=6").json()["context"]
     assert "entirely in the future" in future
     assert "running total" in future
+
+
+def test_summary_lists_every_assigned_category_not_just_spending_ones(client):
+    """"What is in this bucket" is a different question from "what was spent"."""
+    make_income(client, amount=4000.0, net_amount=4000.0)
+    make_txn(client, category="Dining", amount=200.0)
+    client.post("/category-definitions",
+                json={"name": "Board Games", "group": "Wants"})   # no spend
+
+    data = client.get("/buckets/summary?year=2025&month=3").json()
+    gf = next(b for b in data["buckets"] if b["bucket"] == "guilt_free")
+
+    spending = {c["category"] for c in gf["categories"]}
+    assigned = {c["category"]: c["amount"] for c in gf["assigned_categories"]}
+
+    assert spending == {"Dining"}
+    assert "Board Games" in assigned and assigned["Board Games"] == 0.0
+    assert assigned["Dining"] == 200.0
+
+
+def test_mapping_carries_spend_so_bulk_moves_are_informed(client):
+    # Older than the 12-month window, so this also covers the all-time fallback.
+    make_txn(client, category="Groceries", amount=800.0)
+    make_txn(client, category="Dining", amount=250.0)
+
+    data = client.get("/buckets/mapping").json()
+    assert data["months"] is None, "stale-only data should fall back to all time"
+    rows = data["categories"]
+    by_name = {r["name"]: r for r in rows}
+    assert by_name["Groceries"]["total"] == 800.0
+    assert by_name["Groceries"]["count"] == 1
+    assert by_name["Dining"]["total"] == 250.0
+    # Biggest first, so a bulk move starts with what actually matters.
+    assert [r["name"] for r in rows[:2]] == ["Groceries", "Dining"]
+
+
+def test_bulk_mapping_move_reassigns_many_at_once(client):
+    make_income(client, amount=5000.0, net_amount=5000.0)
+    for cat in ("Dining", "Coffee", "Travel"):
+        make_txn(client, category=cat, amount=100.0)
+
+    r = client.put("/buckets/mapping", json={"entries": [
+        {"name": "Dining", "bucket": "fixed"},
+        {"name": "Coffee", "bucket": "fixed"},
+        {"name": "Travel", "bucket": "short_term"},
+    ]})
+    assert r.status_code == 200 and r.json()["updated"] == 3
+
+    by_bucket = {b["bucket"]: b["actual"] for b in
+                 client.get("/buckets/summary?year=2025&month=3").json()["buckets"]}
+    assert by_bucket["fixed"] == 200.0
+    assert by_bucket["short_term"] == 100.0
+    assert by_bucket["guilt_free"] == 0.0
+
+
+def test_mapping_window_prefers_recent_spend(client):
+    import datetime
+    today = datetime.date.today()
+    make_txn(client, date=today.isoformat(), year=today.year, month=today.month,
+             category="Groceries", amount=500.0)
+    # Well outside a 12-month window.
+    make_txn(client, date="2019-04-10", year=2019, month=4,
+             category="Dining", amount=9000.0)
+
+    data = client.get("/buckets/mapping").json()
+    assert data["months"] == 12
+    by_name = {r["name"]: r for r in data["categories"]}
+    assert by_name["Groceries"]["total"] == 500.0
+    assert by_name["Dining"]["total"] == 0.0, "stale spend must not dominate the sort"

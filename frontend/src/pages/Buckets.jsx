@@ -75,7 +75,7 @@ function Verdict({ bucket, variance, target, hasPlan }) {
 }
 
 // ── One bucket card ─────────────────────────────────────────────────────────
-function BucketCard({ data, months, hasPlan, children, detail = true }) {
+function BucketCard({ data, months, hasPlan, children }) {
   const meta = BUCKET_META[data.bucket];
   const [open, setOpen] = useState(false);
   const [showCommitted, setShowCommitted] = useState(false);
@@ -83,6 +83,7 @@ function BucketCard({ data, months, hasPlan, children, detail = true }) {
     ? Math.min((data.actual_monthly / data.target_monthly) * 100, 100)
     : 0;
   const status = bucketStatus(data.bucket, data.variance / months, data.target_monthly);
+  const spendingCount = data.categories.length;
 
   return (
     <div className={`bg-zinc-900 border border-zinc-800 rounded-xl p-5 ring-1 ${meta.ring}`}>
@@ -158,22 +159,36 @@ function BucketCard({ data, months, hasPlan, children, detail = true }) {
 
       {children}
 
-      {detail && data.categories.length > 0 && (
+      {data.assigned_categories?.length > 0 && (
         <>
           <button
             onClick={() => setOpen((o) => !o)}
             className="mt-3 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
           >
-            {open ? "▾" : "▸"} {data.categories.length} {data.categories.length === 1 ? "line" : "lines"}
+            {open ? "▾" : "▸"} {data.assigned_categories.length} categor
+            {data.assigned_categories.length === 1 ? "y" : "ies"} in this bucket
+            {spendingCount > 0 && (
+              <span className="text-zinc-600"> · {spendingCount} with spending</span>
+            )}
           </button>
           {open && (
-            <div className="mt-2 space-y-1 border-t border-zinc-800 pt-2">
-              {data.categories.map((c) => (
-                <div key={c.category} className="flex justify-between text-xs">
-                  <span className="text-zinc-400 truncate mr-2">{c.category}</span>
-                  <span className="text-zinc-300 tabular-nums">{fmt(c.amount / months)}/mo</span>
-                </div>
-              ))}
+            <div className="mt-2 border-t border-zinc-800 pt-2">
+              <div className="space-y-1 max-h-56 overflow-y-auto">
+                {data.assigned_categories.map((c) => (
+                  <div key={c.category} className="flex justify-between text-xs">
+                    <span className={c.amount ? "text-zinc-400" : "text-zinc-600"}>
+                      {c.category}
+                    </span>
+                    <span className={`tabular-nums ${c.amount ? "text-zinc-300" : "text-zinc-700"}`}>
+                      {c.amount ? `${fmt(c.amount / months)}/mo` : "—"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <NavLink to="/settings#buckets"
+                className="inline-block mt-2 text-xs text-yellow-400 hover:text-yellow-300">
+                Reassign categories →
+              </NavLink>
             </div>
           )}
         </>
@@ -609,9 +624,10 @@ export default function Buckets() {
             )}
 
             {byBucket.guilt_free && (
-              /* Deliberately no line-item breakdown: the whole point of this
-                 bucket is that only the total matters. */
-              <BucketCard data={byBucket.guilt_free} months={months} hasPlan={hasPlan} detail={false}>
+              /* The list below is which categories are assigned here, not a
+                 spending audit — the total is still the only number that
+                 matters, and the AI prompt still never itemises it. */
+              <BucketCard data={byBucket.guilt_free} months={months} hasPlan={hasPlan}>
                 <p className="mt-3 pt-3 border-t border-zinc-800 text-xs text-zinc-500">
                   {guiltFreeNote}
                 </p>

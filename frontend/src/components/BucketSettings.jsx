@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   getBucketMapping, saveBucketMapping, getHouseRules, saveHouseRules,
 } from "../api";
 import { BUCKETS, BUCKET_META } from "../constants";
+import { fmt } from "../utils";
 
 const inputCls =
   "bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-yellow-400/50";
@@ -13,16 +14,29 @@ const inputCls =
  */
 export function BucketMapping({ onSaved }) {
   const [rows, setRows] = useState([]);
-  const [dirty, setDirty] = useState({});   // name -> bucket
+  const [dirty, setDirty] = useState({});     // name -> bucket
+  const [selected, setSelected] = useState(new Set());
   const [filter, setFilter] = useState("");
+  const [bucketFilter, setBucketFilter] = useState("all");
   const [showLegacy, setShowLegacy] = useState(false);
+  const [showUnused, setShowUnused] = useState(true);
+  const [spendWindow, setSpendWindow] = useState(12);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const lastClicked = useRef(null);
+  // mousedown fires before click and reliably carries the modifier keys;
+  // reading shiftKey off the click or change event proved unreliable.
+  const shiftHeld = useRef(false);
 
   const load = useCallback(() => {
     getBucketMapping()
-      .then((d) => { setRows(d.categories); setDirty({}); })
+      .then((d) => {
+        setRows(d.categories);
+        setSpendWindow(d.months);
+        setDirty({});
+        setSelected(new Set());
+      })
       .catch((e) => setError(e.message));
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -32,14 +46,53 @@ export function BucketMapping({ onSaved }) {
   const visible = rows.filter((r) => {
     if (r.is_hidden) return false;
     if (!showLegacy && r.is_legacy && !r.unregistered) return false;
+    if (!showUnused && !r.total) return false;
+    if (bucketFilter !== "all" && bucketOf(r) !== bucketFilter) return false;
     if (filter && !r.name.toLowerCase().includes(filter.toLowerCase())) return false;
     return true;
   });
 
   const counts = Object.fromEntries(
-    BUCKETS.map((b) => [b, visible.filter((r) => bucketOf(r) === b).length])
+    BUCKETS.map((b) => [b, rows.filter((r) => !r.is_hidden && bucketOf(r) === b).length])
   );
   const pendingCount = Object.keys(dirty).length;
+  const selectedRows = visible.filter((r) => selected.has(r.name));
+  const selectedTotal = selectedRows.reduce((s, r) => s + (r.total || 0), 0);
+
+  // Shift-click selects the range, the way a file list does.
+  const toggle = (row, index, shiftKey) => {
+    // Read the anchor before the updater runs. React defers state updaters, so
+    // assigning lastClicked first would collapse every range to a single row.
+    const anchor = lastClicked.current;
+    lastClicked.current = index;
+
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (shiftKey && anchor !== null && visible[anchor]) {
+        const [from, to] = anchor <= index ? [anchor, index] : [index, anchor];
+        const turnOn = !next.has(row.name);
+        for (let i = from; i <= to; i++) {
+          if (turnOn) next.add(visible[i].name);
+          else next.delete(visible[i].name);
+        }
+      } else if (next.has(row.name)) {
+        next.delete(row.name);
+      } else {
+        next.add(row.name);
+      }
+      return next;
+    });
+  };
+
+  const moveSelected = (bucket) => {
+    if (!bucket || !selected.size) return;
+    setDirty((d) => {
+      const next = { ...d };
+      for (const name of selected) next[name] = bucket;
+      return next;
+    });
+    setSelected(new Set());
+  };
 
   const save = async () => {
     setSaving(true);
@@ -59,51 +112,127 @@ export function BucketMapping({ onSaved }) {
     }
   };
 
+  const allVisibleSelected = visible.length > 0 && selectedRows.length === visible.length;
+
   return (
     <div id="buckets" className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden scroll-mt-20">
       <div className="px-5 py-4 border-b border-zinc-700">
         <h2 className="text-sm font-semibold text-zinc-300">Buckets</h2>
         <p className="text-xs text-zinc-500 mt-1">
-          Which bucket each category counts toward. Fixed costs and the savings
-          buckets are the ones the app pays attention to — anything in guilt-free
-          is only ever shown as part of one total.
+          Which bucket each category counts toward. Tick several and move them in
+          one go — shift-click selects a range. Sorted by what each one actually
+          costs{spendWindow ? ` over the last ${spendWindow} months` : " (all time)"}, so the
+          categories that matter come first.
         </p>
       </div>
 
-      <div className="px-5 py-3 border-b border-zinc-800 flex flex-wrap items-center gap-3">
-        <input
-          className={`${inputCls} flex-1 min-w-40`}
-          placeholder="Filter categories…"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-        />
-        <label className="flex items-center gap-2 text-xs text-zinc-500 cursor-pointer whitespace-nowrap">
-          <input type="checkbox" checked={showLegacy} className="accent-yellow-400"
-            onChange={(e) => setShowLegacy(e.target.checked)} />
-          Show legacy
-        </label>
-      </div>
-
-      <div className="px-5 py-3 border-b border-zinc-800 flex flex-wrap gap-4">
-        {BUCKETS.map((b) => (
-          <span key={b} className="flex items-center gap-1.5 text-xs text-zinc-500">
-            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: BUCKET_META[b].fill }} />
-            {BUCKET_META[b].label}
-            <span className="text-zinc-600">({counts[b]})</span>
-          </span>
-        ))}
+      {/* Filters */}
+      <div className="px-5 py-3 border-b border-zinc-800 space-y-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            className={`${inputCls} flex-1 min-w-40`}
+            placeholder="Filter categories…"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+          />
+          <label className="flex items-center gap-2 text-xs text-zinc-500 cursor-pointer whitespace-nowrap">
+            <input type="checkbox" checked={showUnused} className="accent-yellow-400"
+              onChange={(e) => setShowUnused(e.target.checked)} />
+            Show unused
+          </label>
+          <label className="flex items-center gap-2 text-xs text-zinc-500 cursor-pointer whitespace-nowrap">
+            <input type="checkbox" checked={showLegacy} className="accent-yellow-400"
+              onChange={(e) => setShowLegacy(e.target.checked)} />
+            Show legacy
+          </label>
+        </div>
+        <div className="flex flex-wrap gap-1">
+          <button onClick={() => setBucketFilter("all")}
+            className={`text-xs px-2.5 py-1 rounded transition-colors ${
+              bucketFilter === "all" ? "bg-zinc-700 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
+            }`}>
+            All ({rows.filter((r) => !r.is_hidden).length})
+          </button>
+          {BUCKETS.map((b) => (
+            <button key={b} onClick={() => setBucketFilter(b)}
+              className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded transition-colors ${
+                bucketFilter === b ? "bg-zinc-700 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
+              }`}>
+              <span className="w-2 h-2 rounded-sm" style={{ background: BUCKET_META[b].fill }} />
+              {BUCKET_META[b].short} ({counts[b]})
+            </button>
+          ))}
+        </div>
       </div>
 
       {error && (
         <div className="mx-5 mt-3 bg-red-900/20 border border-red-700/50 rounded p-3 text-sm text-red-400">{error}</div>
       )}
 
-      <div className="max-h-[26rem] overflow-y-auto divide-y divide-zinc-800">
-        {visible.map((row) => {
+      {/* Bulk move bar — only in the way when something is selected */}
+      {selected.size > 0 && (
+        <div className="px-5 py-3 bg-yellow-400/10 border-b border-yellow-400/20 flex flex-wrap items-center gap-3">
+          <span className="text-sm text-zinc-200">
+            <strong>{selected.size}</strong> selected
+            {selectedTotal > 0 && (
+              <span className="text-zinc-400"> · {fmt(selectedTotal)} of spending</span>
+            )}
+          </span>
+          <select
+            className={`${inputCls} text-xs`}
+            value=""
+            onChange={(e) => moveSelected(e.target.value)}
+          >
+            <option value="">Move all to…</option>
+            {BUCKETS.map((b) => (
+              <option key={b} value={b}>{BUCKET_META[b].label}</option>
+            ))}
+          </select>
+          <button onClick={() => setSelected(new Set())}
+            className="text-xs text-zinc-500 hover:text-zinc-300">
+            Clear selection
+          </button>
+        </div>
+      )}
+
+      {/* Select-all header */}
+      <div className="px-5 py-2 border-b border-zinc-800 flex items-center gap-3 text-xs text-zinc-500">
+        <input
+          type="checkbox"
+          className="accent-yellow-400"
+          checked={allVisibleSelected}
+          ref={(el) => {
+            if (el) el.indeterminate = selectedRows.length > 0 && !allVisibleSelected;
+          }}
+          onChange={(e) =>
+            setSelected(e.target.checked ? new Set(visible.map((r) => r.name)) : new Set())
+          }
+        />
+        <span className="flex-1">
+          {visible.length} shown
+          {bucketFilter !== "all" && ` in ${BUCKET_META[bucketFilter].label}`}
+        </span>
+        <span className="w-24 text-right">Spend</span>
+        <span className="w-44">Bucket</span>
+      </div>
+
+      <div className="max-h-[28rem] overflow-y-auto divide-y divide-zinc-800">
+        {visible.map((row, i) => {
           const current = bucketOf(row);
+          const changed = dirty[row.name] && dirty[row.name] !== row.bucket;
           return (
-            <div key={row.name} className="flex items-center gap-3 px-5 py-2">
-              <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: BUCKET_META[current]?.fill }} />
+            <div key={row.name}
+              className={`flex items-center gap-3 px-5 py-2 ${changed ? "bg-yellow-400/5" : ""}`}>
+              <input
+                type="checkbox"
+                className="accent-yellow-400 shrink-0"
+                checked={selected.has(row.name)}
+                onChange={() => {}}
+                onMouseDown={(e) => { shiftHeld.current = e.shiftKey; }}
+                onClick={() => toggle(row, i, shiftHeld.current)}
+              />
+              <span className="w-2 h-2 rounded-sm shrink-0"
+                style={{ background: BUCKET_META[current]?.fill }} />
               <span className="text-sm text-zinc-300 flex-1 truncate">
                 {row.name}
                 {row.unregistered && (
@@ -113,12 +242,15 @@ export function BucketMapping({ onSaved }) {
                   <span className="ml-2 text-xs text-zinc-600">legacy</span>
                 )}
               </span>
+              <span className={`w-24 text-right text-xs tabular-nums ${
+                row.total ? "text-zinc-400" : "text-zinc-700"
+              }`}>
+                {row.total ? fmt(row.total) : "—"}
+              </span>
               <select
-                className={`${inputCls} text-xs w-44`}
+                className={`${inputCls} text-xs w-44 shrink-0`}
                 value={current}
-                onChange={(e) =>
-                  setDirty((d) => ({ ...d, [row.name]: e.target.value }))
-                }
+                onChange={(e) => setDirty((d) => ({ ...d, [row.name]: e.target.value }))}
               >
                 {BUCKETS.map((b) => (
                   <option key={b} value={b}>{BUCKET_META[b].label}</option>
@@ -142,7 +274,7 @@ export function BucketMapping({ onSaved }) {
         </button>
         {pendingCount > 0 && (
           <button onClick={() => setDirty({})} className="text-xs text-zinc-500 hover:text-zinc-300">
-            Reset
+            Discard changes
           </button>
         )}
         {saved && <span className="text-green-400 text-sm">Saved!</span>}

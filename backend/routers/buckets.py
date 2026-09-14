@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select, func
 from pydantic import BaseModel
 from typing import Optional
+import datetime
 import json
 
 import models
@@ -82,8 +83,48 @@ def bucket_map(db: Session) -> dict[str, str]:
 
 
 @router.get("/buckets/mapping")
-def get_bucket_mapping(db: Session = Depends(get_db)):
-    """Every category with its bucket, plus any category only seen on transactions."""
+def get_bucket_mapping(months: int = 12, db: Session = Depends(get_db)):
+    """Every category with its bucket and what it actually costs.
+
+    Reassigning buckets without knowing the amounts is guesswork — a category
+    carrying $14,000 a year and one carrying nothing look identical in a plain
+    list. Spend over the trailing window rides along so the list can be sorted
+    by what matters, and so a bulk move can show its own consequence.
+    """
+    today = datetime.date.today()
+    cutoff_year, cutoff_month = today.year, today.month
+    span = max(int(months), 1)
+    start = cutoff_year * 12 + cutoff_month - span
+
+    def _spend(window_start: int | None):
+        q = (
+            select(models.Transaction.category,
+                   func.sum(models.Transaction.amount).label("total"),
+                   func.count(models.Transaction.id).label("n"),
+                   func.max(models.Transaction.date).label("last_seen"))
+            .group_by(models.Transaction.category)
+        )
+        if window_start is not None:
+            q = q.where(models.Transaction.year * 12 + models.Transaction.month > window_start)
+        return db.execute(q).all()
+
+    spend_rows = _spend(start)
+    windowed = True
+    if not spend_rows:
+        # Every transaction predates the window. An all-zero list would make
+        # sorting by spend useless, so fall back to all time and say so.
+        spend_rows = _spend(None)
+        windowed = False
+    spend = {
+        r.category: {
+            "total": round(float(r.total or 0), 2),
+            "count": int(r.n or 0),
+            "last_seen": r.last_seen.isoformat() if r.last_seen else None,
+        }
+        for r in spend_rows
+    }
+    blank = {"total": 0.0, "count": 0, "last_seen": None}
+
     rows = db.execute(select(models.Category).order_by(models.Category.name)).scalars().all()
     known = {r.name for r in rows}
     out = [
@@ -93,6 +134,7 @@ def get_bucket_mapping(db: Session = Depends(get_db)):
             "group": r.group_name,
             "is_hidden": bool(r.is_hidden),
             "is_legacy": bool(r.is_legacy),
+            **spend.get(r.name, blank),
         }
         for r in rows
     ]
@@ -106,8 +148,15 @@ def get_bucket_mapping(db: Session = Depends(get_db)):
     for name in db.execute(orphan_q).scalars().all():
         if name:
             out.append({"name": name, "bucket": GUILT_FREE, "group": "Other",
-                        "is_hidden": False, "is_legacy": False, "unregistered": True})
-    return {"categories": out, "labels": BUCKET_LABELS}
+                        "is_hidden": False, "is_legacy": False, "unregistered": True,
+                        **spend.get(name, blank)})
+
+    out.sort(key=lambda c: (-c["total"], c["name"]))
+    return {
+        "categories": out,
+        "labels": BUCKET_LABELS,
+        "months": span if windowed else None,
+    }
 
 
 class MappingEntry(BaseModel):
@@ -259,6 +308,17 @@ def build_bucket_summary(db: Session, year: int, m0: int, m1: int) -> dict:
     categories: dict[str, list] = {b: [] for b in BUCKETS}
     unmapped = []
 
+    # Every category assigned to a bucket, spending or not. The spend lists
+    # below only cover categories with transactions this period, which is not
+    # the same question as "what is in this bucket".
+    assigned: dict[str, list] = {b: [] for b in BUCKETS}
+    for cat_name, cat_bucket in sorted(mapping.items()):
+        if cat_bucket in BUCKETS:
+            assigned[cat_bucket].append({
+                "category": cat_name,
+                "amount": round(spend.get(cat_name, 0.0), 2),
+            })
+
     for cat, amount in spend.items():
         bucket = mapping.get(cat)
         if bucket not in BUCKETS:
@@ -305,6 +365,9 @@ def build_bucket_summary(db: Session, year: int, m0: int, m1: int) -> dict:
             # What the target leaves once the unavoidable commitments are met.
             "uncommitted_monthly": round(target_amount / num_months - committed_monthly, 2),
             "categories": sorted(categories[b], key=lambda c: -c["amount"]),
+            "assigned_categories": sorted(
+                assigned[b], key=lambda c: (-c["amount"], c["category"])
+            ),
         })
 
     committed_total = round(sum(committed["totals"].values()), 2)
